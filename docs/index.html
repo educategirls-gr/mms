@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EG Meeting Management System</title>
+  <link rel="icon" type="image/png" href="https://www.educategirls.ngo/wp-content/themes/egindia/static/images/eg-logo.png">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --red-dark: #7B1010; --red-mid: #9B1C1C; --red-light: #B91C1C;
+      --white: #FFFFFF; --gray-text: #6B7280; --border: #E5E7EB;
+    }
+    body { font-family: 'Segoe UI', Arial, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+    .topbar { background: var(--red-dark); color: #fff; display: flex; justify-content: space-between; align-items: center; padding: 10px 28px; font-size: 14px; font-weight: 600; }
+    .main { display: flex; flex: 1; overflow: hidden; }
+    .left-panel { flex: 1; background: linear-gradient(145deg,var(--red-dark) 0%,var(--red-mid) 60%,var(--red-light) 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; position: relative; overflow: hidden; }
+    .left-panel::before { content:''; position:absolute; width:420px; height:420px; border-radius:50%; border:60px solid rgba(255,255,255,0.06); top:50%; left:50%; transform:translate(-50%,-50%); }
+    .left-panel::after  { content:''; position:absolute; width:260px; height:260px; border-radius:50%; border:40px solid rgba(255,255,255,0.08); top:50%; left:50%; transform:translate(-50%,-50%); }
+    .logo-box { background:#fff; border-radius:14px; padding:14px 18px; margin-bottom:22px; z-index:1; box-shadow:0 4px 20px rgba(0,0,0,0.25); }
+    .logo-box img { width:160px; height:auto; display:block; }
+    .left-panel h1 { color:#fff; font-size:26px; font-weight:700; text-align:center; margin-bottom:6px; z-index:1; text-shadow:0 2px 8px rgba(0,0,0,0.3); }
+    .left-panel .subtitle { color:rgba(255,255,255,0.75); font-size:13px; text-align:center; margin-bottom:36px; z-index:1; line-height:1.6; }
+    .feature-list { z-index:1; width:100%; max-width:320px; }
+    .feature-item { background:rgba(255,255,255,0.12); border-radius:10px; padding:12px 18px; margin-bottom:10px; color:#fff; }
+    .feature-item .f-title { font-weight:600; font-size:14px; }
+    .feature-item .f-sub   { font-size:12px; opacity:0.75; margin-top:2px; }
+    .eg-btn { border:2px solid rgba(255,255,255,0.5); color:#fff; background:transparent; border-radius:20px; padding:7px 22px; font-size:13px; font-weight:600; cursor:pointer; margin-bottom:30px; z-index:1; }
+    .right-panel { width:400px; background:#fff; display:flex; flex-direction:column; justify-content:center; padding:48px 40px; box-shadow:-4px 0 24px rgba(0,0,0,0.12); }
+    .right-panel h2 { font-size:26px; font-weight:700; color:#111827; margin-bottom:4px; }
+    .right-panel .tagline { font-size:13px; color:var(--gray-text); margin-bottom:28px; }
+    .form-label { font-size:13px; font-weight:600; color:#374151; margin-bottom:6px; display:block; }
+    .form-label .req { color:#DC2626; }
+    .form-input { width:100%; border:1.5px solid var(--border); border-radius:8px; padding:11px 14px; font-size:14px; color:#111827; outline:none; transition:border 0.2s; background:#FAFAFA; }
+    .form-input:focus { border-color:var(--red-mid); background:#fff; }
+    .form-input::placeholder { color:#9CA3AF; }
+    .hint { font-size:11.5px; color:var(--gray-text); margin-top:5px; margin-bottom:20px; }
+    .btn-primary { width:100%; background:var(--red-mid); color:#fff; border:none; border-radius:8px; padding:13px; font-size:15px; font-weight:700; cursor:pointer; transition:background 0.2s; margin-bottom:20px; }
+    .btn-primary:hover    { background:var(--red-dark); }
+    .btn-primary:disabled { background:#9CA3AF; cursor:not-allowed; }
+    .resend-row { display:flex; justify-content:space-between; align-items:center; font-size:12.5px; color:var(--gray-text); margin-bottom:20px; }
+    .resend-row a { color:var(--red-mid); font-weight:600; cursor:pointer; text-decoration:none; }
+    .alert { padding:10px 14px; border-radius:8px; font-size:13px; margin-bottom:16px; display:none; }
+    .alert-error   { background:#FEF2F2; color:#991B1B; border:1px solid #FECACA; }
+    .alert.show    { display:block; }
+    .back-link { font-size:12.5px; color:var(--gray-text); cursor:pointer; margin-bottom:16px; display:inline-flex; align-items:center; gap:4px; }
+    .back-link:hover { color:var(--red-mid); }
+    .spinner { display:inline-block; width:16px; height:16px; border:2px solid rgba(255,255,255,0.4); border-top-color:#fff; border-radius:50%; animation:spin 0.7s linear infinite; vertical-align:middle; margin-right:6px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .footer { background:var(--red-dark); color:rgba(255,255,255,0.6); text-align:center; font-size:11.5px; padding:9px; }
+
+    @media (max-width: 768px) {
+      body { height:auto; min-height:100vh; overflow-y:auto; overflow-x:hidden; }
+      .main { flex-direction:column; overflow:visible; height:auto; }
+      .left-panel { flex:none; padding:28px 24px 22px; }
+      .left-panel::before { width:240px; height:240px; border-width:32px; }
+      .left-panel::after  { width:140px; height:140px; border-width:24px; }
+      .logo-box { padding:10px 14px; margin-bottom:12px; }
+      .logo-box img { width:110px; }
+      .left-panel h1 { font-size:18px; margin-bottom:4px; }
+      .left-panel .subtitle { font-size:12px; margin-bottom:12px; }
+      .eg-btn { padding:6px 16px; font-size:12px; margin-bottom:0; }
+      .feature-list { display:none; }
+      .right-panel { width:100%; padding:28px 20px 24px; box-shadow:none; justify-content:flex-start; }
+      .right-panel h2 { font-size:22px; }
+      .right-panel .tagline { margin-bottom:18px; }
+      .btn-primary { font-size:14px; padding:12px; }
+      .topbar { padding:9px 16px; font-size:12px; }
+      .footer { font-size:10.5px; padding:8px; }
+      #otp-input { font-size:20px !important; letter-spacing:5px !important; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="topbar">
+    <span>EG Meeting Management Portal</span>
+    <span>Government Relations</span>
+  </div>
+
+  <div class="main">
+    <div class="left-panel">
+      <div class="logo-box">
+        <img src="https://www.educategirls.ngo/wp-content/themes/egindia/static/images/eg-logo.png"
+             onerror="this.style.display='none'" alt="EG Logo">
+      </div>
+      <h1>Meeting Management System</h1>
+      <div class="subtitle">Stakeholder Meeting Records<br>State and District Teams</div>
+      <button class="eg-btn">Educate Girls</button>
+      <div class="feature-list">
+        <div class="feature-item"><div class="f-title">Secure Login</div><div class="f-sub">Email OTP verification</div></div>
+        <div class="feature-item"><div class="f-title">Meeting Records</div><div class="f-sub">Plan, track and report</div></div>
+        <div class="feature-item"><div class="f-title">Role Based Access</div><div class="f-sub">Field, District and State</div></div>
+      </div>
+    </div>
+
+    <div class="right-panel">
+      <div id="step-email">
+        <h2>Sign In</h2>
+        <p class="tagline">Enter your official email to receive OTP</p>
+        <div id="alert-email" class="alert alert-error"></div>
+        <label class="form-label">Email Address <span class="req">*</span></label>
+        <input id="email-input" type="email" class="form-input" placeholder="your@educategirls.ngo"
+               onkeydown="if(event.key==='Enter') sendOTP()">
+        <p class="hint">Enter your official @educategirls.ngo email address</p>
+        <button id="btn-send-otp" class="btn-primary" onclick="sendOTP()">Send OTP</button>
+      </div>
+
+      <div id="step-otp" style="display:none;">
+        <span class="back-link" onclick="goBack()">&#8592; Back</span>
+        <h2>Verify OTP</h2>
+        <p class="tagline" id="otp-sent-msg">OTP sent to your email</p>
+        <div id="alert-otp" class="alert alert-error"></div>
+        <label class="form-label">Enter 6-digit OTP <span class="req">*</span></label>
+        <input id="otp-input" type="text" class="form-input" maxlength="6"
+               placeholder="Enter your 6-digit OTP"
+               oninput="onOtpInput(this)"
+               onkeydown="if(event.key==='Enter') verifyOTP()"
+               autocomplete="one-time-code"
+               style="font-size:22px;letter-spacing:8px;text-align:center;font-weight:700;">
+        <div class="resend-row">
+          <span id="timer-label">Resend in <strong id="timer">10:00</strong></span>
+          <a id="resend-link" style="display:none;" onclick="resendOTP()">Resend OTP</a>
+        </div>
+        <button id="btn-verify" class="btn-primary" onclick="verifyOTP()">Verify &amp; Login</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">This portal is for authorized Educate Girls team members only. All data is confidential.</div>
+
+<script>
+  var GAS_URL      = 'https://script.google.com/macros/s/AKfycbyzKocl1-yfC8tCEssuxZTsgKHY1K6I3uAzW2UcZ_yzvCVTIOCER-nkKcIKIN4_wzQN/exec';
+  var DASH_URL     = 'dashboard.html';
+  var currentEmail = '';
+  var timerInterval;
+
+  // Auto-login from saved token
+  (function() {
+    try {
+      var saved = sessionStorage.getItem('eg_grm_token');
+      if (saved) {
+        document.body.style.display = 'none';
+        window.location.href = DASH_URL + '?token=' + encodeURIComponent(saved);
+        return;
+      }
+    } catch(e) {}
+  })();
+
+  function sendOTP() {
+    var email = document.getElementById('email-input').value.trim();
+    if (!email) { showAlert('email','Please enter your email address.'); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showAlert('email','Please enter a valid email address.'); return; }
+    setLoading('btn-send-otp', true);
+    hideAlert('email');
+    currentEmail = email;
+    fetch(GAS_URL + '?action=sendOTP&email=' + encodeURIComponent(email))
+      .then(function(r) { return r.json(); })
+      .then(function(res) {
+        setLoading('btn-send-otp', false);
+        if (res.success) {
+          document.getElementById('otp-sent-msg').textContent = 'OTP sent to: ' + email;
+          showStep('otp'); startTimer(600);
+          document.getElementById('otp-input').focus();
+        } else { showAlert('email', res.message); }
+      })
+      .catch(function(err) { setLoading('btn-send-otp', false); showAlert('email', 'Error: ' + err.message); });
+  }
+
+  function verifyOTP() {
+    var otp = document.getElementById('otp-input').value.replace(/\D/g,'');
+    if (otp.length < 6) { showAlert('otp','Please enter the 6-digit OTP.'); return; }
+    setLoading('btn-verify', true); hideAlert('otp');
+    fetch(GAS_URL + '?action=verifyOTP&email=' + encodeURIComponent(currentEmail) + '&otp=' + otp)
+      .then(function(r) { return r.json(); })
+      .then(function(res) {
+        if (res.success) {
+          try { sessionStorage.setItem('eg_grm_token', res.token); } catch(e) {}
+          try { sessionStorage.setItem('eg_grm_session', JSON.stringify(res)); } catch(e) {}
+          window.location.href = DASH_URL + '?token=' + encodeURIComponent(res.token);
+        } else {
+          setLoading('btn-verify', false);
+          showAlert('otp', res.message || 'Login failed. Please try again.');
+        }
+      })
+      .catch(function(err) { setLoading('btn-verify', false); showAlert('otp', 'Server error. Please try again.'); });
+  }
+
+  function resendOTP() {
+    document.getElementById('otp-input').value = ''; hideAlert('otp');
+    fetch(GAS_URL + '?action=sendOTP&email=' + encodeURIComponent(currentEmail))
+      .then(function(r) { return r.json(); })
+      .then(function(res) { if (res.success) { startTimer(600); document.getElementById('otp-input').focus(); } else showAlert('otp', res.message); });
+  }
+
+  function onOtpInput(el) { el.value = el.value.replace(/\D/g,''); if (el.value.length === 6) verifyOTP(); }
+
+  function startTimer(seconds) {
+    clearInterval(timerInterval);
+    document.getElementById('timer-label').style.display = 'inline';
+    document.getElementById('resend-link').style.display = 'none';
+    timerInterval = setInterval(function() {
+      seconds--;
+      var m = Math.floor(seconds/60), s = seconds%60;
+      document.getElementById('timer').textContent = m + ':' + (s<10?'0':'') + s;
+      if (seconds <= 0) { clearInterval(timerInterval); document.getElementById('timer-label').style.display='none'; document.getElementById('resend-link').style.display='inline'; }
+    }, 1000);
+  }
+
+  function showStep(s) {
+    document.getElementById('step-email').style.display = s==='email' ? '' : 'none';
+    document.getElementById('step-otp').style.display   = s==='otp'   ? '' : 'none';
+  }
+  function goBack() { clearInterval(timerInterval); document.getElementById('otp-input').value=''; hideAlert('otp'); showStep('email'); }
+  function showAlert(s,m) { var el=document.getElementById('alert-'+s); el.textContent=m; el.className='alert alert-error show'; }
+  function hideAlert(s) { document.getElementById('alert-'+s).className='alert alert-error'; }
+  function setLoading(id, on) {
+    var b = document.getElementById(id);
+    if (on) { b.disabled=true; b.innerHTML='<span class="spinner"></span>Please wait...'; }
+    else    { b.disabled=false; b.innerHTML = id==='btn-verify' ? 'Verify &amp; Login' : 'Send OTP'; }
+  }
+</script>
+</body>
+</html>
