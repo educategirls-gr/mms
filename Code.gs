@@ -37,7 +37,7 @@ function apiResponse(e, method) {
     else if (action === 'getMyMeetings')        result = getMyMeetings(e.parameter.email || '');
     else if (action === 'getAllMyMeetings')      result = getAllMyMeetings(e.parameter.email || '');
     else if (action === 'getDistrictEmployees') result = getDistrictEmployees(e.parameter.district || '', e.parameter.email || '');
-    else if (action === 'getDashboardStats')    result = getDashboardStats(e.parameter.email || '');
+    else if (action === 'getDashboardStats')    result = getDashboardStats(e.parameter.email || '', e.parameter.all === '1');
     else if (action === 'deleteMeeting')        result = deleteMeeting(e.parameter.meetingId || '');
     else if (action === 'saveMeeting')          result = saveMeeting(body);
     else if (action === 'conductMeeting')       result = conductMeeting(body);
@@ -1241,13 +1241,13 @@ function getEmployeeByName(name) {
 // ------------------------------------------------------------
 //  DASHBOARD STATS — cards & reports data
 // ------------------------------------------------------------
-function getDashboardStats(email) {
+function getDashboardStats(email, allDistricts) {
   try {
     var ss  = SpreadsheetApp.openById(SPREADSHEET_ID);
     var emp = getEmployeeByEmail(email);
     var userRole     = emp ? (emp.role     || 'Field') : 'Field';
     var userDistrict = emp ? (emp.district || '')      : '';
-    var isState      = (userRole === 'State');
+    var isState      = allDistricts || (userRole === 'State');
 
     // ── Plan Meetings ──────────────────────────────────────────
     var planSheet = ss.getSheetByName(MEETINGS_SHEET);
