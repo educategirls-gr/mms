@@ -676,21 +676,33 @@
     countEl.textContent = chipText;
     countEl.style.display = 'block';
 
-    // KPI row — always show full district totals
+    // KPI row — changes with month filter
     var t = d.totals || {};
-    var pending = (t.planned||0) + (t.postponed||0) + (t.followup||0);
-    var pct = t.total > 0 ? Math.round((t.conducted/t.total)*100) : 0;
-    var kpis = [
-      { n:t.total||0,     l:'Total Planned',  c:'#1D4ED8' },
-      { n:t.conducted||0, l:'Conducted',       c:'#065F46' },
-      { n:pending,        l:'Pending',         c:'#92400E' },
-      { n:t.cancelled||0, l:'Cancelled',       c:'#991B1B' }
-    ];
+    var kpis;
+    if (filterMonth) {
+      var mTotal = conducted.length;
+      var mPct   = allConducted.length > 0 ? Math.round((mTotal / allConducted.length) * 100) : 0;
+      kpis = [
+        { n: allConducted.length, l:'Total Conducted',            c:'#065F46', chip:'All months combined'    },
+        { n: mTotal,              l:'Conducted in '+filterMonth,  c:'#8B1212', chip: mPct+'% of district total' },
+        { n: (t.planned||0)+(t.postponed||0), l:'Pending',        c:'#92400E', chip:'District total'         },
+        { n: t.cancelled||0,      l:'Cancelled',                  c:'#991B1B', chip:'District total'         }
+      ];
+    } else {
+      var pending = (t.planned||0) + (t.postponed||0) + (t.followup||0);
+      var pct     = t.total > 0 ? Math.round((t.conducted / t.total) * 100) : 0;
+      kpis = [
+        { n: t.total||0,     l:'Total Planned',  c:'#1D4ED8', chip:'All Districts'   },
+        { n: t.conducted||0, l:'Conducted',       c:'#065F46', chip: pct+'% success' },
+        { n: pending,        l:'Pending',         c:'#92400E', chip:'Planned + Delayed' },
+        { n: t.cancelled||0, l:'Cancelled',       c:'#991B1B', chip:'Need Follow-up'  }
+      ];
+    }
     document.getElementById('rp-kpi').innerHTML = kpis.map(function(k) {
       return '<div class="kpi-card" style="border-top:4px solid '+k.c+';">' +
              '<div class="kpi-num" style="color:'+k.c+';">'+k.n+'</div>' +
              '<div class="kpi-lbl">'+k.l+'</div>' +
-             '<span class="kpi-chip" style="background:#FEF2F2;color:'+EG+';">'+pct+'% success rate</span>' +
+             '<span class="kpi-chip" style="background:#FEF2F2;color:'+EG+';">'+k.chip+'</span>' +
              '</div>';
     }).join('');
 
