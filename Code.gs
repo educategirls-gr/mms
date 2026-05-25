@@ -1401,39 +1401,70 @@ function getDashboardStats(email, allDistricts) {
     var monthArr = [];
     for (var m in monthMap) monthArr.push({month:m, count:monthMap[m]});
 
-    // recent conducted (last 8)
-    var cSheet = ss.getSheetByName(CONDUCTED_SHEET);
-    var recent = [];
+    // ── Conducted Meetings — enriched stats + recent ──────────────
+    var cSheet      = ss.getSheetByName(CONDUCTED_SHEET);
+    var recent      = [];
+    var empSet      = {};     // unique employee names
+    var stkPostMap  = {};     // stakeholder post → count
+    var dtfCount    = 0;      // Group Meeting conducted
+    var momReady    = 0;      // meetings with MoM doc link
+
     if (cSheet && cSheet.getLastRow() > 1) {
       var cd = cSheet.getDataRange().getValues();
-      for (var ci = cd.length - 1; ci >= 1 && recent.length < 8; ci--) {
-        var cr = cd[ci];
-        var cdist = (cr[1]||'').toString().trim();
+      // Forward pass — collect stats
+      for (var ci = 1; ci < cd.length; ci++) {
+        var cr      = cd[ci];
+        var cdist   = (cr[1]||'').toString().trim();
         if (!isState && cdist.toUpperCase() !== userDistrict.toUpperCase()) continue;
+        var cEmp    = (cr[2] ||'').toString().trim();
+        var cType   = (cr[8] ||'').toString().trim();
+        var cStkP   = (cr[10]||'').toString().trim();
+        var cMom    = (cr[17]||'').toString().trim();
+        if (cEmp)  empSet[cEmp] = true;
+        if (cStkP) stkPostMap[cStkP] = (stkPostMap[cStkP] || 0) + 1;
+        if (cType.toLowerCase().indexOf('group') !== -1) dtfCount++;
+        if (cMom)  momReady++;
+      }
+      // Reverse pass — collect recent 8
+      for (var ri = cd.length - 1; ri >= 1 && recent.length < 8; ri--) {
+        var rr    = cd[ri];
+        var rdist = (rr[1]||'').toString().trim();
+        if (!isState && rdist.toUpperCase() !== userDistrict.toUpperCase()) continue;
         recent.push({
-          meetingId:       (cr[0]||'').toString(),
-          district:        (cr[1]||'').toString(),
-          employeeName:    (cr[2]||'').toString(),
-          post:            (cr[3]||'').toString(),
-          stakeholderName: (cr[9]||'').toString(),
-          stakeholderPost: (cr[10]||'').toString(),
-          purpose:         (cr[11]||'').toString(),
-          meetingType:     (cr[8]||'').toString(),
-          conductDate:     (cr[13]||'').toString()
+          meetingId:       (rr[0] ||'').toString(),
+          district:        (rr[1] ||'').toString(),
+          employeeName:    (rr[2] ||'').toString(),
+          post:            (rr[3] ||'').toString(),
+          stakeholderName: (rr[9] ||'').toString(),
+          stakeholderPost: (rr[10]||'').toString(),
+          purpose:         (rr[11]||'').toString(),
+          meetingType:     (rr[8] ||'').toString(),
+          conductDate:     (rr[13]||'').toString()
         });
       }
     }
 
+    // Top stakeholder post
+    var topStkPost = '—'; var topStkCount = 0;
+    for (var sp in stkPostMap) {
+      if (stkPostMap[sp] > topStkCount) { topStkCount = stkPostMap[sp]; topStkPost = sp; }
+    }
+
     return {
-      success:        true,
-      role:           userRole,
-      district:       userDistrict,
-      totals:         totals,
-      districts:      distArr,
-      byType:         typeArr,
-      byPurpose:      purpArr,
-      monthTrend:     monthArr,
-      recentConducted:recent
+      success:             true,
+      role:                userRole,
+      district:            userDistrict,
+      totals:              totals,
+      districts:           distArr,
+      byType:              typeArr,
+      byPurpose:           purpArr,
+      monthTrend:          monthArr,
+      recentConducted:     recent,
+      activeEmployees:     Object.keys(empSet).length,
+      dtfSessions:         dtfCount,
+      momReady:            momReady,
+      topStakeholderPost:  topStkPost,
+      topStakeholderCount: topStkCount
     };
   } catch(err) {
     return { success: false, message: err.message };
