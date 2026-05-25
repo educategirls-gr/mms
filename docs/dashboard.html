@@ -484,6 +484,10 @@
             <span>Select from your district team members:</span>
             <button onclick="toggleColleaguePicker()" style="background:none;border:none;cursor:pointer;font-size:16px;color:#6B7280;">✕</button>
           </div>
+          <div style="padding:8px 10px;border-bottom:1px solid #E5E7EB;background:#F9FAFB;">
+            <input type="text" id="colleague-search" placeholder="🔍  Search by name..." oninput="filterColleagues(this.value)"
+              style="width:100%;border:1.5px solid #E5E7EB;border-radius:7px;padding:8px 12px;font-size:13px;outline:none;background:#fff;">
+          </div>
           <div id="colleague-list"><div style="padding:12px;color:#9CA3AF;font-size:13px;">Loading...</div></div>
         </div>
         <div class="form-row">
@@ -1208,22 +1212,44 @@
 
   // ── Colleague picker ─────────────────────────────────────────
   var colleaguesLoaded = false;
+  var _allColleagues   = [];
+
   function toggleColleaguePicker() {
     var picker = document.getElementById('colleague-picker');
     var open   = picker.style.display !== 'none';
     picker.style.display = open ? 'none' : '';
-    if (!open && !colleaguesLoaded) {
-      gasFetch('getDistrictEmployees', { district: SESSION.district, email: SESSION.email }, renderColleagues, function() {
-        document.getElementById('colleague-list').innerHTML =
-          '<div style="padding:12px;color:#DC2626;font-size:13px;">Failed to load. Please try again.</div>';
-      });
+    if (!open) {
+      // Clear search box every time picker opens
+      var s = document.getElementById('colleague-search');
+      if (s) { s.value = ''; }
+      if (!colleaguesLoaded) {
+        gasFetch('getDistrictEmployees', { district: SESSION.district, email: SESSION.email }, renderColleagues, function() {
+          document.getElementById('colleague-list').innerHTML =
+            '<div style="padding:12px;color:#DC2626;font-size:13px;">Failed to load. Please try again.</div>';
+        });
+      } else {
+        renderColleagueItems(_allColleagues);
+      }
+      // Auto-focus search
+      setTimeout(function() {
+        var s = document.getElementById('colleague-search');
+        if (s) s.focus();
+      }, 100);
     }
   }
+
   function renderColleagues(list) {
-    colleaguesLoaded = true;
+    colleaguesLoaded  = true;
+    _allColleagues    = (list || []).sort(function(a, b) {
+      return a.name.localeCompare(b.name);
+    });
+    renderColleagueItems(_allColleagues);
+  }
+
+  function renderColleagueItems(list) {
     var el = document.getElementById('colleague-list');
     if (!list || list.length === 0) {
-      el.innerHTML = '<div style="padding:12px;color:#9CA3AF;font-size:13px;">No colleagues found in your district.</div>';
+      el.innerHTML = '<div style="padding:12px 14px;color:#9CA3AF;font-size:13px;">No colleagues found.</div>';
       return;
     }
     el.innerHTML = '';
@@ -1237,6 +1263,17 @@
       el.appendChild(div);
     });
   }
+
+  function filterColleagues(query) {
+    var q = query.trim().toLowerCase();
+    if (!q) { renderColleagueItems(_allColleagues); return; }
+    var filtered = _allColleagues.filter(function(c) {
+      return c.name.toLowerCase().indexOf(q) !== -1 ||
+             (c.designation && c.designation.toLowerCase().indexOf(q) !== -1);
+    });
+    renderColleagueItems(filtered);
+  }
+
   function selectColleague(name, post) {
     document.getElementById('colleagueName').value = name;
     document.getElementById('colleaguePost').value = post;
