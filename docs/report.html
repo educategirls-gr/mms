@@ -208,10 +208,37 @@
     }
     select#rp-district-sel:focus { border-color: var(--eg-orange); }
 
+    /* ── Mobile bottom nav ───────────────────────────────────── */
+    .mob-nav {
+      display: none;
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+      background: #fff; border-top: 1px solid #E8EAF0;
+      box-shadow: 0 -2px 12px rgba(0,0,0,0.10);
+      height: 60px;
+    }
+    .mob-nav-inner { display: flex; height: 100%; }
+    .mob-nav-btn {
+      flex: 1; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 3px; cursor: pointer;
+      font-size: 10.5px; font-weight: 600; color: #9CA3AF;
+      border: none; background: none; transition: color .15s;
+    }
+    .mob-nav-btn.active { color: var(--eg-orange); }
+    .mob-nav-btn .mob-icon { font-size: 20px; }
+
     @media (max-width: 960px) {
       .sidebar { display: none; }
+      .mob-nav { display: block; }
+      .content-area { padding: 14px 14px 76px; }
       .kpi-grid, .insight-grid { grid-template-columns: repeat(2,1fr) !important; }
       .two-col, .three-col { grid-template-columns: 1fr !important; }
+      .topbar { padding: 0 14px; }
+      .topbar-center .tb-title { font-size: 14px; }
+      .topbar-center .tb-sub { display: none; }
+      .tb-badge { display: none; }
+      select#rp-district-sel { min-width: 100%; }
+      select#rp-month-sel { min-width: 100%; }
+      .district-select-wrap { flex-direction: column; align-items: stretch; }
     }
   </style>
 </head>
@@ -747,6 +774,30 @@
 
   // ── Init ──────────────────────────────────────────────────────
   loadOverview();
+</script>
+
+<!-- Mobile bottom nav -->
+<div class="mob-nav">
+  <div class="mob-nav-inner">
+    <button class="mob-nav-btn active" id="mob-nav-overview" onclick="showView('overview');updateMobNav('overview')">
+      <span class="mob-icon">&#128202;</span>Overview
+    </button>
+    <button class="mob-nav-btn" id="mob-nav-reports" onclick="showView('reports');updateMobNav('reports')">
+      <span class="mob-icon">&#127963;</span>District Reports
+    </button>
+  </div>
+</div>
+
+<script>
+  function updateMobNav(v) {
+    ['overview','reports'].forEach(function(x) {
+      var el = document.getElementById('mob-nav-'+x);
+      if (el) el.classList.toggle('active', x === v);
+    });
+  }
+  // Sync mob nav with showView
+  var _origShowView = showView;
+  showView = function(v) { _origShowView(v); updateMobNav(v); };
 </script>
 </body>
 </html>
