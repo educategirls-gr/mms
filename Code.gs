@@ -345,9 +345,7 @@ function getMyMeetings(email) {
           meetingId:    (sheetData[i][0]  || '').toString(),
           district:     (sheetData[i][1]  || '').toString(),
           employeeName: (sheetData[i][2]  || '').toString(),
-          date:         rawDate instanceof Date
-                          ? Utilities.formatDate(rawDate, tz, 'dd-MM-yyyy')
-                          : (rawDate || '').toString(),
+          date:         fmtDateVal(rawDate),
           meetingTime:  fmtTimeVal(sheetData[i][6]),
           duration:     (sheetData[i][7]  || '').toString(),  // H
           type:         (sheetData[i][8]  || '').toString(),  // I
@@ -433,6 +431,23 @@ function fmtTimeVal(t) {
   var h = t.getUTCHours(), mn = t.getUTCMinutes();
   var ap = h >= 12 ? 'PM' : 'AM';
   return (h % 12 || 12) + ':' + (mn < 10 ? '0' : '') + mn + ' ' + ap;
+}
+
+// Formats a date cell value as "15 Apr 2026"
+function fmtDateVal(d) {
+  if (!d) return '';
+  if (d instanceof Date) {
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+  }
+  var s = d.toString().trim();
+  // Already short format "2026-04-15" → "15 Apr 2026"
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    var p = s.split('-');
+    var months2 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return parseInt(p[2]) + ' ' + months2[parseInt(p[1])-1] + ' ' + p[0];
+  }
+  return s;
 }
 
 // ------------------------------------------------------------
@@ -913,7 +928,7 @@ function getAllMyMeetings(email) {
         meetings.push({
           meetingId:       (phd[i][0] || '').toString(),
           district:        (phd[i][1] || '').toString(),
-          date:            (phd[i][7] || '').toString(),   // Original Date
+          date:            fmtDateVal(phd[i][7]),            // Original Date
           meetingTime:     '',
           duration:        '',
           type:            '',
@@ -941,7 +956,7 @@ function getAllMyMeetings(email) {
         meetings.push({
           meetingId:    (cd[j][0]  || '').toString(),
           district:     (cd[j][1]  || '').toString(),
-          date:         (cd[j][5]  || '').toString(),
+          date:         fmtDateVal(cd[j][5]),
           meetingTime:  fmtTimeVal(cd[j][6]),
           duration:     (cd[j][7]  || '').toString(),
           type:         (cd[j][8]  || '').toString(),
@@ -950,7 +965,7 @@ function getAllMyMeetings(email) {
           purpose:      (cd[j][11] || '').toString(),
           agenda:       (cd[j][12] || '').toString(),
           status:       'Conducted',
-          conductDate:  (cd[j][13] || '').toString(),
+          conductDate:  fmtDateVal(cd[j][13]),
           conductTime:  fmtTimeVal(cd[j][14]),
           keyPoints:    (cd[j][15] || '').toString(),
           photoLink:    (cd[j][16] || '').toString(),
@@ -971,7 +986,7 @@ function getAllMyMeetings(email) {
         meetings.push({
           meetingId:    (xd[k][0]  || '').toString(),
           district:     (xd[k][1]  || '').toString(),
-          date:         (xd[k][5]  || '').toString(),
+          date:         fmtDateVal(xd[k][5]),
           meetingTime:  fmtTimeVal(xd[k][6]),
           duration:     (xd[k][7]  || '').toString(),
           type:         (xd[k][8]  || '').toString(),
