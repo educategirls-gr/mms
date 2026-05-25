@@ -547,6 +547,11 @@ function conductMeeting(payload) {
       planSheet.getRange(planRowIdx + 1, 14).setValue('Conducted');
     }
 
+    // 6. Send MoM email to colleague
+    if (payload.colleagueName && payload.colleagueName.trim()) {
+      try { sendMOMNotification(payload, momUrl, photoFolderUrl, followUpId); } catch(mailErr) { /* don't fail conduct if mail fails */ }
+    }
+
     return { success: true, momUrl: momUrl, photoFolderUrl: photoFolderUrl, followUpId: followUpId };
   } catch(err) {
     return { success: false, message: err.message };
@@ -1071,6 +1076,122 @@ function sendColleagueNotification(data, mtgId) {
       '<p style="font-size:13px;color:#6B7280;line-height:1.7;margin:0;">' +
         'Please treat this as an official communication and plan your schedule accordingly. ' +
         'For any clarification or rescheduling, please contact <strong>' + data.employeeName + '</strong> directly.' +
+      '</p>' +
+    '</div>' +
+
+    // Footer
+    '<div style="background:#7B1010;padding:14px 28px;text-align:center;">' +
+      '<p style="color:rgba(255,255,255,0.65);font-size:11.5px;margin:0;">' +
+        'This is a system-generated notification from <strong style="color:#fff;">EG Meeting Management System</strong>.<br>' +
+        'Educate Girls &nbsp;|&nbsp; Government Relations Team' +
+      '</p>' +
+    '</div>' +
+
+  '</div>';
+
+  MailApp.sendEmail({
+    to:       colleague.email,
+    subject:  subject,
+    htmlBody: body
+  });
+}
+
+// ------------------------------------------------------------
+//  COLLEAGUE MOM EMAIL — sent after meeting is conducted
+// ------------------------------------------------------------
+function sendMOMNotification(data, momUrl, photoFolderUrl, followUpId) {
+  if (!data || !data.colleagueName || !data.colleagueName.trim()) return;
+
+  var colleague = getEmployeeByName(data.colleagueName.trim());
+  if (!colleague || !colleague.email) return;
+
+  var subject = 'Minutes of Meeting | ' + data.meetingId + ' | ' + data.adhikariPost + ', ' + (data.district || '');
+
+  // Format key points as bullet list
+  var kpLines = (data.keyPoints || '').split('\n').filter(function(l){ return l.trim(); });
+  var kpHtml = kpLines.map(function(l){
+    return '<tr><td style="padding:5px 0 5px 8px;color:#374151;font-size:13px;border-bottom:1px solid #F3F4F6;">• ' + l.trim() + '</td></tr>';
+  }).join('');
+  if (!kpHtml) kpHtml = '<tr><td style="padding:5px 0;color:#6B7280;font-size:13px;">—</td></tr>';
+
+  var body =
+    '<div style="font-family:Segoe UI,Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #E5E7EB;border-radius:10px;overflow:hidden;">' +
+
+    // Header
+    '<div style="background:linear-gradient(135deg,#7B1010,#9B1C1C);padding:24px 28px;">' +
+      '<img src="https://www.educategirls.ngo/wp-content/themes/egindia/static/images/eg-logo.png" ' +
+           'style="height:34px;filter:brightness(0) invert(1);opacity:0.9;margin-bottom:12px;display:block;" />' +
+      '<h2 style="color:#fff;margin:0 0 4px;font-size:19px;font-weight:700;">Minutes of Meeting (MoM)</h2>' +
+      '<p style="color:rgba(255,255,255,0.7);margin:0;font-size:12px;letter-spacing:0.4px;">EG Meeting Management System &nbsp;|&nbsp; Government Relations</p>' +
+    '</div>' +
+
+    // Greeting
+    '<div style="padding:28px 28px 0;background:#fff;">' +
+      '<p style="font-size:14px;color:#111827;margin:0 0 6px;">Dear <strong>' + data.colleagueName + '</strong>,</p>' +
+      '<p style="font-size:13.5px;color:#374151;line-height:1.7;margin:0 0 22px;">' +
+        'Please find below the Minutes of Meeting (MoM) for the stakeholder meeting you attended alongside ' +
+        '<strong>' + data.employeeName + '</strong>. Kindly review the key discussion points and take note of any follow-up actions.' +
+      '</p>' +
+    '</div>' +
+
+    // Meeting details card
+    '<div style="padding:0 28px 18px;background:#fff;">' +
+      '<div style="background:#FAFAFA;border:1px solid #E5E7EB;border-left:4px solid #7B1010;border-radius:8px;padding:18px 20px;">' +
+        '<p style="margin:0 0 14px;font-size:11px;font-weight:700;color:#7B1010;text-transform:uppercase;letter-spacing:1px;">Meeting Details</p>' +
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;color:#374151;">' +
+          '<tr style="border-bottom:1px solid #F3F4F6;">' +
+            '<td style="padding:8px 0;color:#6B7280;width:38%;vertical-align:top;">Meeting ID</td>' +
+            '<td style="padding:8px 0;font-weight:700;color:#111827;">' + data.meetingId + '</td>' +
+          '</tr>' +
+          '<tr style="border-bottom:1px solid #F3F4F6;">' +
+            '<td style="padding:8px 0;color:#6B7280;vertical-align:top;">Organized By</td>' +
+            '<td style="padding:8px 0;">' + data.employeeName + '<br><span style="font-size:11.5px;color:#6B7280;">' + (data.designation || '') + ' &nbsp;|&nbsp; ' + (data.district || '') + '</span></td>' +
+          '</tr>' +
+          '<tr style="border-bottom:1px solid #F3F4F6;">' +
+            '<td style="padding:8px 0;color:#6B7280;vertical-align:top;">Stakeholder</td>' +
+            '<td style="padding:8px 0;font-weight:600;">' + data.adhikariName + '<br><span style="font-size:11.5px;color:#6B7280;font-weight:400;">' + data.adhikariPost + '</span></td>' +
+          '</tr>' +
+          '<tr style="border-bottom:1px solid #F3F4F6;">' +
+            '<td style="padding:8px 0;color:#6B7280;">Meeting Type</td>' +
+            '<td style="padding:8px 0;">' + (data.meetingType || '—') + '</td>' +
+          '</tr>' +
+          '<tr style="border-bottom:1px solid #F3F4F6;">' +
+            '<td style="padding:8px 0;color:#6B7280;">Purpose</td>' +
+            '<td style="padding:8px 0;">' + (data.purpose || '—') + '</td>' +
+          '</tr>' +
+          '<tr style="border-bottom:1px solid #F3F4F6;">' +
+            '<td style="padding:8px 0;color:#6B7280;">Conducted On</td>' +
+            '<td style="padding:8px 0;font-weight:600;color:#111827;">' + (data.conductDate || '—') + (data.conductTime ? ' &nbsp;at&nbsp; ' + data.conductTime : '') + '</td>' +
+          '</tr>' +
+          (followUpId ? '<tr><td style="padding:8px 0;color:#6B7280;vertical-align:top;">Follow-up</td>' +
+            '<td style="padding:8px 0;font-weight:600;color:#1D4ED8;">Meeting Scheduled &nbsp;|&nbsp; ' + (data.followUp && data.followUp.date ? data.followUp.date : '') + '</td></tr>' : '') +
+        '</table>' +
+      '</div>' +
+    '</div>' +
+
+    // Key Discussion Points
+    '<div style="padding:0 28px 18px;background:#fff;">' +
+      '<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-left:4px solid #16A34A;border-radius:8px;padding:18px 20px;">' +
+        '<p style="margin:0 0 12px;font-size:11px;font-weight:700;color:#15803D;text-transform:uppercase;letter-spacing:1px;">Key Discussion Points</p>' +
+        '<table style="width:100%;border-collapse:collapse;">' + kpHtml + '</table>' +
+      '</div>' +
+    '</div>' +
+
+    // MoM Doc & Photos links
+    (momUrl || photoFolderUrl ?
+    '<div style="padding:0 28px 18px;background:#fff;">' +
+      '<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-left:4px solid #2563EB;border-radius:8px;padding:16px 20px;">' +
+        '<p style="margin:0 0 12px;font-size:11px;font-weight:700;color:#1D4ED8;text-transform:uppercase;letter-spacing:1px;">Documents & Resources</p>' +
+        (momUrl ? '<p style="margin:0 0 8px;font-size:13px;color:#374151;">📄 &nbsp;<a href="' + momUrl + '" style="color:#2563EB;font-weight:600;text-decoration:none;">View Full MoM Document</a></p>' : '') +
+        (photoFolderUrl ? '<p style="margin:0;font-size:13px;color:#374151;">📷 &nbsp;<a href="' + photoFolderUrl + '" style="color:#2563EB;font-weight:600;text-decoration:none;">View Meeting Photos</a></p>' : '') +
+      '</div>' +
+    '</div>' : '') +
+
+    // Closing note
+    '<div style="padding:0 28px 28px;background:#fff;">' +
+      '<p style="font-size:13px;color:#6B7280;line-height:1.7;margin:0;">' +
+        'Please retain this MoM for your records. For any discrepancies or additional inputs, ' +
+        'kindly reach out to <strong>' + data.employeeName + '</strong> at the earliest.' +
       '</p>' +
     '</div>' +
 
