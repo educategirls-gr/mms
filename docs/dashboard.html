@@ -446,30 +446,26 @@
             <select id="adhikariPost" onchange="onPostChange()">
               <option value="">— Loading... —</option>
             </select>
+            <div id="row-other-post" style="display:none; margin-top:10px;">
+              <label>Other — Specify Post <span class="req">*</span></label>
+              <input type="text" id="otherPost" placeholder="Enter stakeholder's designation...">
+            </div>
           </div>
           <div class="field">
             <label>Stakeholder Name <span class="req">*</span></label>
             <input type="text" id="adhikariName" placeholder="Enter stakeholder's name">
           </div>
         </div>
-        <div class="form-row" id="row-other-post" style="display:none;">
-          <div class="field full">
-            <label>Other — Specify Post <span class="req">*</span></label>
-            <input type="text" id="otherPost" placeholder="Enter stakeholder's designation...">
-          </div>
-        </div>
         <div class="form-row">
-          <div class="field">
+          <div class="field full">
             <label>Meeting Purpose <span class="req">*</span></label>
             <select id="meetingPurpose" onchange="onPurposeChange()">
               <option value="">— Loading... —</option>
             </select>
-          </div>
-        </div>
-        <div class="form-row" id="row-other-purpose" style="display:none;">
-          <div class="field full">
-            <label>Other — Specify Purpose <span class="req">*</span></label>
-            <input type="text" id="otherPurpose" placeholder="Describe the meeting purpose...">
+            <div id="row-other-purpose" style="display:none; margin-top:10px;">
+              <label>Other — Specify Purpose <span class="req">*</span></label>
+              <input type="text" id="otherPurpose" placeholder="Describe the meeting purpose...">
+            </div>
           </div>
         </div>
         <div class="form-row">
