@@ -255,10 +255,10 @@
   <div class="sidebar-nav">
     <div class="nav-section">Analytics</div>
     <div class="nav-item active" id="nav-overview" onclick="showView('overview')">
-      <span class="nav-icon">📊</span><span>Overview</span>
+      <span>Overview</span>
     </div>
     <div class="nav-item" id="nav-reports" onclick="showView('reports')">
-      <span class="nav-icon">🏛️</span><span>District Reports</span>
+      <span>District Reports</span>
     </div>
   </div>
   <div class="sidebar-footer">
@@ -309,23 +309,23 @@
         <!-- District Performance + Type breakdown -->
         <div class="two-col">
           <div class="card">
-            <div class="card-title">🏆 District Performance <span class="card-title-line"></span></div>
+            <div class="card-title">District Performance<span class="card-title-line"></span></div>
             <div id="ov-dist-rank"></div>
           </div>
           <div class="card">
-            <div class="card-title">📊 Meetings by Purpose <span class="card-title-line"></span></div>
+            <div class="card-title">Meetings by Purpose<span class="card-title-line"></span></div>
             <div id="ov-purposes"></div>
           </div>
         </div>
 
         <!-- Type chips + Recent table -->
         <div class="card" style="margin-bottom:18px;">
-          <div class="card-title">📋 Meeting Types <span class="card-title-line"></span></div>
+          <div class="card-title">Meeting Types<span class="card-title-line"></span></div>
           <div id="ov-types" style="display:flex;flex-wrap:wrap;gap:10px;"></div>
         </div>
 
         <div class="card">
-          <div class="card-title">🕐 Recently Conducted Meetings <span class="card-title-line"></span></div>
+          <div class="card-title">Recently Conducted Meetings<span class="card-title-line"></span></div>
           <div id="ov-recent" style="overflow-x:auto;"></div>
         </div>
 
@@ -337,7 +337,7 @@
 
       <!-- District + Month selector -->
       <div class="card" style="margin-bottom:18px;">
-        <div class="card-title">🏛️ Select District &amp; Month <span class="card-title-line"></span></div>
+        <div class="card-title">Select District &amp; Month<span class="card-title-line"></span></div>
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
           <select id="rp-district-sel" onchange="onDistrictChange(this.value)">
             <option value="">— Select a District —</option>
@@ -366,13 +366,13 @@
 
         <!-- Post-wise breakdown -->
         <div class="card" style="margin-bottom:18px;">
-          <div class="card-title">👤 Post-wise Meeting Breakdown <span class="card-title-line"></span></div>
+          <div class="card-title">Post-wise Meeting Breakdown<span class="card-title-line"></span></div>
           <div id="rp-bypost" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;"></div>
         </div>
 
         <!-- Full detail table -->
         <div class="card">
-          <div class="card-title">📋 All Conducted Meetings <span class="card-title-line"></span></div>
+          <div class="card-title">All Conducted Meetings<span class="card-title-line"></span></div>
           <div id="rp-table" style="overflow-x:auto;"></div>
         </div>
 
@@ -380,8 +380,7 @@
 
       <!-- Placeholder -->
       <div id="rp-placeholder" style="text-align:center;padding:80px 0;color:#C4C4C4;">
-        <div style="font-size:52px;margin-bottom:14px;">🏛️</div>
-        <div style="font-size:16px;font-weight:700;color:#9CA3AF;">Select a district above</div>
+          <div style="font-size:16px;font-weight:700;color:#9CA3AF;">Select a district above</div>
         <div style="font-size:13px;color:#C4C4C4;margin-top:6px;">to view detailed meeting analytics</div>
       </div>
 
@@ -465,14 +464,13 @@
 
     // ─ KPI Row 1 ─
     var kpis = [
-      { icon:'📅', n: t.total||0,     l:'Total Planned',  c:'#1D4ED8', bg:'#EFF6FF', chip:'All Districts',    chipC:'#1E40AF', chipBg:'#DBEAFE' },
-      { icon:'✅', n: t.conducted||0, l:'Conducted',       c:'#065F46', bg:'#D1FAE5', chip:'Completed',        chipC:'#065F46', chipBg:'#A7F3D0' },
-      { icon:'🕐', n: pending,        l:'Pending',         c:'#92400E', bg:'#FEF3C7', chip:'Planned + Delayed', chipC:'#92400E', chipBg:'#FDE68A' },
-      { icon:'❌', n: t.cancelled||0, l:'Cancelled',       c:'#991B1B', bg:'#FEE2E2', chip:'Need Follow-up',   chipC:'#991B1B', chipBg:'#FECACA' }
+      { n: t.total||0,     l:'Total Planned',  c:'#1D4ED8', chip:'All Districts',    chipC:'#1E40AF', chipBg:'#DBEAFE' },
+      { n: t.conducted||0, l:'Conducted',       c:'#065F46', chip:'Completed',        chipC:'#065F46', chipBg:'#A7F3D0' },
+      { n: pending,        l:'Pending',         c:'#92400E', chip:'Planned + Delayed', chipC:'#92400E', chipBg:'#FDE68A' },
+      { n: t.cancelled||0, l:'Cancelled',       c:'#991B1B', chip:'Need Follow-up',   chipC:'#991B1B', chipBg:'#FECACA' }
     ];
     document.getElementById('ov-kpi').innerHTML = kpis.map(function(k) {
-      return '<div class="kpi-card" style="border-top:4px solid '+k.c+';--kpi-c:'+k.c+';--kpi-bg:'+k.bg+';">' +
-             '<div class="kpi-icon">'+k.icon+'</div>' +
+      return '<div class="kpi-card" style="border-top:4px solid '+k.c+';">' +
              '<div class="kpi-num" style="color:'+k.c+';">'+k.n+'</div>' +
              '<div class="kpi-lbl">'+k.l+'</div>' +
              '<span class="kpi-chip" style="background:'+k.chipBg+';color:'+k.chipC+';">'+k.chip+'</span>' +
@@ -489,31 +487,15 @@
     var topStkPost = d.topStakeholderPost || '—';
 
     var insights = [
-      {
-        icon:'🎯', iconBg:'#FEF2F2', iconC:'#8B1212',
-        val: pct + '%', lbl:'Success Rate',
-        sub: t.conducted+' of '+t.total+' meetings done'
-      },
-      {
-        icon:'👥', iconBg:'#EFF6FF', iconC:'#1D4ED8',
-        val: activeEmp, lbl:'Active Staff',
-        sub:'Employees who conducted meetings'
-      },
-      {
-        icon:'📚', iconBg:'#F0FDF4', iconC:'#065F46',
-        val: dtfSess, lbl:'Group Sessions',
-        sub:'DTF / Training sessions held'
-      },
-      {
-        icon:'📑', iconBg:'#FDF4FF', iconC:'#7C3AED',
-        val: momReady, lbl:'MoM Prepared',
-        sub:'Meetings with documented MoM'
-      }
+      { iconC:'#8B1212', val: pct + '%', lbl:'Success Rate',   sub: t.conducted+' of '+t.total+' meetings done' },
+      { iconC:'#1D4ED8', val: activeEmp,  lbl:'Active Staff',   sub:'Employees who conducted meetings'           },
+      { iconC:'#065F46', val: dtfSess,    lbl:'Group Sessions', sub:'DTF / Training sessions held'               },
+      { iconC:'#7C3AED', val: momReady,   lbl:'MoM Prepared',  sub:'Meetings with documented MoM'               }
     ];
     document.getElementById('ov-insights').innerHTML = insights.map(function(ins) {
       return '<div class="insight-card">' +
-             '<div class="insight-icon-wrap" style="background:'+ins.iconBg+';">'+ins.icon+'</div>' +
-             '<div class="insight-body">' +
+             '<div style="width:4px;border-radius:4px;background:'+ins.iconC+';align-self:stretch;flex-shrink:0;"></div>' +
+             '<div class="insight-body" style="padding-left:4px;">' +
              '<div class="i-val" style="color:'+ins.iconC+';">'+ins.val+'</div>' +
              '<div class="i-lbl">'+ins.lbl+'</div>' +
              '<div class="i-sub">'+ins.sub+'</div>' +
@@ -699,14 +681,13 @@
     var pending = (t.planned||0) + (t.postponed||0) + (t.followup||0);
     var pct = t.total > 0 ? Math.round((t.conducted/t.total)*100) : 0;
     var kpis = [
-      { icon:'📅', n:t.total||0,     l:'Total Planned',  c:'#1D4ED8' },
-      { icon:'✅', n:t.conducted||0, l:'Conducted',       c:'#065F46' },
-      { icon:'🕐', n:pending,        l:'Pending',         c:'#92400E' },
-      { icon:'❌', n:t.cancelled||0, l:'Cancelled',       c:'#991B1B' }
+      { n:t.total||0,     l:'Total Planned',  c:'#1D4ED8' },
+      { n:t.conducted||0, l:'Conducted',       c:'#065F46' },
+      { n:pending,        l:'Pending',         c:'#92400E' },
+      { n:t.cancelled||0, l:'Cancelled',       c:'#991B1B' }
     ];
     document.getElementById('rp-kpi').innerHTML = kpis.map(function(k) {
       return '<div class="kpi-card" style="border-top:4px solid '+k.c+';">' +
-             '<div class="kpi-icon">'+k.icon+'</div>' +
              '<div class="kpi-num" style="color:'+k.c+';">'+k.n+'</div>' +
              '<div class="kpi-lbl">'+k.l+'</div>' +
              '<span class="kpi-chip" style="background:#FEF2F2;color:'+EG+';">'+pct+'% success rate</span>' +
@@ -780,10 +761,10 @@
 <div class="mob-nav">
   <div class="mob-nav-inner">
     <button class="mob-nav-btn active" id="mob-nav-overview" onclick="showView('overview');updateMobNav('overview')">
-      <span class="mob-icon">&#128202;</span>Overview
+      Overview
     </button>
     <button class="mob-nav-btn" id="mob-nav-reports" onclick="showView('reports');updateMobNav('reports')">
-      <span class="mob-icon">&#127963;</span>District Reports
+      District Reports
     </button>
   </div>
 </div>
