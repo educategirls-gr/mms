@@ -52,6 +52,18 @@ function apiResponse(e, method) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+// ------------------------------------------------------------
+//  TEST FUNCTION — Run this once from GAS editor to authorize MailApp
+// ------------------------------------------------------------
+function authorizeMailApp() {
+  MailApp.sendEmail({
+    to: Session.getActiveUser().getEmail(),
+    subject: 'EG MMS — MailApp Authorization Successful',
+    body: 'MailApp is now authorized. Colleague notifications will work.'
+  });
+  Logger.log('MailApp authorized successfully.');
+}
+
 function doGet(e) {
   var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : '';
   if (action) return apiResponse(e, 'GET');
@@ -980,6 +992,8 @@ function getAllMyMeetings(email) {
 //  COLLEAGUE MEETING NOTIFICATION EMAIL
 // ------------------------------------------------------------
 function sendColleagueNotification(data, mtgId) {
+  if (!data || !data.colleagueName || !data.colleagueName.trim()) return;
+
   // Find colleague email by name in Employee_DB
   var colleague = getEmployeeByName(data.colleagueName.trim());
   if (!colleague || !colleague.email) return; // not found, skip
