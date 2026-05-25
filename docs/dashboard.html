@@ -915,14 +915,21 @@
     gasFetch('getMyMeetings', { email: SESSION.email }, renderManageMeetings, function(e) {
       console.error('getMyMeetings failed:', e);
       document.getElementById('manage-content').innerHTML =
-        '<div class="empty-state"><p style="color:#DC2626;">Failed to load meetings. Please refresh and try again.</p></div>';
+        '<div class="empty-state"><p style="color:#DC2626;">Failed to load meetings. Please refresh and try again.<br><small>' + (e ? e.message : '') + '</small></p></div>';
     });
   }
 
   var _manageMeetings = [];
   function renderManageMeetings(list) {
-    _manageMeetings = (list || []).filter(function(m) { return !m.status || m.status === 'Planned' || m.status === 'Postponed' || m.status === 'Follow-up'; });
+    console.log('getMyMeetings raw response:', JSON.stringify(list));
+    var allForUser = list || [];
+    _manageMeetings = allForUser.filter(function(m) {
+      var ok = !m.status || m.status === 'Planned' || m.status === 'Postponed' || m.status === 'Follow-up';
+      if (!ok) console.log('Filtered out:', m.meetingId, 'status:', m.status);
+      return ok;
+    });
     _manageMeetings.reverse();
+    console.log('Manage meetings after filter:', _manageMeetings.length, 'of', allForUser.length);
     if (_manageMeetings.length === 0) {
       document.getElementById('manage-content').innerHTML =
         '<div class="empty-state"><div class="empty-icon">📋</div><div style="font-size:15px;font-weight:700;color:#374151;margin-bottom:6px;">No Upcoming Meetings</div><div style="font-size:13px;color:#9CA3AF;margin-bottom:16px;">Click below to plan a new meeting</div><button onclick="showView(\'create\')" style="padding:10px 22px;background:#7B1010;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">+ Plan a Meeting</button></div>';
