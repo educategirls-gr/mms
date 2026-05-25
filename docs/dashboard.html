@@ -912,9 +912,10 @@
   function loadManageMeetings() {
     document.getElementById('manage-content').innerHTML =
       '<div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>';
-    gasFetch('getMyMeetings', { email: SESSION.email }, renderManageMeetings, function() {
+    gasFetch('getMyMeetings', { email: SESSION.email }, renderManageMeetings, function(e) {
+      console.error('getMyMeetings failed:', e);
       document.getElementById('manage-content').innerHTML =
-        '<div class="empty-state"><p>Failed to load. Please try again.</p></div>';
+        '<div class="empty-state"><p style="color:#DC2626;">Failed to load meetings. Please refresh and try again.</p></div>';
     });
   }
 

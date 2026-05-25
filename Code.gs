@@ -1488,12 +1488,12 @@ function getEmployeeByEmail(email) {
     var rowEmail = data[i][4] ? data[i][4].toString().trim().toLowerCase() : '';
     if (rowEmail === email) {
       return {
-        district:    data[i][0] || '',
-        block:       data[i][1] || '',
-        name:        data[i][2] || '',
-        designation: data[i][3] || '',
-        email:       data[i][4] || '',
-        role:        data[i][5] || 'Field'
+        district:    (data[i][0] || '').toString().trim(),
+        block:       (data[i][1] || '').toString().trim(),
+        name:        (data[i][2] || '').toString().trim(),
+        designation: (data[i][3] || '').toString().trim(),
+        email:       (data[i][4] || '').toString().trim(),
+        role:        (data[i][5] || 'Field').toString().trim()
       };
     }
   }
