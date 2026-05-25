@@ -9,7 +9,7 @@ var MEETINGS_SHEET   = 'Plan Meetings';
 var CONDUCTED_SHEET  = 'Conducted Meetings';
 var POSTPONED_SHEET  = 'Postponed Meetings';
 var CANCELLED_SHEET  = 'Cancelled Meetings';
-var DRIVE_ROOT_ID    = '1TlayZ0R6xCMwmumqPbQFxJ24eqp71dB1'; // EG-GR-Meetings Drive folder
+var DRIVE_ROOT_ID    = '1RjULM7kZFrqYggRUW6YQeuRB-aiGKrtB'; // EG-GR-Meetings Drive folder
 var OTP_EXPIRY_SEC   = 600;
 var ALLOWED_DOMAIN   = 'educategirls.ngo';
 
