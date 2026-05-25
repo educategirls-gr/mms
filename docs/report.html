@@ -308,16 +308,25 @@
     <!-- ══════════ VIEW: DISTRICT REPORTS ══════════ -->
     <div id="view-reports" class="view">
 
-      <!-- District selector -->
+      <!-- District + Month selector -->
       <div class="card" style="margin-bottom:18px;">
-        <div class="card-title">🏛️ Select District <span class="card-title-line"></span></div>
-        <div class="district-select-wrap">
+        <div class="card-title">🏛️ Select District &amp; Month <span class="card-title-line"></span></div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
           <select id="rp-district-sel" onchange="onDistrictChange(this.value)">
             <option value="">— Select a District —</option>
+          </select>
+          <select id="rp-month-sel" onchange="onMonthChange(this.value)"
+            style="display:none;padding:10px 16px;border:2px solid #E8EAF0;border-radius:10px;
+                   font-size:14px;font-weight:600;color:#6B0D0D;background:#fff;cursor:pointer;
+                   min-width:180px;outline:none;appearance:none;
+                   background-image:url('data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%2712%27 viewBox=%270 0 12 12%27%3E%3Cpath fill=%27%236B0D0D%27 d=%27M6 8L1 3h10z%27/%3E%3C/svg%3E');
+                   background-repeat:no-repeat;background-position:right 14px center;padding-right:36px;">
+            <option value="">All Months</option>
           </select>
           <div id="rp-sel-loading" style="display:none;color:#9CA3AF;font-size:13px;font-weight:600;">
             <span class="spinner" style="width:18px;height:18px;border-width:2px;vertical-align:middle;margin-right:6px;"></span>Loading…
           </div>
+          <div id="rp-month-count" style="display:none;font-size:12px;color:#6B7280;background:#F3F4F6;padding:6px 12px;border-radius:8px;font-weight:600;"></div>
         </div>
       </div>
 
@@ -362,6 +371,7 @@
     new Date().toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
 
   var _data = null;
+  var _districtData = null;  // cached full district report
 
   // ── API ───────────────────────────────────────────────────────
   function loadData(onDone) {
@@ -573,7 +583,28 @@
     });
   }
 
+  // Extract "Apr 2026" from "15 Apr 2026"
+  function monthKey(dateStr) {
+    if (!dateStr) return '';
+    var p = dateStr.trim().split(' ');
+    return p.length >= 3 ? p[1] + ' ' + p[2] : '';
+  }
+
+  // Sort months chronologically
+  var _MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function monthSortVal(mk) {
+    var p = mk.split(' '); // ["Apr","2026"]
+    return parseInt(p[1] || 0) * 12 + _MONTHS.indexOf(p[0] || '');
+  }
+
   function onDistrictChange(district) {
+    // Reset month dropdown
+    var mSel = document.getElementById('rp-month-sel');
+    mSel.style.display = 'none';
+    while (mSel.options.length > 1) mSel.remove(1);
+    document.getElementById('rp-month-count').style.display = 'none';
+    _districtData = null;
+
     if (!district) {
       document.getElementById('rp-detail').style.display = 'none';
       document.getElementById('rp-placeholder').style.display = 'block';
@@ -587,7 +618,9 @@
       .then(function(res) {
         document.getElementById('rp-sel-loading').style.display = 'none';
         if (!res.success) { alert('Error: ' + (res.message || 'Unknown error')); return; }
-        renderDistrictReport(res);
+        _districtData = res;
+        populateMonthDropdown(res.conducted || []);
+        renderDistrictReport(res, '');
       })
       .catch(function(e) {
         document.getElementById('rp-sel-loading').style.display = 'none';
@@ -595,14 +628,51 @@
       });
   }
 
-  function renderDistrictReport(d) {
+  function populateMonthDropdown(conducted) {
+    var monthSet = {};
+    conducted.forEach(function(r) {
+      var mk = monthKey(r.conductDate);
+      if (mk) monthSet[mk] = true;
+    });
+    var months = Object.keys(monthSet).sort(function(a,b){ return monthSortVal(a) - monthSortVal(b); });
+    var mSel = document.getElementById('rp-month-sel');
+    while (mSel.options.length > 1) mSel.remove(1);
+    months.forEach(function(m) {
+      var o = document.createElement('option'); o.value = m; o.textContent = m;
+      mSel.appendChild(o);
+    });
+    if (months.length > 0) mSel.style.display = '';
+  }
+
+  function onMonthChange(month) {
+    if (!_districtData) return;
+    renderDistrictReport(_districtData, month);
+  }
+
+  function renderDistrictReport(d, filterMonth) {
     document.getElementById('rp-detail').style.display = 'block';
-    document.getElementById('rp-dist-label').textContent = d.district.toUpperCase() + ' DISTRICT';
+    var label = d.district.toUpperCase() + ' DISTRICT';
+    if (filterMonth) label += ' — ' + filterMonth;
+    document.getElementById('rp-dist-label').textContent = label;
+
+    var allConducted = d.conducted || [];
+    var conducted = filterMonth
+      ? allConducted.filter(function(r){ return monthKey(r.conductDate) === filterMonth; })
+      : allConducted;
+
+    // Month count chip
+    var countEl = document.getElementById('rp-month-count');
+    if (filterMonth) {
+      countEl.textContent = conducted.length + ' meeting' + (conducted.length !== 1 ? 's' : '') + ' in ' + filterMonth;
+      countEl.style.display = 'block';
+    } else {
+      countEl.style.display = 'none';
+    }
+
+    // KPI row — always show full district totals
     var t = d.totals || {};
     var pending = (t.planned||0) + (t.postponed||0) + (t.followup||0);
     var pct = t.total > 0 ? Math.round((t.conducted/t.total)*100) : 0;
-
-    // KPI row
     var kpis = [
       { icon:'📅', n:t.total||0,     l:'Total Planned',  c:'#1D4ED8' },
       { icon:'✅', n:t.conducted||0, l:'Conducted',       c:'#065F46' },
@@ -618,27 +688,42 @@
              '</div>';
     }).join('');
 
-    // Post-wise breakdown
-    var byPost = d.byPost || [];
+    // Post-wise — rebuild from filtered conducted list
+    var postMap = {};
+    conducted.forEach(function(r) {
+      var post = r.post || 'Unknown';
+      var emp  = r.employeeName || '';
+      if (!postMap[post]) postMap[post] = { count:0, empMap:{} };
+      postMap[post].count++;
+      postMap[post].empMap[emp] = (postMap[post].empMap[emp] || 0) + 1;
+    });
+    var byPost = [];
+    for (var p in postMap) {
+      var emps = [];
+      for (var en in postMap[p].empMap) emps.push({ name:en, count:postMap[p].empMap[en] });
+      emps.sort(function(a,b){ return b.count - a.count; });
+      byPost.push({ post:p, count:postMap[p].count, employees:emps });
+    }
+    byPost.sort(function(a,b){ return b.count - a.count; });
+
     document.getElementById('rp-bypost').innerHTML = byPost.length === 0
-      ? '<div style="color:#9CA3AF;font-size:13px;padding:12px 0;">No conducted meetings yet</div>'
-      : byPost.map(function(p) {
-          var empRows = (p.employees || []).map(function(em) {
+      ? '<div style="color:#9CA3AF;font-size:13px;padding:12px 0;">No conducted meetings' + (filterMonth ? ' in ' + filterMonth : '') + '</div>'
+      : byPost.map(function(bp) {
+          var empRows = bp.employees.map(function(em) {
             return '<div class="post-emp-row">' +
                    '<span class="post-emp-name">'+em.name+'</span>' +
                    '<span class="post-emp-n">'+em.count+'</span></div>';
           }).join('');
           return '<div class="post-card">' +
                  '<div class="post-card-head">' +
-                 '<div class="post-card-name">'+p.post+'</div>' +
-                 '<div class="post-card-count">'+p.count+'</div>' +
+                 '<div class="post-card-name">'+bp.post+'</div>' +
+                 '<div class="post-card-count">'+bp.count+'</div>' +
                  '</div>' + empRows + '</div>';
         }).join('');
 
-    // Conducted table
-    var conducted = d.conducted || [];
+    // Conducted table — filtered
     document.getElementById('rp-table').innerHTML = conducted.length === 0
-      ? '<div style="color:#9CA3AF;font-size:13px;padding:20px 0;text-align:center;">No conducted meetings in this district</div>'
+      ? '<div style="color:#9CA3AF;font-size:13px;padding:20px 0;text-align:center;">No conducted meetings' + (filterMonth ? ' in ' + filterMonth : ' in this district') + '</div>'
       : '<table class="rep-table"><thead><tr>' +
         '<th>#</th><th>Meeting ID</th><th>Date</th><th>By</th><th>Designation</th>' +
         '<th>Met With</th><th>Post</th><th>Purpose</th><th>Type</th><th>MoM</th><th>Photos</th>' +
