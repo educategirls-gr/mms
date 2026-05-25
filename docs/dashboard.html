@@ -328,6 +328,27 @@
       .card          { padding: 14px 12px; }
       .card-title    { margin: -14px -12px 14px; }
     }
+
+    /* ── Dashboard / Report views ─────────────────────── */
+    .kpi-card { background:#fff; border:1px solid #E5E7EB; border-radius:12px; padding:18px 16px; box-shadow:0 1px 4px rgba(0,0,0,.06); }
+    .kpi-num  { font-size:32px; font-weight:800; line-height:1; }
+    .kpi-lbl  { font-size:11px; text-transform:uppercase; letter-spacing:.8px; color:#6B7280; margin-top:6px; font-weight:600; }
+    .bar-row  { display:flex; align-items:center; gap:8px; margin-bottom:8px; font-size:12px; }
+    .bar-label{ width:130px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#374151; flex-shrink:0; }
+    .bar-track{ flex:1; background:#F3F4F6; border-radius:20px; height:10px; overflow:hidden; }
+    .bar-fill { height:100%; border-radius:20px; transition:width .4s; }
+    .bar-val  { width:32px; text-align:right; color:#6B7280; flex-shrink:0; }
+    .rep-table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+    .rep-table th { background:#7B1010; color:#fff; padding:9px 12px; text-align:left; font-weight:600; white-space:nowrap; }
+    .rep-table td { padding:8px 12px; border-bottom:1px solid #F3F4F6; color:#374151; }
+    .rep-table tr:hover td { background:#FEF2F2; }
+    .badge-c { background:#D1FAE5; color:#065F46; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:700; }
+    .badge-p { background:#DBEAFE; color:#1E40AF; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:700; }
+    .badge-x { background:#FEE2E2; color:#991B1B; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:700; }
+    @media(max-width:900px){
+      #dash-kpi-row { grid-template-columns:repeat(2,1fr)!important; }
+      #view-dashboard > div + div, #view-reports > div + div { grid-template-columns:1fr!important; }
+    }
   </style>
 </head>
 <body>
@@ -363,6 +384,13 @@
     </div>
     <div class="nav-item" id="nav-list" onclick="showView('list')">
       <span class="nav-icon">📄</span><span>My Meetings</span>
+    </div>
+    <div class="nav-label" style="margin-top:10px;">Analytics</div>
+    <div class="nav-item" id="nav-dashboard" onclick="showView('dashboard')">
+      <span class="nav-icon">📊</span><span>Dashboard</span>
+    </div>
+    <div class="nav-item" id="nav-reports" onclick="showView('reports')">
+      <span class="nav-icon">📈</span><span>Reports</span>
     </div>
   </div>
   <div class="sidebar-bottom">
@@ -701,6 +729,64 @@
       </div>
     </div>
 
+    <!-- View: Dashboard (Cards) -->
+    <div id="view-dashboard" class="view">
+      <div id="dash-loading" style="text-align:center;padding:40px 0;color:#6B7280;font-size:14px;">⏳ Loading dashboard…</div>
+      <div id="dash-content" style="display:none;">
+        <!-- KPI Cards -->
+        <div id="dash-kpi-row" style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px;"></div>
+        <!-- Success Rate + District Bars -->
+        <div style="display:grid;grid-template-columns:1fr 2fr;gap:14px;margin-bottom:18px;">
+          <div class="card" style="padding:20px;">
+            <div style="font-size:12px;font-weight:700;color:#7B1010;text-transform:uppercase;letter-spacing:.8px;margin-bottom:16px;">✅ Success Rate</div>
+            <div id="dash-success-rate" style="text-align:center;"></div>
+          </div>
+          <div class="card" style="padding:20px;">
+            <div style="font-size:12px;font-weight:700;color:#7B1010;text-transform:uppercase;letter-spacing:.8px;margin-bottom:16px;">🏛️ District-wise Overview</div>
+            <div id="dash-district-bars"></div>
+          </div>
+        </div>
+        <!-- Meeting Types -->
+        <div class="card" style="padding:20px;margin-bottom:18px;">
+          <div style="font-size:12px;font-weight:700;color:#7B1010;text-transform:uppercase;letter-spacing:.8px;margin-bottom:16px;">📋 Meetings by Type</div>
+          <div id="dash-type-bars" style="display:flex;flex-wrap:wrap;gap:10px;"></div>
+        </div>
+        <!-- Recent Conducted -->
+        <div class="card" style="padding:20px;">
+          <div style="font-size:12px;font-weight:700;color:#7B1010;text-transform:uppercase;letter-spacing:.8px;margin-bottom:16px;">🕐 Recently Conducted</div>
+          <div id="dash-recent"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- View: Reports -->
+    <div id="view-reports" class="view">
+      <div id="rep-loading" style="text-align:center;padding:40px 0;color:#6B7280;font-size:14px;">⏳ Loading reports…</div>
+      <div id="rep-content" style="display:none;">
+        <!-- District Table -->
+        <div class="card" style="padding:20px;margin-bottom:18px;">
+          <div style="font-size:12px;font-weight:700;color:#7B1010;text-transform:uppercase;letter-spacing:.8px;margin-bottom:14px;">🏛️ District-wise Summary</div>
+          <div id="rep-district-table" style="overflow-x:auto;"></div>
+        </div>
+        <!-- Two-col: Type + Purpose -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px;">
+          <div class="card" style="padding:20px;">
+            <div style="font-size:12px;font-weight:700;color:#7B1010;text-transform:uppercase;letter-spacing:.8px;margin-bottom:14px;">📋 Meeting Types</div>
+            <div id="rep-types"></div>
+          </div>
+          <div class="card" style="padding:20px;">
+            <div style="font-size:12px;font-weight:700;color:#7B1010;text-transform:uppercase;letter-spacing:.8px;margin-bottom:14px;">🎯 Meeting Purposes</div>
+            <div id="rep-purposes"></div>
+          </div>
+        </div>
+        <!-- All Conducted Meetings Table -->
+        <div class="card" style="padding:20px;">
+          <div style="font-size:12px;font-weight:700;color:#7B1010;text-transform:uppercase;letter-spacing:.8px;margin-bottom:14px;">📋 All Conducted Meetings</div>
+          <div id="rep-conducted-table" style="overflow-x:auto;"></div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -803,12 +889,14 @@
 
   // ── View navigation ──────────────────────────────────────────
   var TOPBAR = {
-    create: { title: 'Plan Your Meeting',   sub: 'Plan your upcoming meetings' },
-    manage: { title: 'Manage Meetings',     sub: 'Update meeting outcomes and action points' },
-    list:   { title: 'My Meetings',         sub: 'Your planned and completed meetings' }
+    create:    { title: 'Plan Your Meeting',    sub: 'Plan your upcoming meetings' },
+    manage:    { title: 'Manage Meetings',      sub: 'Update meeting outcomes and action points' },
+    list:      { title: 'My Meetings',          sub: 'Your planned and completed meetings' },
+    dashboard: { title: 'Dashboard',            sub: 'Organisation-wide meeting summary' },
+    reports:   { title: 'Reports',              sub: 'District-wise analytics and meeting details' }
   };
   function showView(view) {
-    ['create','manage','list'].forEach(function(v) {
+    ['create','manage','list','dashboard','reports'].forEach(function(v) {
       document.getElementById('view-' + v).classList.remove('active');
       document.getElementById('nav-'  + v).classList.remove('active');
     });
@@ -817,8 +905,10 @@
     clearAlerts();
     document.getElementById('topbar-title').textContent = TOPBAR[view].title;
     document.getElementById('topbar-sub').textContent   = TOPBAR[view].sub;
-    if (view === 'list')   loadMeetings();
-    if (view === 'manage') loadManageMeetings();
+    if (view === 'list')      loadMeetings();
+    if (view === 'manage')    loadManageMeetings();
+    if (view === 'dashboard') loadDashboard();
+    if (view === 'reports')   loadReports();
     // Close sidebar on mobile after navigation
     document.getElementById('sidebar').classList.remove('mob-open');
     document.getElementById('mob-overlay').classList.remove('mob-open');
@@ -1392,6 +1482,135 @@
   // ── Logout ───────────────────────────────────────────────────
   function logout()       { try { sessionStorage.clear(); } catch(e) {} window.location.href = 'index.html'; }
   function forceLogout(msg) { alert(msg); logout(); }
+
+  // ── Dashboard & Reports ──────────────────────────────────────
+  var _dashData = null;
+
+  function loadDashboard() {
+    if (_dashData) { renderDashboard(_dashData); return; }
+    document.getElementById('dash-loading').style.display = 'block';
+    document.getElementById('dash-content').style.display = 'none';
+    gasFetch('getDashboardStats', { email: SESSION.email }, function(res) {
+      document.getElementById('dash-loading').style.display = 'none';
+      if (!res.success) { document.getElementById('dash-loading').textContent = '⚠️ ' + (res.message||'Error'); document.getElementById('dash-loading').style.display='block'; return; }
+      _dashData = res;
+      renderDashboard(res);
+    }, function(e) { document.getElementById('dash-loading').textContent = '⚠️ ' + e.message; });
+  }
+
+  function loadReports() {
+    if (_dashData) { renderReports(_dashData); return; }
+    document.getElementById('rep-loading').style.display = 'block';
+    document.getElementById('rep-content').style.display = 'none';
+    gasFetch('getDashboardStats', { email: SESSION.email }, function(res) {
+      document.getElementById('rep-loading').style.display = 'none';
+      if (!res.success) { document.getElementById('rep-loading').textContent = '⚠️ ' + (res.message||'Error'); document.getElementById('rep-loading').style.display='block'; return; }
+      _dashData = res;
+      renderReports(res);
+    }, function(e) { document.getElementById('rep-loading').textContent = '⚠️ ' + e.message; });
+  }
+
+  function renderDashboard(d) {
+    document.getElementById('dash-content').style.display = 'block';
+    var t = d.totals || {};
+    var successPct = t.total > 0 ? Math.round((t.conducted / t.total) * 100) : 0;
+    var kpiDefs = [
+      { num: t.total||0,     lbl: 'Total Meetings', color: '#1D4ED8', bg: '#EFF6FF' },
+      { num: t.conducted||0, lbl: 'Conducted',       color: '#065F46', bg: '#D1FAE5' },
+      { num: t.planned||0,   lbl: 'Pending',         color: '#92400E', bg: '#FEF3C7' },
+      { num: t.cancelled||0, lbl: 'Cancelled',        color: '#991B1B', bg: '#FEE2E2' }
+    ];
+    document.getElementById('dash-kpi-row').innerHTML = kpiDefs.map(function(k) {
+      return '<div class="kpi-card" style="border-top:3px solid '+k.color+';background:'+k.bg+';">' +
+             '<div class="kpi-num" style="color:'+k.color+'">'+k.num+'</div>' +
+             '<div class="kpi-lbl">'+k.lbl+'</div></div>';
+    }).join('');
+    var succColor = successPct>=80?'#065F46':successPct>=60?'#92400E':'#991B1B';
+    var barColor  = successPct>=80?'#10B981':successPct>=60?'#F59E0B':'#EF4444';
+    document.getElementById('dash-success-rate').innerHTML =
+      '<div style="font-size:52px;font-weight:900;color:'+succColor+';">'+successPct+'%</div>' +
+      '<div style="font-size:12px;color:#6B7280;margin-top:4px;">Conducted / Total</div>' +
+      '<div style="margin-top:14px;background:#E5E7EB;border-radius:20px;height:12px;overflow:hidden;"><div style="height:100%;border-radius:20px;background:'+barColor+';width:'+successPct+'%;"></div></div>';
+    var dists = d.districts || [];
+    var maxTotal = dists.reduce(function(m,x){ return Math.max(m,x.total||0); }, 1);
+    document.getElementById('dash-district-bars').innerHTML = dists.map(function(dist) {
+      var cPct = Math.round((dist.conducted/maxTotal)*100);
+      return '<div class="bar-row"><div class="bar-label" title="'+dist.name+'">'+dist.name+'</div>' +
+             '<div class="bar-track"><div class="bar-fill" style="width:'+cPct+'%;background:#7B1010;"></div></div>' +
+             '<div class="bar-val">'+dist.conducted+'/'+dist.total+'</div></div>';
+    }).join('') || '<div style="color:#9CA3AF;font-size:13px;">No data yet</div>';
+    var types = d.byType || [];
+    var maxT = types.reduce(function(m,x){ return Math.max(m,x.count||0); }, 1);
+    var typeIcons = {'One-on-One':'👤','Group Meeting':'👥','Joint Visit':'🤝','Dept. Review':'📋','Field Visit':'🌾'};
+    document.getElementById('dash-type-bars').innerHTML = types.map(function(tp) {
+      var pct = Math.round((tp.count/maxT)*100);
+      return '<div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:10px;padding:12px 14px;min-width:150px;flex:1;">' +
+             '<div style="font-size:18px;margin-bottom:6px;">'+(typeIcons[tp.name]||'📌')+'</div>' +
+             '<div style="font-size:13px;font-weight:700;color:#111827;">'+tp.name+'</div>' +
+             '<div style="font-size:11px;color:#6B7280;margin-top:2px;">'+tp.count+' meeting'+(tp.count!==1?'s':'')+'</div>' +
+             '<div style="margin-top:8px;background:#E5E7EB;border-radius:20px;height:6px;"><div style="height:100%;border-radius:20px;background:#7B1010;width:'+pct+'%;"></div></div>' +
+             '</div>';
+    }).join('') || '<div style="color:#9CA3AF;font-size:13px;">No data yet</div>';
+    var recent = d.recentConducted || [];
+    document.getElementById('dash-recent').innerHTML = recent.length === 0
+      ? '<div style="color:#9CA3AF;font-size:13px;">No conducted meetings yet</div>'
+      : '<table class="rep-table"><thead><tr><th>Meeting ID</th><th>District</th><th>By</th><th>Stakeholder</th><th>Post</th><th>Purpose</th><th>Date</th></tr></thead><tbody>' +
+        recent.map(function(r) {
+          return '<tr><td><span style="font-size:11px;font-weight:700;color:#7B1010;">'+r.meetingId+'</span></td>' +
+                 '<td>'+r.district+'</td><td>'+r.employeeName+'</td>' +
+                 '<td><strong>'+r.stakeholderName+'</strong></td><td>'+r.stakeholderPost+'</td>' +
+                 '<td>'+r.purpose+'</td><td>'+r.conductDate+'</td></tr>';
+        }).join('') + '</tbody></table>';
+  }
+
+  function renderReports(d) {
+    document.getElementById('rep-content').style.display = 'block';
+    var dists = d.districts || [];
+    document.getElementById('rep-district-table').innerHTML =
+      '<table class="rep-table"><thead><tr>' +
+      '<th>District</th><th>Total</th><th>Conducted</th><th>Pending</th><th>Cancelled</th><th>Success %</th>' +
+      '</tr></thead><tbody>' +
+      dists.map(function(dist) {
+        var pct = dist.total > 0 ? Math.round((dist.conducted/dist.total)*100) : 0;
+        var color = pct>=80?'#065F46':pct>=60?'#92400E':'#991B1B';
+        return '<tr><td><strong>'+dist.name+'</strong></td><td><strong>'+dist.total+'</strong></td>' +
+               '<td><span class="badge-c">'+dist.conducted+'</span></td>' +
+               '<td><span class="badge-p">'+dist.planned+'</span></td>' +
+               '<td><span class="badge-x">'+dist.cancelled+'</span></td>' +
+               '<td><strong style="color:'+color+';">'+pct+'%</strong></td></tr>';
+      }).join('') +
+      (function(){ var t=d.totals||{}; var pct=t.total>0?Math.round((t.conducted/t.total)*100):0;
+        return '<tr style="background:#FEF2F2;font-weight:700;"><td>TOTAL</td><td>'+t.total+'</td>' +
+               '<td><span class="badge-c">'+t.conducted+'</span></td><td><span class="badge-p">'+t.planned+'</span></td>' +
+               '<td><span class="badge-x">'+t.cancelled+'</span></td><td style="color:#7B1010;">'+pct+'%</td></tr>'; })() +
+      '</tbody></table>';
+    var types = d.byType || []; var maxT = types.reduce(function(m,x){ return Math.max(m,x.count||0); }, 1);
+    document.getElementById('rep-types').innerHTML = types.map(function(tp) {
+      var pct = Math.round((tp.count/maxT)*100);
+      return '<div class="bar-row"><div class="bar-label">'+tp.name+'</div>' +
+             '<div class="bar-track"><div class="bar-fill" style="width:'+pct+'%;background:#7B1010;"></div></div>' +
+             '<div class="bar-val">'+tp.count+'</div></div>';
+    }).join('') || '<div style="color:#9CA3AF;font-size:13px;">No data</div>';
+    var purps = d.byPurpose || []; var maxP = purps.reduce(function(m,x){ return Math.max(m,x.count||0); }, 1);
+    document.getElementById('rep-purposes').innerHTML = purps.map(function(pu) {
+      var pct = Math.round((pu.count/maxP)*100);
+      return '<div class="bar-row"><div class="bar-label">'+pu.name+'</div>' +
+             '<div class="bar-track"><div class="bar-fill" style="width:'+pct+'%;background:#2563EB;"></div></div>' +
+             '<div class="bar-val">'+pu.count+'</div></div>';
+    }).join('') || '<div style="color:#9CA3AF;font-size:13px;">No data</div>';
+    var recent = d.recentConducted || [];
+    document.getElementById('rep-conducted-table').innerHTML = recent.length === 0
+      ? '<div style="color:#9CA3AF;font-size:13px;padding:16px 0;">No conducted meetings yet</div>'
+      : '<table class="rep-table"><thead><tr><th>#</th><th>Meeting ID</th><th>District</th><th>Employee</th><th>Stakeholder</th><th>Post</th><th>Purpose</th><th>Type</th><th>Date</th></tr></thead><tbody>' +
+        recent.map(function(r,i) {
+          return '<tr><td style="color:#9CA3AF;">'+(i+1)+'</td><td><span style="font-size:11px;font-weight:700;color:#7B1010;">'+r.meetingId+'</span></td>' +
+                 '<td>'+r.district+'</td><td>'+r.employeeName+'</td><td><strong>'+r.stakeholderName+'</strong></td>' +
+                 '<td style="font-size:11px;color:#6B7280;">'+r.stakeholderPost+'</td><td>'+r.purpose+'</td>' +
+                 '<td><span style="background:#FEF3C7;color:#92400E;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;">'+r.meetingType+'</span></td>' +
+                 '<td>'+r.conductDate+'</td></tr>';
+        }).join('') + '</tbody></table>';
+  }
+
 </script>
 </body>
 </html>

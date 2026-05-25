@@ -37,6 +37,7 @@ function apiResponse(e, method) {
     else if (action === 'getMyMeetings')        result = getMyMeetings(e.parameter.email || '');
     else if (action === 'getAllMyMeetings')      result = getAllMyMeetings(e.parameter.email || '');
     else if (action === 'getDistrictEmployees') result = getDistrictEmployees(e.parameter.district || '', e.parameter.email || '');
+    else if (action === 'getDashboardStats')    result = getDashboardStats(e.parameter.email || '');
     else if (action === 'deleteMeeting')        result = deleteMeeting(e.parameter.meetingId || '');
     else if (action === 'saveMeeting')          result = saveMeeting(body);
     else if (action === 'conductMeeting')       result = conductMeeting(body);
@@ -1237,6 +1238,246 @@ function getEmployeeByName(name) {
 // ------------------------------------------------------------
 //  EMPLOYEE LOOKUP
 // ------------------------------------------------------------
+// ------------------------------------------------------------
+//  DASHBOARD STATS — cards & reports data
+// ------------------------------------------------------------
+function getDashboardStats(email) {
+  try {
+    var ss  = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var emp = getEmployeeByEmail(email);
+    var userRole     = emp ? (emp.role     || 'Field') : 'Field';
+    var userDistrict = emp ? (emp.district || '')      : '';
+    var isState      = (userRole === 'State');
+
+    // ── Plan Meetings ──────────────────────────────────────────
+    var planSheet = ss.getSheetByName(MEETINGS_SHEET);
+    var planData  = (planSheet && planSheet.getLastRow() > 1) ? planSheet.getDataRange().getValues() : [];
+
+    var distMap = {};   // district → {total,conducted,planned,cancelled,postponed}
+    var typeMap = {};
+    var purpMap = {};
+    var monthMap= {};   // "MMM YYYY" → conducted count
+
+    for (var i = 1; i < planData.length; i++) {
+      var row    = planData[i];
+      var dist   = (row[1]  || '').toString().trim();
+      var status = (row[13] || 'Planned').toString().trim().toLowerCase();
+      var type   = (row[8]  || '').toString().trim();
+      var purp   = (row[11] || '').toString().trim();
+      var dateV  = row[5];
+
+      if (!isState && dist.toUpperCase() !== userDistrict.toUpperCase()) continue;
+
+      var dKey = dist.charAt(0).toUpperCase() + dist.slice(1).toLowerCase();
+      if (!distMap[dKey]) distMap[dKey] = {total:0,conducted:0,planned:0,cancelled:0,postponed:0};
+      distMap[dKey].total++;
+      if      (status === 'conducted') distMap[dKey].conducted++;
+      else if (status === 'planned')   distMap[dKey].planned++;
+      else if (status === 'cancelled') distMap[dKey].cancelled++;
+      else if (status === 'postponed') distMap[dKey].postponed++;
+
+      if (type) typeMap[type] = (typeMap[type] || 0) + 1;
+      if (purp) purpMap[purp] = (purpMap[purp] || 0) + 1;
+
+      if (status === 'conducted' && dateV) {
+        var d = new Date(dateV);
+        if (!isNaN(d)) {
+          var mk = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] + ' ' + d.getFullYear();
+          monthMap[mk] = (monthMap[mk] || 0) + 1;
+        }
+      }
+    }
+
+    // totals
+    var totals = {total:0, conducted:0, planned:0, cancelled:0, postponed:0};
+    var distArr = [];
+    for (var d2 in distMap) {
+      var dm = distMap[d2];
+      totals.total     += dm.total;
+      totals.conducted += dm.conducted;
+      totals.planned   += dm.planned;
+      totals.cancelled += dm.cancelled;
+      totals.postponed += dm.postponed;
+      distArr.push({name:d2, total:dm.total, conducted:dm.conducted, planned:dm.planned, cancelled:dm.cancelled, postponed:dm.postponed});
+    }
+    distArr.sort(function(a,b){ return a.name.localeCompare(b.name); });
+
+    // type array
+    var typeArr = [];
+    for (var t in typeMap) typeArr.push({name:t, count:typeMap[t]});
+    typeArr.sort(function(a,b){ return b.count - a.count; });
+
+    // purpose array
+    var purpArr = [];
+    for (var p in purpMap) purpArr.push({name:p, count:purpMap[p]});
+    purpArr.sort(function(a,b){ return b.count - a.count; });
+
+    // month trend (last 6)
+    var monthArr = [];
+    for (var m in monthMap) monthArr.push({month:m, count:monthMap[m]});
+
+    // recent conducted (last 8)
+    var cSheet = ss.getSheetByName(CONDUCTED_SHEET);
+    var recent = [];
+    if (cSheet && cSheet.getLastRow() > 1) {
+      var cd = cSheet.getDataRange().getValues();
+      for (var ci = cd.length - 1; ci >= 1 && recent.length < 8; ci--) {
+        var cr = cd[ci];
+        var cdist = (cr[1]||'').toString().trim();
+        if (!isState && cdist.toUpperCase() !== userDistrict.toUpperCase()) continue;
+        recent.push({
+          meetingId:       (cr[0]||'').toString(),
+          district:        (cr[1]||'').toString(),
+          employeeName:    (cr[2]||'').toString(),
+          post:            (cr[3]||'').toString(),
+          stakeholderName: (cr[9]||'').toString(),
+          stakeholderPost: (cr[10]||'').toString(),
+          purpose:         (cr[11]||'').toString(),
+          meetingType:     (cr[8]||'').toString(),
+          conductDate:     (cr[13]||'').toString()
+        });
+      }
+    }
+
+    return {
+      success:        true,
+      role:           userRole,
+      district:       userDistrict,
+      totals:         totals,
+      districts:      distArr,
+      byType:         typeArr,
+      byPurpose:      purpArr,
+      monthTrend:     monthArr,
+      recentConducted:recent
+    };
+  } catch(err) {
+    return { success: false, message: err.message };
+  }
+}
+
+// ------------------------------------------------------------
+//  INSERT SAMPLE DATA — run once from GAS editor
+// ------------------------------------------------------------
+function insertSampleData() {
+  var ss        = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var planSheet = ss.getSheetByName(MEETINGS_SHEET);
+  var condSheet = ss.getSheetByName(CONDUCTED_SHEET);
+  var cancSheet = ss.getSheetByName('Cancelled Meetings');
+
+  if (!planSheet || !condSheet) { Logger.log('Sheets not found'); return; }
+
+  var now = new Date();
+  function ts(d) { return d.toLocaleString('en-IN'); }
+
+  // ─── SAMPLE PLAN MEETINGS ─────────────────────────────────────
+  // Cols: MtgID, District, EmpName, Post, Email, Date, Time, Duration,
+  //       Type, StkName, StkPost, Purpose, Agenda, Status, ...SubmittedAt
+  var planRows = [
+    // HARDOI
+    ['MTG-S-H01','Hardoi','Uday Raj','District Impact Specialist','uday.raj@educategirls.ngo','2026-04-10','10:00 AM','1 hr','One-on-One','Rajesh Kumar Verma','BSA','Review Meeting','Quarterly review of enrollment and retention data','Conducted','','','','','','01/04/2026, 9:00:00 am'],
+    ['MTG-S-H02','Hardoi','Rahul Kumar','District Program Officer','rahul.kumar3@educategirls.ngo','2026-04-15','11:00 AM','45 min','One-on-One','Dr. Sunita Pathak','DIET Principal','Enrollment','Discuss strategies for out-of-school girl enrollment','Conducted','','','','Manvendra Mishra','District Program Officer','02/04/2026, 10:00:00 am'],
+    ['MTG-S-H03','Hardoi','Manvendra Mishra','District Program Officer','manvendra.mishra@educategirls.ngo','2026-05-05','3:00 PM','30 min','One-on-One','Anil Tiwari','District Collector','Introductory Meeting','Initial introduction and EG program briefing','Conducted','','','','','','20/04/2026, 2:00:00 pm'],
+    ['MTG-S-H04','Hardoi','Shivangi Verma','District Program Training Officer','shivangi.verma1@educategirls.ngo','2026-05-28','10:00 AM','2 hr','Group Meeting','Smt. Priya Agarwal','ABSA','DTF','Block-level training facilitation with ABSAs','Planned','','','','Rahul Kumar','District Program Officer','22/04/2026, 9:00:00 am'],
+    ['MTG-S-H05','Hardoi','Uday Raj','District Impact Specialist','uday.raj@educategirls.ngo','2026-04-20','2:00 PM','1 hr','One-on-One','Vinod Sharma','CDO','Retention','Retention strategies for upper primary girls — Cancelled due to officer unavailability','Cancelled','','','Officer on leave','','','10/04/2026, 3:00:00 pm'],
+    ['MTG-S-H06','Hardoi','Manvendra Mishra','District Program Officer','manvendra.mishra@educategirls.ngo','2026-05-18','11:30 AM','1 hr','Dept. Review','Ram Kishore','JD','MPR Submission','Submit monthly progress report and discuss targets','Conducted','','','','Uday Raj','District Impact Specialist','15/05/2026, 10:00:00 am'],
+
+    // FATEHPUR
+    ['MTG-S-F01','Fatehpur','Shubham Yadav','District Impact Specialist','shubham.yadav@educategirls.ngo','2026-04-12','10:30 AM','1 hr','One-on-One','Pramod Srivastava','BSA','MPR Submission','Monthly progress report submission and follow-up','Conducted','','','','Deepak Dixit','District Program Officer','05/04/2026, 9:00:00 am'],
+    ['MTG-S-F02','Fatehpur','Deepak Dixit','District Program Officer','deepak.dixit@educategirls.ngo','2026-04-18','11:00 AM','1 hr','One-on-One','Dr. Kavita Mishra','DIET Principal','Review Meeting','Mid-year review of learning outcomes and teacher training','Conducted','','','','','','08/04/2026, 10:00:00 am'],
+    ['MTG-S-F03','Fatehpur','Pushpendra Singh','District Program Training Officer','pushpendra.singh@educategirls.ngo','2026-04-25','9:00 AM','3 hr','Group Meeting','Anil Jaiswal','ABSA','DTF','Cluster-level training on learning assessment tools','Conducted','','','','Shubham Yadav','District Impact Specialist','12/04/2026, 8:00:00 am'],
+    ['MTG-S-F04','Fatehpur','Ashish Rai','District Operational Assistant Lead','ashish.rai@educategirls.ngo','2026-05-30','10:00 AM','45 min','One-on-One','Smt. Rekha Devi','District Collector','Enrollment','Enrollment drive planning for new academic year','Planned','','','','','','18/04/2026, 9:00:00 am'],
+    ['MTG-S-F05','Fatehpur','Shubham Yadav','District Impact Specialist','shubham.yadav@educategirls.ngo','2026-05-02','4:00 PM','30 min','One-on-One','Ajay Tripathi','CDO','Invitation','Invite CDO for EG annual review event','Cancelled','','','Event postponed','','','25/04/2026, 3:00:00 pm'],
+    ['MTG-S-F06','Fatehpur','Deepak Dixit','District Program Officer','deepak.dixit@educategirls.ngo','2026-05-15','11:00 AM','1 hr','One-on-One','Suresh Patel','DC-Training','Learning','Discussion on training calendar and capacity building','Conducted','','','','','','05/05/2026, 10:00:00 am'],
+
+    // GONDA
+    ['MTG-S-G01','Gonda','Atul Pandey','District Impact Specialist','atul.pandey@educategirls.ngo','2026-04-08','10:00 AM','1 hr','One-on-One','Krishna Nand Yadav','BSA','Review Meeting','Review of EG program KPIs and district targets','Conducted','','','','Ashish Kumar Singh','District Program Officer','01/04/2026, 9:00:00 am'],
+    ['MTG-S-G02','Gonda','Ashish Kumar Singh','District Program Officer','ashishkumar.singh1@educategirls.ngo','2026-04-22','11:30 AM','45 min','One-on-One','Dr. Reena Verma','DIET Principal','Enrollment','DIET-EG collaboration for out-of-school girl data','Conducted','','','','','','10/04/2026, 10:00:00 am'],
+    ['MTG-S-G03','Gonda','Vedprakash Yadav','District Program Officer','vedprakash.Yadav@educategirls.ngo','2026-05-27','3:00 PM','1 hr','One-on-One','Suresh Prasad','District Collector','Introductory Meeting','EG program introduction and support request','Planned','','','','','','20/04/2026, 2:00:00 pm'],
+    ['MTG-S-G04','Gonda','Arvind Kumar Yadav','Training Senior Specialist','arvind.yadav@educategirls.ngo','2026-05-01','9:00 AM','4 hr','Group Meeting','Ramesh Misra','ABSA','DTF','Training on NIPUN assessment and learning level improvement','Conducted','','','','Vedprakash Yadav','District Program Officer','22/04/2026, 8:00:00 am'],
+    ['MTG-S-G05','Gonda','Atul Pandey','District Impact Specialist','atul.pandey@educategirls.ngo','2026-05-08','2:00 PM','30 min','One-on-One','Hari Om Mishra','JD','Retention','Discuss retention challenges at upper primary level','Cancelled','','','Meeting cancelled by stakeholder','','','30/04/2026, 1:00:00 pm'],
+    ['MTG-S-G06','Gonda','Ashish Kumar Singh','District Program Officer','ashishkumar.singh1@educategirls.ngo','2026-05-20','10:30 AM','1 hr','Dept. Review','Om Prakash Tiwari','DC- Gender','MPR Submission','Gender data review and MPR submission','Conducted','','','','','','12/05/2026, 9:00:00 am'],
+
+    // SITAPUR
+    ['MTG-S-S01','Sitapur','Sumit Kumar','District Impact Specialist','sumit.kumar3@educategirls.ngo','2026-04-14','11:00 AM','1 hr','One-on-One','Awadhesh Yadav','BSA','MPR Submission','Submit district MPR and review block-wise progress','Conducted','','','','Vikrant Kumar','District Program Officer','06/04/2026, 10:00:00 am'],
+    ['MTG-S-S02','Sitapur','Vikrant Kumar','District Program Officer','vikrant.kumar@educategirls.ngo','2026-05-06','10:00 AM','1 hr','One-on-One','Dr. Shashi Bala','DIET Principal','Review Meeting','Review of DIET training effectiveness on EG teachers','Conducted','','','','','','28/04/2026, 9:00:00 am'],
+    ['MTG-S-S03','Sitapur','Mohd Shadab Ansari','District Program Officer','shadab.ansari@educategirls.ngo','2026-05-12','3:30 PM','45 min','One-on-One','Vinay Kumar Gupta','District Collector','Enrollment','Enrollment campaign planning for 2026-27','Conducted','','','','','','05/05/2026, 3:00:00 pm'],
+    ['MTG-S-S04','Sitapur','Sashi Prakash','District Program Training Officer','shashi.patel@educategirls.ngo','2026-05-29','9:00 AM','3 hr','Group Meeting','Geeta Devi','ABSA','DTF','Pre-session training for ABSAs on new learning tools','Planned','','','','Sumit Kumar','District Impact Specialist','15/05/2026, 8:00:00 am'],
+    ['MTG-S-S05','Sitapur','Sumit Kumar','District Impact Specialist','sumit.kumar3@educategirls.ngo','2026-04-28','4:00 PM','30 min','One-on-One','Ajeet Singh','CDO','Courtesy Meeting','Courtesy visit and program update to CDO','Cancelled','','','CDO transferred to another district','','','20/04/2026, 3:00:00 pm'],
+
+    // BAHRAICH
+    ['MTG-S-B01','Bahraich','Buddh Vilas','District Impact Specialist','buddh.vilas@educategirls.ngo','2026-04-16','10:00 AM','1 hr','One-on-One','Shyam Lal Gupta','BSA','Review Meeting','Annual review meeting — enrollment, retention, learning','Conducted','','','','Balwant Singh','District Operational Lead','08/04/2026, 9:00:00 am'],
+    ['MTG-S-B02','Bahraich','Shyam Narayan Nath','District Program Officer','shyamnarayan.nath@educategirls.ngo','2026-05-26','11:00 AM','1 hr','One-on-One','Dr. Alka Jain','DIET Principal','Enrollment','Out-of-school girls data sharing with DIET','Planned','','','','','','18/04/2026, 10:00:00 am'],
+    ['MTG-S-B03','Bahraich','Sanwara Vaishnav','District Program Training Officer','sanwara.vaishnav@educategirls.ngo','2026-05-04','9:00 AM','3 hr','Group Meeting','Deepak Kumar','ABSA','DTF','Training session on EG methodology and community mobilization','Conducted','','','','','','25/04/2026, 8:00:00 am'],
+    ['MTG-S-B04','Bahraich','Balwant Singh','District Operational Lead','balwant.singh@educategirls.ngo','2026-04-30','2:00 PM','1 hr','One-on-One','Mohd. Azam Khan','District Collector','Introductory Meeting','Introductory meeting with new District Collector','Cancelled','','','New DC not yet joined charge','','','22/04/2026, 1:00:00 pm'],
+
+    // SHAHJAHANPUR
+    ['MTG-S-SJ1','Shahjahanpur','Indra Dev Tiwari','District Program Officer','indradev.tiwari@educategirls.ngo','2026-04-10','11:00 AM','1 hr','One-on-One','Surendra Bahadur Singh','BSA','MPR Submission','Monthly progress report submission — April','Conducted','','','','Ankit Kumar Dixit','District Program Officer','03/04/2026, 10:00:00 am'],
+    ['MTG-S-SJ2','Shahjahanpur','Ankit Kumar Dixit','District Program Officer','ankit.dixit@educategirls.ngo','2026-04-23','10:30 AM','1 hr','One-on-One','Dr. Rama Kant','DIET Principal','Enrollment','Discuss enrollment targets and DIET support for EG program','Conducted','','','','','','14/04/2026, 9:00:00 am'],
+    ['MTG-S-SJ3','Shahjahanpur','Chandra Mohan Sharma','District Program Training Officer','chandramohan.sharma@educategirls.ngo','2026-05-28','9:00 AM','4 hr','Group Meeting','Smt. Pushpa Singh','ABSA','DTF','District Training Facilitation — refresher session','Planned','','','','Indra Dev Tiwari','District Program Officer','20/04/2026, 8:00:00 am'],
+    ['MTG-S-SJ4','Shahjahanpur','Vikas Kumar Tiwari','District Operational Assistant Lead','vikash.tiwari@educategirls.ngo','2026-05-07','3:00 PM','45 min','One-on-One','Ashutosh Verma','District Collector','Retention','Retention drive support request from district administration','Cancelled','','','Meeting rescheduled to next month','','','30/04/2026, 2:00:00 pm']
+  ];
+
+  // ─── SAMPLE CONDUCTED MEETINGS ────────────────────────────────
+  // Cols: MtgID, Dist, EmpName, Post, Email, OrigDate, OrigTime, Duration,
+  //       Type, StkName, StkPost, Purpose, Agenda, ConductDate, ConductTime,
+  //       KeyPoints, PhotosFolder, MoMDoc, ColleagueName, ColleaguePost, ConductedAt
+  var condRows = [
+    ['MTG-S-H01','Hardoi','Uday Raj','District Impact Specialist','uday.raj@educategirls.ngo','2026-04-10','10:00 AM','1 hr','One-on-One','Rajesh Kumar Verma','BSA','Review Meeting','Quarterly review of enrollment and retention data','2026-04-10','10:45 AM','• Reviewed Q4 enrollment data — 87% target achieved\n• Discussed block-wise retention gaps in KPTG and SANDI\n• BSA agreed to issue circular for ABSA attendance in DTF sessions\n• Follow-up scheduled for May 15','','','','','10/04/2026, 11:50:00 am'],
+    ['MTG-S-H02','Hardoi','Rahul Kumar','District Program Officer','rahul.kumar3@educategirls.ngo','2026-04-15','11:00 AM','45 min','One-on-One','Dr. Sunita Pathak','DIET Principal','Enrollment','Discuss strategies for out-of-school girl enrollment','2026-04-15','11:30 AM','• DIET will share block-wise OOS data by April 20\n• Principal agreed to conduct school-wise sensitization\n• EG to provide resource materials for DIET faculty\n• Joint visit to 3 schools planned for May','','','Manvendra Mishra','District Program Officer','15/04/2026, 12:05:00 pm'],
+    ['MTG-S-H03','Hardoi','Manvendra Mishra','District Program Officer','manvendra.mishra@educategirls.ngo','2026-05-05','3:00 PM','30 min','One-on-One','Anil Tiwari','District Collector','Introductory Meeting','Initial introduction and EG program briefing','2026-05-05','3:15 PM','• DC appreciated EG program outcomes in Hardoi\n• Requested monthly update sheet for DC office\n• Discussed upcoming enrollment campaign — DC agreed to flag-off\n• Next meeting scheduled post elections','','','','','05/05/2026, 4:00:00 pm'],
+    ['MTG-S-H06','Hardoi','Manvendra Mishra','District Program Officer','manvendra.mishra@educategirls.ngo','2026-05-18','11:30 AM','1 hr','Dept. Review','Ram Kishore','JD','MPR Submission','Submit monthly progress report and discuss targets','2026-05-18','12:00 PM','• April MPR submitted — 92% targets achieved\n• JD directed to improve learning outcomes data quality\n• EG team to share school-wise learning data by May 25\n• Monthly review mechanism to be strengthened','','','Uday Raj','District Impact Specialist','18/05/2026, 1:15:00 pm'],
+
+    ['MTG-S-F01','Fatehpur','Shubham Yadav','District Impact Specialist','shubham.yadav@educategirls.ngo','2026-04-12','10:30 AM','1 hr','One-on-One','Pramod Srivastava','BSA','MPR Submission','Monthly progress report submission and follow-up','2026-04-12','11:00 AM','• March MPR accepted — strong enrollment numbers\n• BSA highlighted teacher absenteeism as key challenge\n• EG team to document school-wise attendance data\n• Follow-up on ABSA deployment in 3 blocks','','','Deepak Dixit','District Program Officer','12/04/2026, 12:00:00 pm'],
+    ['MTG-S-F02','Fatehpur','Deepak Dixit','District Program Officer','deepak.dixit@educategirls.ngo','2026-04-18','11:00 AM','1 hr','One-on-One','Dr. Kavita Mishra','DIET Principal','Review Meeting','Mid-year review of learning outcomes and teacher training','2026-04-18','11:45 AM','• Learning assessment data reviewed — improvement in Grade 3-5\n• DIET agreed to include EG module in next BTC training\n• Principal to depute 2 DIET faculty for EG school visits\n• Collaborative workshop planned for June','','','','','18/04/2026, 12:30:00 pm'],
+    ['MTG-S-F03','Fatehpur','Pushpendra Singh','District Program Training Officer','pushpendra.singh@educategirls.ngo','2026-04-25','9:00 AM','3 hr','Group Meeting','Anil Jaiswal','ABSA','DTF','Cluster-level training on learning assessment tools','2026-04-25','12:00 PM','• 18 ABSAs trained on NIPUN learning tools\n• Hands-on practice on assessment rubrics completed\n• All participants committed to weekly school monitoring\n• Next DTF scheduled for June','','','Shubham Yadav','District Impact Specialist','25/04/2026, 12:30:00 pm'],
+    ['MTG-S-F06','Fatehpur','Deepak Dixit','District Program Officer','deepak.dixit@educategirls.ngo','2026-05-15','11:00 AM','1 hr','One-on-One','Suresh Patel','DC-Training','Learning','Discussion on training calendar and capacity building','2026-05-15','11:50 AM','• Training calendar for 2026-27 shared with DC Training\n• Three EG-specific modules approved for inclusion\n• Resource persons list to be shared by May 20\n• Joint review after first training cycle','','','','','15/05/2026, 12:20:00 pm'],
+
+    ['MTG-S-G01','Gonda','Atul Pandey','District Impact Specialist','atul.pandey@educategirls.ngo','2026-04-08','10:00 AM','1 hr','One-on-One','Krishna Nand Yadav','BSA','Review Meeting','Review of EG program KPIs and district targets','2026-04-08','10:50 AM','• KPI review: enrollment 91%, retention 84%, learning 78%\n• BSA committed to resolve ABSA vacancy in 2 blocks\n• EG team to provide block-wise dashboard monthly\n• Next review in May with data from all 12 blocks','','','Ashish Kumar Singh','District Program Officer','08/04/2026, 11:55:00 am'],
+    ['MTG-S-G02','Gonda','Ashish Kumar Singh','District Program Officer','ashishkumar.singh1@educategirls.ngo','2026-04-22','11:30 AM','45 min','One-on-One','Dr. Reena Verma','DIET Principal','Enrollment','DIET-EG collaboration for out-of-school girl data','2026-04-22','12:00 PM','• DIET OOS data for 8 blocks shared\n• Joint verification exercise to be conducted in May\n• EG and DIET to co-develop household survey tool\n• DIET faculty to support community mobilization','','','','','22/04/2026, 12:30:00 pm'],
+    ['MTG-S-G04','Gonda','Arvind Kumar Yadav','Training Senior Specialist','arvind.yadav@educategirls.ngo','2026-05-01','9:00 AM','4 hr','Group Meeting','Ramesh Misra','ABSA','DTF','Training on NIPUN assessment and learning level improvement','2026-05-01','1:00 PM','• 22 ABSAs trained across 4 blocks\n• Practical sessions on NIPUN tools completed\n• Block-wise action plans prepared by each ABSA\n• Follow-up classroom observation scheduled for June','','','Vedprakash Yadav','District Program Officer','01/05/2026, 1:30:00 pm'],
+    ['MTG-S-G06','Gonda','Ashish Kumar Singh','District Program Officer','ashishkumar.singh1@educategirls.ngo','2026-05-20','10:30 AM','1 hr','Dept. Review','Om Prakash Tiwari','DC- Gender','MPR Submission','Gender data review and MPR submission','2026-05-20','11:20 AM','• Gender-disaggregated data reviewed for April\n• Drop-out rate among girls in Class 6-8 flagged as concern\n• DC Gender to raise in DISE data meeting\n• EG to provide school-wise risk analysis','','','','','20/05/2026, 11:45:00 am'],
+
+    ['MTG-S-S01','Sitapur','Sumit Kumar','District Impact Specialist','sumit.kumar3@educategirls.ngo','2026-04-14','11:00 AM','1 hr','One-on-One','Awadhesh Yadav','BSA','MPR Submission','Submit district MPR and review block-wise progress','2026-04-14','11:45 AM','• March MPR submitted — 89% enrollment, 82% retention\n• BSA requested EG data in Excel format for compilation\n• Block-wise performance matrix to be shared weekly\n• ABSA meeting to be organized in May','','','Vikrant Kumar','District Program Officer','14/04/2026, 12:30:00 pm'],
+    ['MTG-S-S02','Sitapur','Vikrant Kumar','District Program Officer','vikrant.kumar@educategirls.ngo','2026-05-06','10:00 AM','1 hr','One-on-One','Dr. Shashi Bala','DIET Principal','Review Meeting','Review of DIET training effectiveness on EG teachers','2026-05-06','10:55 AM','• DIET training impact study data shared\n• Significant improvement in teacher facilitation skills noted\n• 3 best-practice schools identified for documentation\n• Exposure visit for DIET faculty to EG schools planned','','','','','06/05/2026, 11:20:00 am'],
+    ['MTG-S-S03','Sitapur','Mohd Shadab Ansari','District Program Officer','shadab.ansari@educategirls.ngo','2026-05-12','3:30 PM','45 min','One-on-One','Vinay Kumar Gupta','District Collector','Enrollment','Enrollment campaign planning for 2026-27','2026-05-12','4:05 PM','• DC approved EG-led enrollment campaign for June\n• Gram Pradhan mobilization to be done via BDO circulars\n• EG team to prepare campaign material by May 20\n• DC office to share support letter for schools','','','','','12/05/2026, 4:30:00 pm'],
+
+    ['MTG-S-B01','Bahraich','Buddh Vilas','District Impact Specialist','buddh.vilas@educategirls.ngo','2026-04-16','10:00 AM','1 hr','One-on-One','Shyam Lal Gupta','BSA','Review Meeting','Annual review meeting — enrollment, retention, learning','2026-04-16','10:50 AM','• Annual data reviewed — targets met in 7 of 9 blocks\n• Learning outcomes below benchmark in 2 blocks — plan needed\n• BSA agreed to depute resource persons for those blocks\n• EG to submit action plan by April 25','','','Balwant Singh','District Operational Lead','16/04/2026, 11:50:00 am'],
+    ['MTG-S-B03','Bahraich','Sanwara Vaishnav','District Program Training Officer','sanwara.vaishnav@educategirls.ngo','2026-05-04','9:00 AM','3 hr','Group Meeting','Deepak Kumar','ABSA','DTF','Training session on EG methodology and community mobilization','2026-05-04','12:00 PM','• 16 ABSAs trained on EG community mobilization approach\n• Role-play exercises on parent engagement conducted\n• Commitments taken for monthly school-community meets\n• Refresher session scheduled for July','','','','','04/05/2026, 12:30:00 pm'],
+
+    ['MTG-S-SJ1','Shahjahanpur','Indra Dev Tiwari','District Program Officer','indradev.tiwari@educategirls.ngo','2026-04-10','11:00 AM','1 hr','One-on-One','Surendra Bahadur Singh','BSA','MPR Submission','Monthly progress report submission — April','2026-04-10','11:50 AM','• March MPR submitted — 85% overall target achievement\n• BSA appreciated improvement in retention data quality\n• New data collection format to be piloted in 2 blocks\n• Follow-up meeting for April data in first week of May','','','Ankit Kumar Dixit','District Program Officer','10/04/2026, 12:00:00 pm'],
+    ['MTG-S-SJ2','Shahjahanpur','Ankit Kumar Dixit','District Program Officer','ankit.dixit@educategirls.ngo','2026-04-23','10:30 AM','1 hr','One-on-One','Dr. Rama Kant','DIET Principal','Enrollment','Discuss enrollment targets and DIET support for EG program','2026-04-23','11:20 AM','• Enrollment targets for 2026-27 discussed and agreed\n• DIET to provide training support for 45 EG schools\n• Resource material library to be set up at DIET\n• Joint visit to 5 EG schools planned for May','','','','','23/04/2026, 11:45:00 am']
+  ];
+
+  // ─── SAMPLE CANCELLED MEETINGS ────────────────────────────────
+  // Cols: MtgID, Dist, EmpName, Post, Email, Date, Time, Duration,
+  //       Type, StkName, StkPost, Purpose, Agenda, ColleagueName, ColleaguePost, Reason, CancelledAt
+  var cancRows = [
+    ['MTG-S-H05','Hardoi','Uday Raj','District Impact Specialist','uday.raj@educategirls.ngo','2026-04-20','2:00 PM','1 hr','One-on-One','Vinod Sharma','CDO','Retention','Retention strategies for upper primary girls','','','Officer on leave — rescheduled','20/04/2026, 2:30:00 pm'],
+    ['MTG-S-F05','Fatehpur','Shubham Yadav','District Impact Specialist','shubham.yadav@educategirls.ngo','2026-05-02','4:00 PM','30 min','One-on-One','Ajay Tripathi','CDO','Invitation','Invite CDO for EG annual review event','','','Event postponed by organizers','02/05/2026, 4:15:00 pm'],
+    ['MTG-S-G05','Gonda','Atul Pandey','District Impact Specialist','atul.pandey@educategirls.ngo','2026-05-08','2:00 PM','30 min','One-on-One','Hari Om Mishra','JD','Retention','Discuss retention challenges at upper primary level','','','Meeting cancelled by stakeholder — national duty','08/05/2026, 2:20:00 pm'],
+    ['MTG-S-S05','Sitapur','Sumit Kumar','District Impact Specialist','sumit.kumar3@educategirls.ngo','2026-04-28','4:00 PM','30 min','One-on-One','Ajeet Singh','CDO','Courtesy Meeting','Courtesy visit and program update to CDO','','','CDO transferred to another district','28/04/2026, 4:10:00 pm'],
+    ['MTG-S-B04','Bahraich','Balwant Singh','District Operational Lead','balwant.singh@educategirls.ngo','2026-04-30','2:00 PM','1 hr','One-on-One','Mohd. Azam Khan','District Collector','Introductory Meeting','Introductory meeting with new District Collector','','','New DC not yet joined charge','30/04/2026, 2:15:00 pm'],
+    ['MTG-S-SJ4','Shahjahanpur','Vikas Kumar Tiwari','District Operational Assistant Lead','vikash.tiwari@educategirls.ngo','2026-05-07','3:00 PM','45 min','One-on-One','Ashutosh Verma','District Collector','Retention','Retention drive support request from district administration','','','Meeting rescheduled to next month — DC tour','07/05/2026, 3:20:00 pm']
+  ];
+
+  // ─── INSERT ROWS ──────────────────────────────────────────────
+  planRows.forEach(function(r) { planSheet.appendRow(r); });
+  condRows.forEach(function(r) { condSheet.appendRow(r); });
+
+  if (cancSheet) {
+    var cancHeader = cancSheet.getLastRow();
+    if (cancHeader < 1) {
+      cancSheet.appendRow(['Meeting ID','District','Employee Name','Post','Email','Meeting Date','Meeting Time','Duration','Meeting Type','Stakeholder Name','Stakeholder Post','Meeting Purpose','Meeting Agenda','Colleague Name','Colleague Post','Reason','Cancelled At']);
+      cancSheet.getRange(1,1,1,17).setBackground('#7F1D1D').setFontColor('#fff').setFontWeight('bold');
+      cancSheet.setFrozenRows(1);
+    }
+    cancRows.forEach(function(r) { cancSheet.appendRow(r); });
+  }
+
+  Logger.log('Sample data inserted: ' + planRows.length + ' planned, ' + condRows.length + ' conducted, ' + cancRows.length + ' cancelled.');
+  SpreadsheetApp.getUi().alert('✅ Sample data inserted successfully!\n\n' + planRows.length + ' planned meetings\n' + condRows.length + ' conducted meetings\n' + cancRows.length + ' cancelled meetings');
+}
+
 function getEmployeeByEmail(email) {
   var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName(EMPLOYEE_SHEET);
