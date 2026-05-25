@@ -1474,8 +1474,7 @@ function insertSampleData() {
     cancRows.forEach(function(r) { cancSheet.appendRow(r); });
   }
 
-  Logger.log('Sample data inserted: ' + planRows.length + ' planned, ' + condRows.length + ' conducted, ' + cancRows.length + ' cancelled.');
-  SpreadsheetApp.getUi().alert('✅ Sample data inserted successfully!\n\n' + planRows.length + ' planned meetings\n' + condRows.length + ' conducted meetings\n' + cancRows.length + ' cancelled meetings');
+  Logger.log('✅ Sample data inserted: ' + planRows.length + ' planned, ' + condRows.length + ' conducted, ' + cancRows.length + ' cancelled.');
 }
 
 function getEmployeeByEmail(email) {
