@@ -66,6 +66,7 @@ function apiResponse(e, method) {
     else if (action === 'getDistrictEmployees') result = getDistrictEmployees(e.parameter.district || '', e.parameter.email || '');
     else if (action === 'getDashboardStats')    result = getDashboardStats(e.parameter.email || '', e.parameter.all === '1');
     else if (action === 'getDistrictReport')    result = getDistrictReport(e.parameter.district || '');
+    else if (action === 'getAllReports')        result = getAllReports(e.parameter.email || '');
     else if (action === 'deleteMeeting')        result = deleteMeeting(e.parameter.meetingId || '');
     else if (action === 'saveMeeting')          result = saveMeeting(body);
     else if (action === 'conductMeeting')       result = conductMeeting(body);
@@ -1357,6 +1358,51 @@ function getDistrictReport(district) {
       byPost:    byPost,
       conducted: conducted
     };
+  } catch(err) {
+    return { success: false, message: err.message };
+  }
+}
+
+// ------------------------------------------------------------
+//  ALL CONDUCTED REPORTS — paginated list for dashboard
+//  State user sees all districts; others see own district only
+// ------------------------------------------------------------
+function getAllReports(email) {
+  try {
+    var ss       = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var emp      = getEmployeeByEmail(email.trim().toLowerCase());
+    var isState  = emp && (emp.role === 'State' || emp.role === 'state');
+    var userDist = emp ? emp.district.trim().toLowerCase() : '';
+
+    var cSheet = ss.getSheetByName(CONDUCTED_SHEET);
+    if (!cSheet || cSheet.getLastRow() <= 1) return { success: true, reports: [] };
+
+    var cd      = cSheet.getDataRange().getValues();
+    var reports = [];
+    for (var i = 1; i < cd.length; i++) {
+      var dist = (cd[i][1] || '').toString().trim();
+      if (!isState && dist.toLowerCase() !== userDist) continue;
+      reports.push({
+        meetingId:       (cd[i][0]  || '').toString(),
+        district:        dist,
+        employeeName:    (cd[i][2]  || '').toString(),
+        post:            (cd[i][3]  || '').toString(),
+        originalDate:    fmtDateVal(cd[i][5]),
+        meetingType:     (cd[i][8]  || '').toString(),
+        stakeholderName: (cd[i][9]  || '').toString(),
+        stakeholderPost: (cd[i][10] || '').toString(),
+        purpose:         (cd[i][11] || '').toString(),
+        conductDate:     fmtDateVal(cd[i][13]),
+        keyPoints:       (cd[i][15] || '').toString(),
+        momUrl:          (cd[i][17] || '').toString(),
+        photoUrl:        (cd[i][16] || '').toString(),
+        colleagueName:   (cd[i][18] || '').toString(),
+        colleaguePost:   (cd[i][19] || '').toString()
+      });
+    }
+    // Newest first
+    reports.sort(function(a, b) { return b.conductDate.localeCompare(a.conductDate); });
+    return { success: true, reports: reports };
   } catch(err) {
     return { success: false, message: err.message };
   }

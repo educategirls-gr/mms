@@ -348,6 +348,24 @@
     @media(max-width:900px){
       #dash-kpi-row { grid-template-columns:repeat(2,1fr)!important; }
     }
+
+    /* All Reports view */
+    .pag-btn { background:#fff; border:1.5px solid #E5E7EB; border-radius:7px; padding:6px 12px; font-size:13px; font-weight:600; cursor:pointer; color:#374151; transition:all 0.15s; min-width:36px; }
+    .pag-btn:hover:not(:disabled) { border-color:#166534; color:#166534; }
+    .pag-btn.pag-active { background:#166534; color:#fff; border-color:#166534; }
+    .pag-btn:disabled { opacity:0.4; cursor:not-allowed; }
+    .rep-link { display:inline-block; padding:2px 9px; border-radius:5px; font-size:11px; font-weight:600; text-decoration:none; margin-right:3px; }
+    .rep-link-mom { background:#1F4E79; color:#fff; }
+    .rep-link-photo { background:#0F766E; color:#fff; }
+    .rep-search-bar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+    .rep-search-bar input { flex:1; min-width:180px; }
+    .btn-dl { background:#166534; color:#fff; border:none; border-radius:8px; padding:8px 18px; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap; flex-shrink:0; }
+    .btn-dl:hover { background:#15803D; }
+    @media(max-width:900px){
+      .rep-search-bar { gap:8px; }
+      .rep-search-bar input { min-width:100%; }
+      .btn-dl { width:100%; text-align:center; padding:11px; }
+    }
   </style>
 </head>
 <body>
@@ -382,7 +400,7 @@
       <span class="nav-icon">⚙️</span><span>Manage Meetings</span>
     </div>
     <div class="nav-item" id="nav-list" onclick="showView('list')">
-      <span class="nav-icon">📄</span><span>My Meetings</span>
+      <span class="nav-icon">📊</span><span>All Reports</span>
     </div>
 
   </div>
@@ -712,37 +730,30 @@
     <!-- Toast -->
     <div id="toast" class="toast" style="display:none;"></div>
 
-    <!-- View: My Meetings -->
+    <!-- View: All Reports -->
     <div id="view-list" class="view">
       <div class="card">
-        <div class="card-title">📄 My Meetings</div>
-        <div id="meetings-content">
-          <div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>
+        <div class="card-title" style="background:#166534;">📊 All Conducted Reports</div>
+
+        <!-- Search + per-page + download -->
+        <div class="rep-search-bar">
+          <input type="text" id="rep-search" placeholder="Search by name, stakeholder, purpose, district..." oninput="filterReports()">
+          <select id="rep-per-page" onchange="onPerPageChange()" style="width:auto;flex-shrink:0;padding:8px 10px;font-size:13px;">
+            <option value="10">10 per page</option>
+            <option value="15" selected>15 per page</option>
+            <option value="20">20 per page</option>
+          </select>
+          <button class="btn-dl" onclick="downloadReportsCSV()">⬇ Download CSV</button>
         </div>
-      </div>
-    </div>
-      <div id="rep-content" style="display:none;">
-        <!-- District Table -->
-        <div class="card" style="padding:20px;margin-bottom:18px;">
-          <div style="font-size:12px;font-weight:700;color:#7B1010;text-transform:uppercase;letter-spacing:.8px;margin-bottom:14px;">🏛️ District-wise Summary</div>
-          <div id="rep-district-table" style="overflow-x:auto;"></div>
+        <div id="rep-count" style="font-size:12px;color:#6B7280;margin-bottom:8px;"></div>
+
+        <!-- Table -->
+        <div id="reports-content">
+          <div class="empty-state"><div class="empty-icon">⏳</div><p>Loading reports...</p></div>
         </div>
-        <!-- Two-col: Type + Purpose -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px;">
-          <div class="card" style="padding:20px;">
-            <div style="font-size:12px;font-weight:700;color:#7B1010;text-transform:uppercase;letter-spacing:.8px;margin-bottom:14px;">📋 Meeting Types</div>
-            <div id="rep-types"></div>
-          </div>
-          <div class="card" style="padding:20px;">
-            <div style="font-size:12px;font-weight:700;color:#7B1010;text-transform:uppercase;letter-spacing:.8px;margin-bottom:14px;">🎯 Meeting Purposes</div>
-            <div id="rep-purposes"></div>
-          </div>
-        </div>
-        <!-- All Conducted Meetings Table -->
-        <div class="card" style="padding:20px;">
-          <div style="font-size:12px;font-weight:700;color:#7B1010;text-transform:uppercase;letter-spacing:.8px;margin-bottom:14px;">📋 All Conducted Meetings</div>
-          <div id="rep-conducted-table" style="overflow-x:auto;"></div>
-        </div>
+
+        <!-- Pagination -->
+        <div id="rep-pagination" style="display:flex;justify-content:center;align-items:center;gap:6px;margin-top:16px;flex-wrap:wrap;"></div>
       </div>
     </div>
 
@@ -850,7 +861,7 @@
   var TOPBAR = {
     create: { title: 'Plan Your Meeting',  sub: 'Plan your upcoming meetings' },
     manage: { title: 'Manage Meetings',    sub: 'Update meeting outcomes and action points' },
-    list:   { title: 'My Meetings',        sub: 'Your planned and completed meetings' }
+    list:   { title: 'All Conducted Reports', sub: 'All meetings conducted — search, filter and download' }
   };
   function showView(view) {
     ['create','manage','list'].forEach(function(v) {
@@ -862,7 +873,7 @@
     clearAlerts();
     document.getElementById('topbar-title').textContent = TOPBAR[view].title;
     document.getElementById('topbar-sub').textContent   = TOPBAR[view].sub;
-    if (view === 'list')   loadMeetings();
+    if (view === 'list')   loadReports();
     if (view === 'manage') loadManageMeetings();
     // Close sidebar on mobile after navigation
     document.getElementById('sidebar').classList.remove('mob-open');
@@ -947,10 +958,9 @@
     document.getElementById('cft-m').value  = '';
     document.getElementById('cft-ap').value = '';
     var mp = _manageMeetings[idx];
-    var mpParts = (mp.date || '').split('-');
-    var mpISO   = mpParts.length === 3 ? mpParts[2] + '-' + mpParts[1] + '-' + mpParts[0] : '';
-    if (mpISO) {
-      var minD = new Date(mpISO); minD.setDate(minD.getDate() + 1);
+    var mpTs = toTs(mp.date);
+    if (mpTs) {
+      var minD = new Date(mpTs); minD.setDate(minD.getDate() + 1);
       document.getElementById('p-newdate').min = minD.toISOString().split('T')[0];
     }
     document.getElementById('p-newdate').value = '';
@@ -1118,9 +1128,8 @@
     var newDate = document.getElementById('p-newdate').value;
     if (!newDate) { showModalAlert('postpone', 'Please select a new date.'); return; }
     var m = _manageMeetings[MODAL_IDX];
-    var parts   = (m.date || '').split('-');
-    var origISO = parts.length === 3 ? parts[2] + '-' + parts[1] + '-' + parts[0] : '';
-    if (origISO && newDate <= origISO) {
+    var origTs = toTs(m.date);
+    if (origTs && new Date(newDate).getTime() <= origTs) {
       showModalAlert('postpone', 'New date must be after the original meeting date (' + m.date + ').'); return;
     }
     var btn = document.getElementById('postpone-submit-btn');
@@ -1167,68 +1176,161 @@
     }, function(e) { alert('Error: ' + e.message); });
   }
 
-  // ── My Meetings ──────────────────────────────────────────────
-  function loadMeetings() {
-    document.getElementById('meetings-content').innerHTML =
-      '<div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>';
-    gasFetch('getAllMyMeetings', { email: SESSION.email }, renderMeetings, function() {
-      document.getElementById('meetings-content').innerHTML =
-        '<div class="empty-state"><p>Failed to load meetings. Please try again.</p></div>';
+  // ── All Reports ───────────────────────────────────────────────
+  var _allReports      = [];
+  var _filteredReports = [];
+  var _repPage         = 1;
+  var _repPerPage      = 15;
+
+  function loadReports() {
+    document.getElementById('reports-content').innerHTML =
+      '<div class="empty-state"><div class="empty-icon">⏳</div><p>Loading reports...</p></div>';
+    document.getElementById('rep-count').textContent = '';
+    document.getElementById('rep-pagination').innerHTML = '';
+    gasFetch('getAllReports', { email: SESSION.email }, function(res) {
+      if (res && res.success) {
+        _allReports      = res.reports || [];
+        _filteredReports = _allReports;
+        _repPage         = 1;
+        renderReportsPage();
+      } else {
+        document.getElementById('reports-content').innerHTML =
+          '<div class="empty-state"><p style="color:#DC2626;">Failed to load reports. Please try again.</p></div>';
+      }
+    }, function(e) {
+      document.getElementById('reports-content').innerHTML =
+        '<div class="empty-state"><p style="color:#DC2626;">Error: ' + (e ? e.message : 'Unknown') + '</p></div>';
     });
   }
-  function renderMeetings(list) {
-    if (!list || list.length === 0) {
-      document.getElementById('meetings-content').innerHTML =
-        '<div class="empty-state"><div class="empty-icon">📋</div><p>No meetings found.</p></div>';
+
+  function filterReports() {
+    var q = document.getElementById('rep-search').value.trim().toLowerCase();
+    _filteredReports = q
+      ? _allReports.filter(function(r) {
+          return (r.employeeName + ' ' + r.post + ' ' + r.stakeholderName + ' ' + r.stakeholderPost + ' ' +
+                  r.purpose + ' ' + r.district + ' ' + r.meetingType + ' ' + r.meetingId)
+                 .toLowerCase().indexOf(q) !== -1;
+        })
+      : _allReports;
+    _repPage = 1;
+    renderReportsPage();
+  }
+
+  function onPerPageChange() {
+    _repPerPage = parseInt(document.getElementById('rep-per-page').value) || 15;
+    _repPage = 1;
+    renderReportsPage();
+  }
+
+  function repGoPage(p) {
+    _repPage = p;
+    renderReportsPage();
+    // Scroll to top of card
+    var el = document.getElementById('reports-content');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function renderReportsPage() {
+    var total = _filteredReports.length;
+    var start = (_repPage - 1) * _repPerPage;
+    var slice = _filteredReports.slice(start, start + _repPerPage);
+
+    // Count line
+    document.getElementById('rep-count').textContent = total === 0
+      ? 'No reports found.'
+      : 'Showing ' + (start + 1) + ' – ' + Math.min(start + _repPerPage, total) + ' of ' + total + ' conducted meetings';
+
+    if (total === 0) {
+      document.getElementById('reports-content').innerHTML =
+        '<div class="empty-state"><div class="empty-icon">📋</div><p>No reports match your search.</p></div>';
+      document.getElementById('rep-pagination').innerHTML = '';
       return;
     }
-    function toTs(d) {
-      var p = (d || '').split('-');
-      return p.length === 3 ? new Date(p[2], p[1]-1, p[0]).getTime() : 0;
-    }
-    var upcoming = list.filter(function(m) { return m.status === 'Planned' || m.status === 'Follow-up' || m.status === 'Postponed'; })
-      .sort(function(a, b) { return toTs(a.date) - toTs(b.date); });
-    var done = list.filter(function(m) { return m.status !== 'Planned' && m.status !== 'Follow-up' && m.status !== 'Postponed'; })
-      .sort(function(a, b) { return toTs(b.date) - toTs(a.date); });
-    var sorted = upcoming.concat(done);
+
     var html = '<div class="meetings-table-wrap"><table class="meetings-table"><thead><tr>' +
-      '<th>Meeting ID</th><th>Date / Time</th><th>Stakeholder</th><th>Purpose</th><th>Status</th><th>Details / Links</th>' +
+      '<th>#</th><th>Meeting ID</th><th>Conduct Date</th><th>District</th>' +
+      '<th>Conducted By</th><th>Stakeholder</th><th>Purpose</th><th>Type</th><th>Links</th>' +
       '</tr></thead><tbody>';
-    sorted.forEach(function(m) {
-      var bc = m.status === 'Conducted' ? 'badge-completed' :
-               m.status === 'Cancelled' ? 'badge-cancelled' :
-               m.status === 'Postponed' ? 'badge-postponed' :
-               m.status === 'Follow-up' ? 'badge-followup'  : 'badge-planned';
-      var extra = '';
-      if (m.status === 'Conducted') {
-        extra += '<div style="font-size:11px;color:#374151;margin-bottom:4px;">📅 Conduct: <strong>' + esc(m.conductDate) + (m.conductTime ? ' ' + esc(m.conductTime) : '') + '</strong></div>';
-        if (m.momLink)   extra += '<a href="' + esc(m.momLink)   + '" target="_blank" style="display:inline-block;margin-right:6px;padding:3px 10px;background:#1F4E79;color:#fff;border-radius:5px;font-size:11px;font-weight:600;text-decoration:none;">📄 MoM</a>';
-        if (m.photoLink) extra += '<a href="' + esc(m.photoLink) + '" target="_blank" style="display:inline-block;padding:3px 10px;background:#0F766E;color:#fff;border-radius:5px;font-size:11px;font-weight:600;text-decoration:none;">📷 Photos</a>';
-        if (!m.momLink && !m.photoLink) extra += '<span style="font-size:11px;color:#9CA3AF;">-</span>';
-      } else if (m.status === 'Cancelled') {
-        extra = '<span style="font-size:11px;color:#991B1B;">&#10060; Reason: ' + esc(m.reason || 'Not specified') + '</span>';
-      } else if (m.status === 'Follow-up') {
-        extra = '<span style="font-size:11px;color:#5B21B6;">🔁 Follow-up meeting</span>' +
-          (m.parentMeetingId ? '<br><span style="font-size:10px;color:#9CA3AF;">Parent: ' + esc(m.parentMeetingId) + '</span>' : '');
-      } else if (m.status === 'Postponed') {
-        extra = '<span style="font-size:11px;color:#92400E;">📅 Postponed</span>' +
-          (m.reason ? '<br><span style="font-size:10px;color:#9CA3AF;">' + esc(m.reason) + '</span>' : '');
-      } else {
-        extra = '<span style="font-size:11px;color:#1D4ED8;">📋 Upcoming</span>';
-      }
-      html += '<tr>' +
-        '<td style="font-size:11px;color:#6B7280;white-space:nowrap;">' + esc(m.meetingId) +
-          '<br><span style="font-size:10px;color:#9CA3AF;">' + esc(m.type) + '</span></td>' +
-        '<td style="white-space:nowrap;">' + esc(m.date) +
-          (m.meetingTime ? '<br><small style="color:#9CA3AF;">' + esc(m.meetingTime) + '</small>' : '') + '</td>' +
-        '<td><strong style="font-size:13px;">' + esc(m.adhikariName) + '</strong>' +
-          '<br><small style="color:#6B7280;">' + esc(m.adhikariPost) + '</small></td>' +
-        '<td style="font-size:12px;">' + esc(m.purpose) + '</td>' +
-        '<td><span class="badge ' + bc + '">' + esc(m.status) + '</span></td>' +
-        '<td>' + extra + '</td></tr>';
+
+    slice.forEach(function(r, idx) {
+      var links = '';
+      if (r.momUrl)   links += '<a href="' + esc(r.momUrl)   + '" target="_blank" class="rep-link rep-link-mom">MoM</a>';
+      if (r.photoUrl) links += '<a href="' + esc(r.photoUrl) + '" target="_blank" class="rep-link rep-link-photo">Photos</a>';
+      if (!links)     links  = '<span style="color:#9CA3AF;font-size:11px;">—</span>';
+
+      html +=
+        '<tr>' +
+        '<td style="color:#9CA3AF;font-size:11px;text-align:center;">' + (start + idx + 1) + '</td>' +
+        '<td style="font-size:11px;color:#6B7280;white-space:nowrap;">' + esc(r.meetingId) + '</td>' +
+        '<td style="white-space:nowrap;font-weight:600;color:#111827;">' + esc(r.conductDate) + '</td>' +
+        '<td style="font-size:12px;">' + esc(r.district) + '</td>' +
+        '<td><div style="font-weight:600;font-size:12px;">' + esc(r.employeeName) + '</div>' +
+            '<div style="font-size:10px;color:#9CA3AF;">' + esc(r.post) + '</div></td>' +
+        '<td><div style="font-weight:600;font-size:12px;">' + esc(r.stakeholderName) + '</div>' +
+            '<div style="font-size:10px;color:#9CA3AF;">' + esc(r.stakeholderPost) + '</div></td>' +
+        '<td style="font-size:12px;max-width:130px;">' + esc(r.purpose) + '</td>' +
+        '<td><span style="font-size:11px;background:#F3F4F6;padding:2px 7px;border-radius:10px;white-space:nowrap;">' + esc(r.meetingType) + '</span></td>' +
+        '<td style="white-space:nowrap;">' + links + '</td>' +
+        '</tr>';
     });
     html += '</tbody></table></div>';
-    document.getElementById('meetings-content').innerHTML = html;
+    document.getElementById('reports-content').innerHTML = html;
+
+    // Pagination controls
+    var totalPages = Math.ceil(total / _repPerPage);
+    var pag = '';
+    if (totalPages > 1) {
+      pag += '<button class="pag-btn" onclick="repGoPage(' + Math.max(1, _repPage - 1) + ')"' +
+             (_repPage === 1 ? ' disabled' : '') + '>← Prev</button>';
+
+      for (var p = 1; p <= totalPages; p++) {
+        if (p === 1 || p === totalPages || (p >= _repPage - 1 && p <= _repPage + 1)) {
+          pag += '<button class="pag-btn' + (p === _repPage ? ' pag-active' : '') +
+                 '" onclick="repGoPage(' + p + ')">' + p + '</button>';
+        } else if (p === _repPage - 2 || p === _repPage + 2) {
+          pag += '<span style="color:#9CA3AF;padding:0 2px;">...</span>';
+        }
+      }
+
+      pag += '<button class="pag-btn" onclick="repGoPage(' + Math.min(totalPages, _repPage + 1) + ')"' +
+             (_repPage === totalPages ? ' disabled' : '') + '>Next →</button>';
+    }
+    document.getElementById('rep-pagination').innerHTML = pag;
+  }
+
+  function downloadReportsCSV() {
+    var data = _filteredReports.length ? _filteredReports : _allReports;
+    if (!data.length) { alert('No reports to download.'); return; }
+
+    var headers = ['#','Meeting ID','Conduct Date','Original Date','District',
+                   'Employee','Designation','Stakeholder','Stakeholder Post',
+                   'Purpose','Meeting Type','Colleague','MoM Link','Photo Link'];
+    var rows = [headers];
+    data.forEach(function(r, i) {
+      rows.push([
+        i + 1, r.meetingId, r.conductDate, r.originalDate, r.district,
+        r.employeeName, r.post, r.stakeholderName, r.stakeholderPost,
+        r.purpose, r.meetingType, r.colleagueName, r.momUrl, r.photoUrl
+      ]);
+    });
+
+    var csv = rows.map(function(row) {
+      return row.map(function(cell) {
+        var s = (cell || '').toString().replace(/"/g, '""');
+        return (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1)
+          ? '"' + s + '"' : s;
+      }).join(',');
+    }).join('\r\n');
+
+    var blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    var url  = URL.createObjectURL(blob);
+    var a    = document.createElement('a');
+    var dt   = new Date();
+    var fname = 'EG_Reports_' + dt.getFullYear() + ('0'+(dt.getMonth()+1)).slice(-2) + ('0'+dt.getDate()).slice(-2) + '.csv';
+    a.href = url; a.download = fname;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+    showToast('Downloaded ' + data.length + ' records as ' + fname);
   }
 
   // ── Dropdowns ────────────────────────────────────────────────
@@ -1371,12 +1473,24 @@
   // ── Helpers ──────────────────────────────────────────────────
   function v(id)  { var el = document.getElementById(id); return el ? el.value.trim() : ''; }
   function esc(s) { return s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;') : ''; }
+
+  // Parse "15 Apr 2026" → timestamp  (also handles legacy DD-MM-YYYY)
+  var _MON = {Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
+  function toTs(d) {
+    if (!d) return 0;
+    var p = d.trim().split(' ');
+    if (p.length === 3 && _MON[p[1]] !== undefined) {
+      return new Date(parseInt(p[2]), _MON[p[1]], parseInt(p[0])).getTime();
+    }
+    var parts = d.split('-');
+    if (parts.length === 3) return new Date(parseInt(parts[2]), parseInt(parts[1])-1, parseInt(parts[0])).getTime();
+    return 0;
+  }
   function relDate(d) {
-    var p = (d || '').split('-');
-    if (p.length !== 3) return d;
-    var dt = new Date(p[2], p[1]-1, p[0]);
+    var ts = toTs(d);
+    if (!ts) return d || '';
     var today = new Date(); today.setHours(0,0,0,0);
-    var diff = Math.round((dt - today) / 86400000);
+    var diff = Math.round((ts - today.getTime()) / 86400000);
     if (diff === 0)  return 'Today';
     if (diff === 1)  return 'Tomorrow';
     if (diff === -1) return 'Yesterday';
