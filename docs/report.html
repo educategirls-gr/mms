@@ -578,7 +578,7 @@
     dists.slice().sort(function(a,b){ return a.name.localeCompare(b.name); }).forEach(function(d) {
       var o = document.createElement('option');
       o.value = d.name;
-      o.textContent = d.name + '  —  ' + d.total + ' meetings (' + d.conducted + ' conducted)';
+      o.textContent = d.name;
       sel.appendChild(o);
     });
   }
@@ -651,8 +651,7 @@
 
   function renderDistrictReport(d, filterMonth) {
     document.getElementById('rp-detail').style.display = 'block';
-    var label = d.district.toUpperCase() + ' DISTRICT';
-    if (filterMonth) label += ' — ' + filterMonth;
+    var label = d.district.toUpperCase() + ' DISTRICT' + (filterMonth ? ' · ' + filterMonth : ' · All Months');
     document.getElementById('rp-dist-label').textContent = label;
 
     var allConducted = d.conducted || [];
@@ -662,12 +661,11 @@
 
     // Month count chip
     var countEl = document.getElementById('rp-month-count');
-    if (filterMonth) {
-      countEl.textContent = conducted.length + ' meeting' + (conducted.length !== 1 ? 's' : '') + ' in ' + filterMonth;
-      countEl.style.display = 'block';
-    } else {
-      countEl.style.display = 'none';
-    }
+    var chipText = filterMonth
+      ? conducted.length + ' meeting' + (conducted.length !== 1 ? 's' : '') + ' in ' + filterMonth
+      : allConducted.length + ' total conducted meeting' + (allConducted.length !== 1 ? 's' : '');
+    countEl.textContent = chipText;
+    countEl.style.display = 'block';
 
     // KPI row — always show full district totals
     var t = d.totals || {};
