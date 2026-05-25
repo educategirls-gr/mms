@@ -38,6 +38,7 @@ function apiResponse(e, method) {
     else if (action === 'getAllMyMeetings')      result = getAllMyMeetings(e.parameter.email || '');
     else if (action === 'getDistrictEmployees') result = getDistrictEmployees(e.parameter.district || '', e.parameter.email || '');
     else if (action === 'getDashboardStats')    result = getDashboardStats(e.parameter.email || '', e.parameter.all === '1');
+    else if (action === 'getDistrictReport')    result = getDistrictReport(e.parameter.district || '');
     else if (action === 'deleteMeeting')        result = deleteMeeting(e.parameter.meetingId || '');
     else if (action === 'saveMeeting')          result = saveMeeting(body);
     else if (action === 'conductMeeting')       result = conductMeeting(body);
@@ -1233,6 +1234,90 @@ function getEmployeeByName(name) {
     }
   }
   return null;
+}
+
+// ------------------------------------------------------------
+//  DISTRICT REPORT — detailed breakdown for one district
+// ------------------------------------------------------------
+function getDistrictReport(district) {
+  try {
+    if (!district) return { success: false, message: 'District required.' };
+    var ss       = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var distLow  = district.trim().toLowerCase();
+
+    // ── Totals from Plan Meetings ──────────────────────────────
+    var planSheet = ss.getSheetByName(MEETINGS_SHEET);
+    var totals    = { total:0, conducted:0, planned:0, cancelled:0, postponed:0 };
+    if (planSheet && planSheet.getLastRow() > 1) {
+      var pd = planSheet.getDataRange().getValues();
+      for (var i = 1; i < pd.length; i++) {
+        if ((pd[i][1]||'').toString().trim().toLowerCase() !== distLow) continue;
+        totals.total++;
+        var st = (pd[i][13]||'Planned').toString().trim().toLowerCase();
+        if      (st === 'conducted') totals.conducted++;
+        else if (st === 'planned')   totals.planned++;
+        else if (st === 'cancelled') totals.cancelled++;
+        else if (st === 'postponed') totals.postponed++;
+      }
+    }
+
+    // ── Conducted Meetings (full detail) ──────────────────────
+    var cSheet   = ss.getSheetByName(CONDUCTED_SHEET);
+    var conducted = [];
+    var postMap   = {}; // post → { count, empMap: { name→count } }
+
+    if (cSheet && cSheet.getLastRow() > 1) {
+      var cd = cSheet.getDataRange().getValues();
+      for (var ci = 1; ci < cd.length; ci++) {
+        if ((cd[ci][1]||'').toString().trim().toLowerCase() !== distLow) continue;
+
+        var emp  = (cd[ci][2]  || '').toString().trim();
+        var post = (cd[ci][3]  || '').toString().trim();
+
+        // post-wise map
+        if (!postMap[post]) postMap[post] = { count:0, empMap:{} };
+        postMap[post].count++;
+        postMap[post].empMap[emp] = (postMap[post].empMap[emp] || 0) + 1;
+
+        conducted.push({
+          meetingId:       (cd[ci][0]  || '').toString(),
+          employeeName:    emp,
+          post:            post,
+          conductDate:     (cd[ci][13] || '').toString(),
+          stakeholderName: (cd[ci][9]  || '').toString(),
+          stakeholderPost: (cd[ci][10] || '').toString(),
+          purpose:         (cd[ci][11] || '').toString(),
+          meetingType:     (cd[ci][8]  || '').toString(),
+          momUrl:          (cd[ci][17] || '').toString(),
+          photoUrl:        (cd[ci][16] || '').toString(),
+          colleagueName:   (cd[ci][18] || '').toString()
+        });
+      }
+    }
+
+    // sort conducted: newest first
+    conducted.sort(function(a,b){ return b.conductDate.localeCompare(a.conductDate); });
+
+    // build byPost array
+    var byPost = [];
+    for (var p in postMap) {
+      var emps = [];
+      for (var en in postMap[p].empMap) emps.push({ name:en, count:postMap[p].empMap[en] });
+      emps.sort(function(a,b){ return b.count - a.count; });
+      byPost.push({ post:p, count:postMap[p].count, employees:emps });
+    }
+    byPost.sort(function(a,b){ return b.count - a.count; });
+
+    return {
+      success:   true,
+      district:  district,
+      totals:    totals,
+      byPost:    byPost,
+      conducted: conducted
+    };
+  } catch(err) {
+    return { success: false, message: err.message };
+  }
 }
 
 // ------------------------------------------------------------

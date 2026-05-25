@@ -162,31 +162,48 @@
       </div>
     </div>
 
-    <!-- View: Reports (Tables) -->
+    <!-- View: Reports (District Filter + Detail) -->
     <div id="view-reports" class="view">
-      <div id="rp-loading" class="loading-box" style="display:none;">
-        <div class="spinner"></div><br>Loading reports…
+
+      <!-- District selector card -->
+      <div class="card" style="margin-bottom:18px;">
+        <div class="card-title">🏛️ Select District</div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <select id="rp-district-sel"
+            style="padding:10px 16px;border:1.5px solid #E5E7EB;border-radius:8px;font-size:14px;font-weight:600;color:#1E3A5F;background:#fff;cursor:pointer;min-width:220px;"
+            onchange="onDistrictChange(this.value)">
+            <option value="">— Select a District —</option>
+          </select>
+          <div id="rp-sel-loading" style="display:none;color:#6B7280;font-size:13px;">⏳ Loading…</div>
+        </div>
       </div>
-      <div id="rp-content">
+
+      <!-- District detail (shown after selection) -->
+      <div id="rp-detail" style="display:none;">
+
+        <!-- KPI row -->
+        <div id="rp-kpi" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px;"></div>
+
+        <!-- Post-wise breakdown -->
         <div class="card" style="margin-bottom:18px;">
-          <div class="card-title">🏛️ District-wise Summary</div>
-          <div id="rp-district" style="overflow-x:auto;"></div>
+          <div class="card-title">👤 Post-wise Meetings</div>
+          <div id="rp-bypost" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;"></div>
         </div>
-        <div class="two-col">
-          <div class="card">
-            <div class="card-title">📋 Meeting Types</div>
-            <div id="rp-types"></div>
-          </div>
-          <div class="card">
-            <div class="card-title">🎯 Meeting Purposes</div>
-            <div id="rp-purposes"></div>
-          </div>
-        </div>
+
+        <!-- Conducted meetings detail table -->
         <div class="card">
-          <div class="card-title">📋 Conducted Meetings — Detail</div>
-          <div id="rp-conducted" style="overflow-x:auto;"></div>
+          <div class="card-title">📋 Meeting Details</div>
+          <div id="rp-table" style="overflow-x:auto;"></div>
         </div>
+
       </div>
+
+      <!-- No district selected placeholder -->
+      <div id="rp-placeholder" style="text-align:center;padding:60px 0;color:#9CA3AF;">
+        <div style="font-size:40px;margin-bottom:12px;">🏛️</div>
+        <div style="font-size:14px;font-weight:600;">Select a district to view its report</div>
+      </div>
+
     </div>
 
   </div>
@@ -323,80 +340,108 @@
 
   // ── Reports ──────────────────────────────────────────────────
   function loadReports() {
-    if (_data) { renderReports(_data); return; }
-    document.getElementById('rp-loading').style.display = 'block';
+    if (_data) { populateDistrictDropdown(_data.districts || []); return; }
     loadData(function(res) {
-      document.getElementById('rp-loading').style.display = 'none';
-      if (!res.success) {
-        document.getElementById('rp-loading').innerHTML = '⚠️ ' + (res.message || 'Error');
-        document.getElementById('rp-loading').style.display = 'block';
-        return;
-      }
-      renderReports(res);
+      if (res.success) populateDistrictDropdown(res.districts || []);
     });
   }
 
-  function renderReports(d) {
-    var dists = d.districts || [];
+  function populateDistrictDropdown(dists) {
+    var sel = document.getElementById('rp-district-sel');
+    while (sel.options.length > 1) sel.remove(1);
+    dists.forEach(function(d) {
+      var o = document.createElement('option');
+      o.value = d.name;
+      o.textContent = d.name + ' (' + d.total + ' meetings)';
+      sel.appendChild(o);
+    });
+  }
 
-    // District table
-    document.getElementById('rp-district').innerHTML =
-      '<table class="rep-table"><thead><tr>' +
-      '<th>District</th><th>Total</th><th>Conducted</th><th>Pending</th><th>Cancelled</th><th>Success %</th>' +
-      '</tr></thead><tbody>' +
-      dists.map(function(di) {
-        var p = di.total>0 ? Math.round((di.conducted/di.total)*100) : 0;
-        var c = p>=80?'#065F46':p>=60?'#92400E':'#991B1B';
-        return '<tr><td><strong>'+di.name+'</strong></td><td>'+di.total+'</td>' +
-               '<td><span class="badge-c">'+di.conducted+'</span></td>' +
-               '<td><span class="badge-p">'+di.planned+'</span></td>' +
-               '<td><span class="badge-x">'+di.cancelled+'</span></td>' +
-               '<td><strong style="color:'+c+';">'+p+'%</strong></td></tr>';
-      }).join('') +
-      (function(){ var t=d.totals||{}; var p=t.total>0?Math.round((t.conducted/t.total)*100):0;
-        return '<tr style="background:#EFF6FF;font-weight:700;"><td>TOTAL</td><td>'+t.total+'</td>' +
-               '<td><span class="badge-c">'+t.conducted+'</span></td>' +
-               '<td><span class="badge-p">'+t.planned+'</span></td>' +
-               '<td><span class="badge-x">'+t.cancelled+'</span></td>' +
-               '<td style="color:#1E3A5F;">'+p+'%</td></tr>'; })() +
-      '</tbody></table>';
+  function onDistrictChange(district) {
+    if (!district) {
+      document.getElementById('rp-detail').style.display = 'none';
+      document.getElementById('rp-placeholder').style.display = 'block';
+      return;
+    }
+    document.getElementById('rp-sel-loading').style.display = 'inline';
+    document.getElementById('rp-detail').style.display = 'none';
+    document.getElementById('rp-placeholder').style.display = 'none';
+    fetch(GAS_URL + '?action=getDistrictReport&district=' + encodeURIComponent(district))
+      .then(function(r) { return r.json(); })
+      .then(function(res) {
+        document.getElementById('rp-sel-loading').style.display = 'none';
+        if (!res.success) { alert('Error: ' + (res.message || 'Unknown error')); return; }
+        renderDistrictReport(res);
+      })
+      .catch(function(e) {
+        document.getElementById('rp-sel-loading').style.display = 'none';
+        alert('Network error: ' + e.message);
+      });
+  }
 
-    // Types bars
-    var types = d.byType||[]; var mT = types.reduce(function(m,x){ return Math.max(m,x.count||0); },1);
-    document.getElementById('rp-types').innerHTML = types.map(function(tp) {
-      var p = Math.round((tp.count/mT)*100);
-      return '<div class="bar-row"><div class="bar-label">'+tp.name+'</div>' +
-             '<div class="bar-track"><div class="bar-fill" style="width:'+p+'%;background:#1E3A5F;"></div></div>' +
-             '<div class="bar-val">'+tp.count+'</div></div>';
-    }).join('') || '<div style="color:#9CA3AF;font-size:13px;">No data</div>';
+  function renderDistrictReport(d) {
+    document.getElementById('rp-detail').style.display = 'block';
+    var t = d.totals || {};
 
-    // Purpose bars
-    var purps = d.byPurpose||[]; var mP = purps.reduce(function(m,x){ return Math.max(m,x.count||0); },1);
-    document.getElementById('rp-purposes').innerHTML = purps.map(function(pu) {
-      var p = Math.round((pu.count/mP)*100);
-      return '<div class="bar-row"><div class="bar-label">'+pu.name+'</div>' +
-             '<div class="bar-track"><div class="bar-fill" style="width:'+p+'%;background:#2563EB;"></div></div>' +
-             '<div class="bar-val">'+pu.count+'</div></div>';
-    }).join('') || '<div style="color:#9CA3AF;font-size:13px;">No data</div>';
+    // KPI cards
+    var pending = (t.planned || 0) + (t.postponed || 0) + (t.followup || 0);
+    var kpis = [
+      { n: t.total||0,     l: 'Total Meetings', c: '#1D4ED8', bg: '#EFF6FF' },
+      { n: t.conducted||0, l: 'Conducted',       c: '#065F46', bg: '#D1FAE5' },
+      { n: pending,        l: 'Pending',          c: '#92400E', bg: '#FEF3C7' },
+      { n: t.cancelled||0, l: 'Cancelled',        c: '#991B1B', bg: '#FEE2E2' }
+    ];
+    document.getElementById('rp-kpi').innerHTML = kpis.map(function(k) {
+      return '<div class="kpi-card" style="border-top:3px solid ' + k.c + ';background:' + k.bg + ';">' +
+             '<div class="kpi-num" style="color:' + k.c + ';">' + k.n + '</div>' +
+             '<div class="kpi-lbl">' + k.l + '</div></div>';
+    }).join('');
 
-    // Conducted detail table
-    var rec = d.recentConducted||[];
-    document.getElementById('rp-conducted').innerHTML = rec.length === 0
-      ? '<div style="color:#9CA3AF;font-size:13px;padding:16px 0;">No conducted meetings yet</div>'
+    // Post-wise breakdown
+    var byPost = d.byPost || [];
+    document.getElementById('rp-bypost').innerHTML = byPost.length === 0
+      ? '<div style="color:#9CA3AF;font-size:13px;padding:12px 0;">No conducted meetings yet</div>'
+      : byPost.map(function(p) {
+          var empHtml = (p.employees || []).map(function(em) {
+            return '<div style="display:flex;justify-content:space-between;align-items:center;' +
+                   'padding:4px 0;border-bottom:1px solid #F3F4F6;">' +
+                   '<span style="font-size:12px;color:#374151;">' + em.name + '</span>' +
+                   '<span style="font-size:12px;font-weight:700;color:#1E3A5F;' +
+                   'background:#EFF6FF;padding:1px 8px;border-radius:10px;">' + em.count + '</span></div>';
+          }).join('');
+          return '<div style="background:#fff;border:1px solid #E5E7EB;border-radius:10px;' +
+                 'padding:14px;box-shadow:0 1px 4px rgba(0,0,0,0.05);">' +
+                 '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">' +
+                 '<div style="font-size:13px;font-weight:700;color:#1E3A5F;">' + p.post + '</div>' +
+                 '<div style="font-size:20px;font-weight:900;color:#1E3A5F;">' + p.count + '</div></div>' +
+                 empHtml + '</div>';
+        }).join('');
+
+    // Conducted meetings detail table
+    var conducted = d.conducted || [];
+    document.getElementById('rp-table').innerHTML = conducted.length === 0
+      ? '<div style="color:#9CA3AF;font-size:13px;padding:16px 0;">No conducted meetings in this district</div>'
       : '<table class="rep-table"><thead><tr>' +
-        '<th>#</th><th>Meeting ID</th><th>District</th><th>Employee</th><th>Post</th>' +
-        '<th>Stakeholder</th><th>Stakeholder Post</th><th>Purpose</th><th>Type</th><th>Date</th>' +
+        '<th>#</th><th>Meeting ID</th><th>Date</th><th>By</th><th>Post</th>' +
+        '<th>Met With</th><th>Designation</th><th>Purpose</th><th>Type</th><th>MoM</th><th>Photos</th>' +
         '</tr></thead><tbody>' +
-        rec.map(function(r,i) {
-          return '<tr><td style="color:#9CA3AF;">'+(i+1)+'</td>' +
-                 '<td><span style="font-size:11px;font-weight:700;color:#1E3A5F;">'+r.meetingId+'</span></td>' +
-                 '<td>'+r.district+'</td><td>'+r.employeeName+'</td>' +
-                 '<td style="font-size:11px;color:#6B7280;">'+r.post+'</td>' +
-                 '<td><strong>'+r.stakeholderName+'</strong></td>' +
-                 '<td style="font-size:11px;color:#6B7280;">'+r.stakeholderPost+'</td>' +
-                 '<td>'+r.purpose+'</td>' +
-                 '<td><span style="background:#DBEAFE;color:#1E40AF;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;">'+r.meetingType+'</span></td>' +
-                 '<td>'+r.conductDate+'</td></tr>';
+        conducted.map(function(r, i) {
+          var momLink   = r.momUrl   ? '<a href="' + r.momUrl   + '" target="_blank" style="color:#1E3A5F;font-weight:600;text-decoration:none;">&#128196; View</a>' : '<span style="color:#9CA3AF;">&#8212;</span>';
+          var photoLink = r.photoUrl ? '<a href="' + r.photoUrl + '" target="_blank" style="color:#1E3A5F;font-weight:600;text-decoration:none;">&#128247; View</a>' : '<span style="color:#9CA3AF;">&#8212;</span>';
+          return '<tr>' +
+                 '<td style="color:#9CA3AF;">' + (i + 1) + '</td>' +
+                 '<td><span style="font-size:11px;font-weight:700;color:#1E3A5F;">' + r.meetingId + '</span></td>' +
+                 '<td style="white-space:nowrap;">' + r.conductDate + '</td>' +
+                 '<td>' + r.employeeName + '</td>' +
+                 '<td style="font-size:11px;color:#6B7280;">' + r.post + '</td>' +
+                 '<td><strong>' + r.stakeholderName + '</strong></td>' +
+                 '<td style="font-size:11px;color:#6B7280;">' + r.stakeholderPost + '</td>' +
+                 '<td>' + r.purpose + '</td>' +
+                 '<td><span style="background:#DBEAFE;color:#1E40AF;padding:2px 8px;' +
+                 'border-radius:20px;font-size:11px;font-weight:600;">' + r.meetingType + '</span></td>' +
+                 '<td>' + momLink + '</td>' +
+                 '<td>' + photoLink + '</td>' +
+                 '</tr>';
         }).join('') + '</tbody></table>';
   }
 
