@@ -14,6 +14,33 @@ var OTP_EXPIRY_SEC   = 600;
 var ALLOWED_DOMAIN   = 'educategirls.ngo';
 
 // ------------------------------------------------------------
+//  AUTHORIZE ALL SERVICES — Run this once from GAS editor
+//  to grant all required permissions (Spreadsheet, Drive, Mail)
+// ------------------------------------------------------------
+function authorizeAll() {
+  try {
+    // 1. Spreadsheet access
+    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    Logger.log('✅ Spreadsheet: ' + ss.getName());
+
+    // 2. Drive access
+    var folder = DriveApp.getFolderById(DRIVE_ROOT_ID);
+    Logger.log('✅ Drive folder: ' + folder.getName());
+
+    // 3. Mail access
+    var quota = MailApp.getRemainingDailyQuota();
+    Logger.log('✅ Mail quota remaining: ' + quota);
+
+    // 4. Session / user
+    Logger.log('✅ Running as: ' + Session.getEffectiveUser().getEmail());
+
+    Logger.log('🎉 All services authorized successfully!');
+  } catch(e) {
+    Logger.log('❌ Error: ' + e.message);
+  }
+}
+
+// ------------------------------------------------------------
 //  ENTRY POINT
 // ------------------------------------------------------------
 // ------------------------------------------------------------
@@ -1298,7 +1325,7 @@ function getDistrictReport(district) {
           meetingId:       (cd[ci][0]  || '').toString(),
           employeeName:    emp,
           post:            post,
-          conductDate:     (cd[ci][13] || '').toString(),
+          conductDate:     fmtDateVal(cd[ci][13]),
           stakeholderName: (cd[ci][9]  || '').toString(),
           stakeholderPost: (cd[ci][10] || '').toString(),
           purpose:         (cd[ci][11] || '').toString(),
