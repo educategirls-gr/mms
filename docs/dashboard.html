@@ -1266,47 +1266,64 @@
     };
     var STATUS_ICON = { 'Conducted': '✅', 'Postponed': '🔄', 'Cancelled': '❌' };
 
-    var html = '';
-    filtered.forEach(function(r) {
+    var html =
+      '<div style="overflow-x:auto;">' +
+      '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
+      '<thead>' +
+        '<tr style="background:#F3F4F6;border-bottom:2px solid #E5E7EB;">' +
+          '<th style="padding:8px 6px;text-align:left;color:#6B7280;font-weight:600;white-space:nowrap;">#</th>' +
+          '<th style="padding:8px 6px;text-align:left;color:#6B7280;font-weight:600;white-space:nowrap;">Date</th>' +
+          '<th style="padding:8px 6px;text-align:left;color:#6B7280;font-weight:600;">Status</th>' +
+          '<th style="padding:8px 6px;text-align:left;color:#6B7280;font-weight:600;">Stakeholder</th>' +
+          '<th style="padding:8px 6px;text-align:left;color:#6B7280;font-weight:600;">Purpose</th>' +
+          '<th style="padding:8px 6px;text-align:left;color:#6B7280;font-weight:600;">Details / Notes</th>' +
+          '<th style="padding:8px 6px;text-align:left;color:#6B7280;font-weight:600;white-space:nowrap;">Meeting ID</th>' +
+        '</tr>' +
+      '</thead>' +
+      '<tbody>';
+
+    filtered.forEach(function(r, i) {
       var st    = r.status || 'Conducted';
       var stCss = STATUS_STYLE[st] || 'background:#F3F4F6;color:#374151;';
       var stIco = STATUS_ICON[st]  || '';
-      var dateLabel = st === 'Conducted'
-        ? (r.conductDate || r.date)
-        : r.date;
+      var dateLabel = st === 'Conducted' ? (r.conductDate || r.date) : r.date;
 
-      var detail = '';
+      var details = '';
       if (st === 'Conducted') {
-        if (r.keyPoints) detail += '<div style="font-size:12px;color:#374151;margin-top:4px;"><b>Key Points:</b> ' + esc(r.keyPoints) + '</div>';
+        if (r.keyPoints) details += '<div style="color:#374151;">' + esc(r.keyPoints) + '</div>';
         var links = '';
-        if (r.momLink)   links += ' <a href="' + esc(r.momLink)   + '" target="_blank" class="rep-link rep-link-mom">MoM</a>';
-        if (r.photoLink) links += ' <a href="' + esc(r.photoLink) + '" target="_blank" class="rep-link rep-link-photo">Photos</a>';
-        if (links) detail += '<div style="margin-top:6px;">' + links + '</div>';
-        if (r.colleagueName) detail += '<div style="font-size:11px;color:#6B7280;margin-top:4px;">With: ' + esc(r.colleagueName) + (r.colleaguePost ? ' (' + esc(r.colleaguePost) + ')' : '') + '</div>';
+        if (r.momLink)   links += '<a href="' + esc(r.momLink)   + '" target="_blank" class="rep-link rep-link-mom" style="margin-right:4px;">MoM</a>';
+        if (r.photoLink) links += '<a href="' + esc(r.photoLink) + '" target="_blank" class="rep-link rep-link-photo">Photos</a>';
+        if (links) details += '<div style="margin-top:3px;">' + links + '</div>';
+        if (r.colleagueName) details += '<div style="color:#9CA3AF;font-size:11px;margin-top:2px;">With: ' + esc(r.colleagueName) + (r.colleaguePost ? ' (' + esc(r.colleaguePost) + ')' : '') + '</div>';
       } else if (st === 'Postponed') {
-        detail += '<div style="font-size:12px;color:#92400E;margin-top:4px;">' + esc(r.reason || '') + '</div>';
+        if (r.reason) details = '<span style="color:#92400E;">' + esc(r.reason) + '</span>';
       } else if (st === 'Cancelled') {
-        if (r.reason) detail += '<div style="font-size:12px;color:#991B1B;margin-top:4px;">Reason: ' + esc(r.reason) + '</div>';
+        if (r.reason) details = '<span style="color:#991B1B;">Reason: ' + esc(r.reason) + '</span>';
       }
 
+      var rowBg = i % 2 === 0 ? '#ffffff' : '#F9FAFB';
       html +=
-        '<div style="border:1px solid #E5E7EB;border-radius:10px;padding:14px 16px;margin-bottom:10px;">' +
-          '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:6px;">' +
-            '<div>' +
-              '<span style="' + stCss + 'font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;margin-right:8px;">' + stIco + ' ' + st + '</span>' +
-              '<span style="font-size:11px;color:#6B7280;">' + esc(dateLabel) + '</span>' +
-            '</div>' +
-            '<span style="font-size:10px;color:#9CA3AF;">' + esc(r.meetingId) + '</span>' +
-          '</div>' +
-          '<div style="margin-top:8px;">' +
-            '<span style="font-weight:700;font-size:13px;color:#111827;">' + esc(r.adhikariName) + '</span>' +
-            '<span style="font-size:12px;color:#6B7280;margin-left:6px;">(' + esc(r.adhikariPost) + ')</span>' +
-          '</div>' +
-          '<div style="font-size:12px;color:#374151;margin-top:2px;">' + esc(r.purpose) + (r.type ? ' &bull; ' + esc(r.type) : '') + '</div>' +
-          detail +
-        '</div>';
+        '<tr style="background:' + rowBg + ';border-bottom:1px solid #F3F4F6;vertical-align:top;">' +
+          '<td style="padding:8px 6px;color:#9CA3AF;">' + (i + 1) + '</td>' +
+          '<td style="padding:8px 6px;white-space:nowrap;color:#374151;">' + esc(dateLabel) + '</td>' +
+          '<td style="padding:8px 6px;white-space:nowrap;">' +
+            '<span style="' + stCss + 'font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;">' + stIco + ' ' + st + '</span>' +
+          '</td>' +
+          '<td style="padding:8px 6px;">' +
+            '<div style="font-weight:600;color:#111827;">' + esc(r.adhikariName) + '</div>' +
+            '<div style="color:#6B7280;font-size:11px;">' + esc(r.adhikariPost) + '</div>' +
+          '</td>' +
+          '<td style="padding:8px 6px;">' +
+            '<div style="color:#374151;">' + esc(r.purpose) + '</div>' +
+            (r.type ? '<div style="color:#6B7280;font-size:11px;">' + esc(r.type) + '</div>' : '') +
+          '</td>' +
+          '<td style="padding:8px 6px;max-width:200px;">' + details + '</td>' +
+          '<td style="padding:8px 6px;color:#9CA3AF;font-size:10px;white-space:nowrap;">' + esc(r.meetingId) + '</td>' +
+        '</tr>';
     });
 
+    html += '</tbody></table></div>';
     document.getElementById('reports-content').innerHTML = html;
   }
 
