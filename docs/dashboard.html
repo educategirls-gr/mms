@@ -1488,16 +1488,23 @@
       return;
     }
     el.innerHTML = '';
-    list.forEach(function(c) {
+    list.forEach(function(c, i) {
       var ini = c.name.trim().split(' ').map(function(w){ return w[0]; }).slice(0,2).join('').toUpperCase();
-      var locLabel = c.district ? (c.district + (c.block ? ' · ' + c.block : '')) : '';
+      var loc = '';
+      if (c.district && c.block && c.block.toLowerCase() !== c.district.toLowerCase()) {
+        loc = c.district + ' · ' + c.block;
+      } else if (c.district) {
+        loc = c.district;
+      }
       var div = document.createElement('div');
       div.className = 'colleague-item';
-      div.innerHTML = '<div class="ci-avatar">' + ini + '</div>' +
+      div.innerHTML =
+        '<div style="min-width:22px;font-size:11px;color:#9CA3AF;font-weight:700;text-align:right;padding-right:4px;flex-shrink:0;">' + (i + 1) + '</div>' +
+        '<div class="ci-avatar">' + ini + '</div>' +
         '<div style="flex:1;">' +
           '<div class="ci-name">' + esc(c.name) + '</div>' +
           '<div class="ci-post">' + esc(c.designation) + '</div>' +
-          (locLabel ? '<div style="font-size:10px;color:#9CA3AF;margin-top:1px;">' + esc(locLabel) + '</div>' : '') +
+          (loc ? '<div style="font-size:10px;color:#9CA3AF;margin-top:2px;">📍 ' + esc(loc) + '</div>' : '') +
         '</div>';
       div.addEventListener('click', function() { selectColleague(c.name, c.designation); });
       el.appendChild(div);
