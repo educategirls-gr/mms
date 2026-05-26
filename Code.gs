@@ -462,20 +462,25 @@ function fmtTimeVal(t) {
 }
 
 // Formats a date cell value as "15 Apr 2026"
+// Handles: Date object | "YYYY-MM-DD" | "DD-MM-YYYY" | already formatted string
 function fmtDateVal(d) {
   if (!d) return '';
+  var MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   if (d instanceof Date) {
-    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+    return d.getDate() + ' ' + MN[d.getMonth()] + ' ' + d.getFullYear();
   }
   var s = d.toString().trim();
-  // Already short format "2026-04-15" → "15 Apr 2026"
+  // YYYY-MM-DD → "15 Apr 2026"
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
     var p = s.split('-');
-    var months2 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    return parseInt(p[2]) + ' ' + months2[parseInt(p[1])-1] + ' ' + p[0];
+    return parseInt(p[2]) + ' ' + MN[parseInt(p[1])-1] + ' ' + p[0];
   }
-  return s;
+  // DD-MM-YYYY → "15 Apr 2026"
+  if (/^\d{2}-\d{2}-\d{4}$/.test(s)) {
+    var p2 = s.split('-');
+    return parseInt(p2[0]) + ' ' + MN[parseInt(p2[1])-1] + ' ' + p2[2];
+  }
+  return s; // already formatted or unknown — return as-is
 }
 
 // ------------------------------------------------------------
@@ -804,7 +809,7 @@ function cancelMeeting(payload) {
     }
 
     var rawDate     = rowData[5];
-    var meetingDate = rawDate instanceof Date ? Utilities.formatDate(rawDate, tz, 'dd-MM-yyyy') : (rawDate || '').toString();
+    var meetingDate = fmtDateVal(rawDate);
     var meetingTime = fmtTimeVal(rowData[6]);
 
     cSheet.appendRow([
@@ -876,7 +881,7 @@ function getActionedMeetings(email) {
         meetings.push({
           meetingId:    (cd[i][0]  || '').toString(),
           district:     (cd[i][1]  || '').toString(),
-          date:         (cd[i][5]  || '').toString(),  // Original Date
+          date:         fmtDateVal(cd[i][5]),            // Original Date
           meetingTime:  fmtTimeVal(cd[i][6]),           // Original Time
           duration:     (cd[i][7]  || '').toString(),
           type:         (cd[i][8]  || '').toString(),
@@ -885,7 +890,7 @@ function getActionedMeetings(email) {
           purpose:      (cd[i][11] || '').toString(),
           agenda:       (cd[i][12] || '').toString(),
           status:       'Conducted',
-          conductDate:  (cd[i][13] || '').toString(),
+          conductDate:  fmtDateVal(cd[i][13]),
           conductTime:  fmtTimeVal(cd[i][14]),
           keyPoints:    (cd[i][15] || '').toString(),
           photoLink:    (cd[i][16] || '').toString(),
@@ -906,7 +911,7 @@ function getActionedMeetings(email) {
         meetings.push({
           meetingId:    (xd[j][0]  || '').toString(),
           district:     (xd[j][1]  || '').toString(),
-          date:         (xd[j][5]  || '').toString(),  // Meeting Date
+          date:         fmtDateVal(xd[j][5]),            // Meeting Date
           meetingTime:  fmtTimeVal(xd[j][6]),
           duration:     (xd[j][7]  || '').toString(),
           type:         (xd[j][8]  || '').toString(),
