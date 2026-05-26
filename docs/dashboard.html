@@ -1555,6 +1555,7 @@
     gasPost('saveMeeting', data, function(res) {
       loading(false);
       if (res.success) {
+        invalidateFrontCache();
         showSuccessModal(res.meetingId);
         resetForm();
       } else if (res.message === 'ACCESS_REVOKED') {
