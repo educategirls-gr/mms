@@ -1378,7 +1378,12 @@
       var s = document.getElementById('colleague-search');
       if (s) { s.value = ''; }
       if (!colleaguesLoaded) {
-        gasFetch('getAllEmployees', { email: SESSION.email }, renderColleagues, function() {
+        var isStateUser = SESSION.role === 'State' || SESSION.role === 'state';
+        var colAction   = isStateUser ? 'getAllEmployees' : 'getDistrictEmployees';
+        var colParams   = isStateUser
+          ? { email: SESSION.email }
+          : { district: SESSION.district, email: SESSION.email };
+        gasFetch(colAction, colParams, renderColleagues, function() {
           document.getElementById('colleague-list').innerHTML =
             '<div style="padding:12px;color:#DC2626;font-size:13px;">Failed to load. Please try again.</div>';
         });

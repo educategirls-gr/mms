@@ -1401,8 +1401,9 @@ function getAllReports(email) {
   try {
     var ss       = SpreadsheetApp.openById(SPREADSHEET_ID);
     var emp      = getEmployeeByEmail(email.trim().toLowerCase());
-    var isState  = true; // All employees see all districts
-    var userDist = '';
+    var empR     = getEmployeeByEmail(email.trim().toLowerCase());
+    var isState  = empR && (empR.role === 'State' || empR.role === 'state');
+    var userDist = empR ? empR.district.trim().toLowerCase() : '';
 
     var cSheet = ss.getSheetByName(CONDUCTED_SHEET);
     if (!cSheet || cSheet.getLastRow() <= 1) return { success: true, reports: [] };
@@ -1450,7 +1451,7 @@ function getDashboardStats(email, allDistricts) {
     var emp = getEmployeeByEmail(email);
     var userRole     = emp ? (emp.role     || 'Field') : 'Field';
     var userDistrict = emp ? (emp.district || '')      : '';
-    var isState      = true; // All employees see full state-wide data
+    var isState      = allDistricts || (userRole === 'State');
 
     // ── Plan Meetings ──────────────────────────────────────────
     var planSheet = ss.getSheetByName(MEETINGS_SHEET);
@@ -1533,6 +1534,7 @@ function getDashboardStats(email, allDistricts) {
       for (var ci = 1; ci < cd.length; ci++) {
         var cr      = cd[ci];
         var cdist   = (cr[1]||'').toString().trim();
+        if (!isState && cdist.toUpperCase() !== userDistrict.toUpperCase()) continue;
         var cEmp    = (cr[2] ||'').toString().trim();
         var cType   = (cr[8] ||'').toString().trim();
         var cStkP   = (cr[10]||'').toString().trim();
