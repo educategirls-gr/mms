@@ -853,13 +853,25 @@
       document.getElementById('adhikariPost').innerHTML   = '<option value="">— Error loading —</option>';
       document.getElementById('meetingPurpose').innerHTML = '<option value="">— Error loading —</option>';
     });
+
+    // Prefetch Manage + My Meetings in background so first click is instant
+    setTimeout(function() {
+      gasFetch('getMyMeetings', { email: SESSION.email }, function(list) {
+        _manageCache = { data: list, ts: Date.now() };
+        // Chain: after manage done, prefetch My Meetings
+        gasFetch('getAllMyMeetings', { email: SESSION.email }, function(list2) {
+          _mymCache = { data: list2 || [], ts: Date.now() };
+          _mymAll   = _mymCache.data;
+        }, function(){});
+      }, function(){});
+    }, 1500);
   };
 
   // ── View navigation ──────────────────────────────────────────
   var TOPBAR = {
     create: { title: 'Plan Your Meeting',  sub: 'Plan your upcoming meetings' },
     manage: { title: 'Manage Meetings',    sub: 'Update meeting outcomes and action points' },
-    list:   { title: 'My Meetings', sub: 'My conducted meetings — search, filter and download' }
+    list:   { title: 'My Meetings', sub: '' }
   };
   function showView(view) {
     ['create','manage','list'].forEach(function(v) {
@@ -878,11 +890,25 @@
     document.getElementById('mob-overlay').classList.remove('mob-open');
   }
 
+  // ── Frontend cache (2-min TTL, invalidated on action) ───────
+  var _manageCache = { data: null, ts: 0 };
+  var _mymCache    = { data: null, ts: 0 };
+  var _CACHE_TTL   = 120000; // 2 minutes in ms
+  function invalidateFrontCache() { _manageCache.ts = 0; _mymCache.ts = 0; }
+
   // ── Manage Meetings ──────────────────────────────────────────
-  function loadManageMeetings() {
+  function loadManageMeetings(force) {
+    var now = Date.now();
+    if (!force && _manageCache.data && (now - _manageCache.ts) < _CACHE_TTL) {
+      renderManageMeetings(_manageCache.data);
+      return;
+    }
     document.getElementById('manage-content').innerHTML =
       '<div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>';
-    gasFetch('getMyMeetings', { email: SESSION.email }, renderManageMeetings, function(e) {
+    gasFetch('getMyMeetings', { email: SESSION.email }, function(list) {
+      _manageCache = { data: list, ts: Date.now() };
+      renderManageMeetings(list);
+    }, function(e) {
       console.error('getMyMeetings failed:', e);
       document.getElementById('manage-content').innerHTML =
         '<div class="empty-state"><p style="color:#DC2626;">Failed to load meetings. Please refresh and try again.<br><small>' + (e ? e.message : '') + '</small></p></div>';
@@ -1091,9 +1117,10 @@
     }, function(res) {
       btn.disabled = false; btn.innerHTML = '💾 Save &amp; Generate MoM';
       if (res.success) {
+        invalidateFrontCache();
         closeActionModal();
         showConductSuccess(res.momUrl, res.photoFolderUrl, res.followUpId, followUp);
-        loadManageMeetings();
+        loadManageMeetings(true);
       } else { showModalAlert('conduct', res.message || 'An error occurred.'); }
     }, function(e) {
       btn.disabled = false; btn.innerHTML = '💾 Save &amp; Generate MoM';
@@ -1139,7 +1166,7 @@
       originalDate: m.date, newDate: newDate, reason: document.getElementById('p-reason').value.trim()
     }, function(res) {
       btn.disabled = false; btn.innerHTML = '📅 Postpone';
-      if (res.success) { closeActionModal(); showToast('Meeting postponed. New date: ' + newDate); loadManageMeetings(); }
+      if (res.success) { invalidateFrontCache(); closeActionModal(); showToast('Meeting postponed. New date: ' + newDate); loadManageMeetings(true); }
       else showModalAlert('postpone', res.message || 'An error occurred.');
     }, function(e) {
       btn.disabled = false; btn.innerHTML = '📅 Postpone';
@@ -1156,7 +1183,7 @@
     btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Saving...';
     gasPost('cancelMeeting', { meetingId: m.meetingId, reason: reason }, function(res) {
       btn.disabled = false; btn.innerHTML = '❌ Mark as No Conduct';
-      if (res.success) { closeActionModal(); showToast('Meeting marked as no-conduct.'); loadManageMeetings(); }
+      if (res.success) { invalidateFrontCache(); closeActionModal(); showToast('Meeting marked as no-conduct.'); loadManageMeetings(true); }
       else showModalAlert('cancel', res.message || 'An error occurred.');
     }, function(e) {
       btn.disabled = false; btn.innerHTML = '❌ Mark as No Conduct';
@@ -1169,7 +1196,7 @@
     var m = _manageMeetings[MODAL_IDX];
     if (!confirm('Permanently delete meeting "' + m.meetingId + '"?')) return;
     gasFetch('deleteMeeting', { meetingId: m.meetingId }, function(res) {
-      if (res.success) { closeActionModal(); showToast('Meeting deleted successfully.'); loadManageMeetings(); }
+      if (res.success) { invalidateFrontCache(); closeActionModal(); showToast('Meeting deleted successfully.'); loadManageMeetings(true); }
       else alert('Delete failed: ' + res.message);
     }, function(e) { alert('Error: ' + e.message); });
   }
@@ -1181,15 +1208,22 @@
   var _MONTHS   = ['January','February','March','April','May','June',
                    'July','August','September','October','November','December'];
 
-  function loadReports() {
-    document.getElementById('reports-content').innerHTML =
-      '<div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>';
-    document.getElementById('rep-count').textContent = '';
+  function loadReports(force) {
     _mymMonth = new Date().getMonth();
     _mymYear  = new Date().getFullYear();
     mymUpdateLabel();
+    var now = Date.now();
+    if (!force && _mymCache.data && (now - _mymCache.ts) < _CACHE_TTL) {
+      _mymAll = _mymCache.data;
+      mymRender();
+      return;
+    }
+    document.getElementById('reports-content').innerHTML =
+      '<div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>';
+    document.getElementById('rep-count').textContent = '';
     gasFetch('getAllMyMeetings', { email: SESSION.email }, function(list) {
-      _mymAll = list || [];
+      _mymCache = { data: list || [], ts: Date.now() };
+      _mymAll = _mymCache.data;
       mymRender();
     }, function() {
       document.getElementById('reports-content').innerHTML =
