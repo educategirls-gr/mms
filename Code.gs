@@ -1527,7 +1527,7 @@ function getDashboardStats(email, allDistricts) {
           stakeholderPost: (rr[10]||'').toString(),
           purpose:         (rr[11]||'').toString(),
           meetingType:     (rr[8] ||'').toString(),
-          conductDate:     (rr[13]||'').toString()
+          conductDate:     fmtDateVal(rr[13])
         });
       }
     }
