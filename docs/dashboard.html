@@ -1176,161 +1176,176 @@
     }, function(e) { alert('Error: ' + e.message); });
   }
 
-  // ── All Reports ───────────────────────────────────────────────
-  var _allReports      = [];
-  var _filteredReports = [];
-  var _repPage         = 1;
-  var _repPerPage      = 15;
+  // ── My Meetings (conducted / postponed / cancelled — by month) ──
+  var _mymAll   = [];   // all meetings from backend
+  var _mymMonth = new Date().getMonth();   // 0-11
+  var _mymYear  = new Date().getFullYear();
+  var _MONTHS   = ['January','February','March','April','May','June',
+                   'July','August','September','October','November','December'];
 
   function loadReports() {
     document.getElementById('reports-content').innerHTML =
-      '<div class="empty-state"><div class="empty-icon">⏳</div><p>Loading reports...</p></div>';
+      '<div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>';
     document.getElementById('rep-count').textContent = '';
-    document.getElementById('rep-pagination').innerHTML = '';
-    gasFetch('getAllReports', { email: SESSION.email }, function(res) {
-      if (res && res.success) {
-        _allReports      = res.reports || [];
-        _filteredReports = _allReports;
-        _repPage         = 1;
-        renderReportsPage();
-      } else {
-        document.getElementById('reports-content').innerHTML =
-          '<div class="empty-state"><p style="color:#DC2626;">Failed to load reports. Please try again.</p></div>';
-      }
-    }, function(e) {
+    _mymMonth = new Date().getMonth();
+    _mymYear  = new Date().getFullYear();
+    mymUpdateLabel();
+    gasFetch('getAllMyMeetings', { email: SESSION.email }, function(list) {
+      _mymAll = list || [];
+      mymRender();
+    }, function() {
       document.getElementById('reports-content').innerHTML =
-        '<div class="empty-state"><p style="color:#DC2626;">Error: ' + (e ? e.message : 'Unknown') + '</p></div>';
+        '<div class="empty-state"><p style="color:#DC2626;">Failed to load. Please try again.</p></div>';
     });
   }
 
-  function filterReports() {
-    var q = document.getElementById('rep-search').value.trim().toLowerCase();
-    _filteredReports = q
-      ? _allReports.filter(function(r) {
-          return (r.employeeName + ' ' + r.post + ' ' + r.stakeholderName + ' ' + r.stakeholderPost + ' ' +
-                  r.purpose + ' ' + r.district + ' ' + r.meetingType + ' ' + r.meetingId)
-                 .toLowerCase().indexOf(q) !== -1;
-        })
-      : _allReports;
-    _repPage = 1;
-    renderReportsPage();
+  function mymUpdateLabel() {
+    var now = new Date();
+    document.getElementById('mym-month-label').textContent = _MONTHS[_mymMonth] + ' ' + _mymYear;
+    var isCurrentMonth = (_mymYear === now.getFullYear() && _mymMonth === now.getMonth());
+    document.getElementById('mym-next-btn').disabled = isCurrentMonth;
+    document.getElementById('mym-next-btn').style.opacity = isCurrentMonth ? '0.4' : '1';
   }
 
-  function onPerPageChange() {
-    _repPerPage = parseInt(document.getElementById('rep-per-page').value) || 15;
-    _repPage = 1;
-    renderReportsPage();
+  function mymPrevMonth() {
+    _mymMonth--;
+    if (_mymMonth < 0) { _mymMonth = 11; _mymYear--; }
+    mymUpdateLabel();
+    mymRender();
+  }
+  function mymNextMonth() {
+    var now = new Date();
+    if (_mymYear === now.getFullYear() && _mymMonth === now.getMonth()) return;
+    _mymMonth++;
+    if (_mymMonth > 11) { _mymMonth = 0; _mymYear++; }
+    mymUpdateLabel();
+    mymRender();
   }
 
-  function repGoPage(p) {
-    _repPage = p;
-    renderReportsPage();
-    // Scroll to top of card
-    var el = document.getElementById('reports-content');
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  function mymGetDate(r) {
+    // Use conductDate for Conducted, else original date
+    var d = (r.status === 'Conducted' && r.conductDate) ? r.conductDate : r.date;
+    return toTs(d);
   }
 
-  function renderReportsPage() {
-    var total = _filteredReports.length;
-    var start = (_repPage - 1) * _repPerPage;
-    var slice = _filteredReports.slice(start, start + _repPerPage);
+  function mymRender() {
+    var q = (document.getElementById('rep-search') ? document.getElementById('rep-search').value : '').trim().toLowerCase();
 
-    // Count line
-    document.getElementById('rep-count').textContent = total === 0
-      ? 'No reports found.'
-      : 'Showing ' + (start + 1) + ' – ' + Math.min(start + _repPerPage, total) + ' of ' + total + ' conducted meetings';
+    // Filter by selected month+year
+    var monthStart = new Date(_mymYear, _mymMonth, 1).getTime();
+    var monthEnd   = new Date(_mymYear, _mymMonth + 1, 0, 23, 59, 59).getTime();
 
-    if (total === 0) {
+    var filtered = _mymAll.filter(function(r) {
+      var ts = mymGetDate(r);
+      if (ts < monthStart || ts > monthEnd) return false;
+      if (q) {
+        var hay = (r.meetingId + ' ' + r.adhikariName + ' ' + r.adhikariPost + ' ' +
+                   r.purpose + ' ' + r.type + ' ' + r.district + ' ' + r.status).toLowerCase();
+        if (hay.indexOf(q) === -1) return false;
+      }
+      return true;
+    });
+
+    // Sort newest first
+    filtered.sort(function(a, b) { return mymGetDate(b) - mymGetDate(a); });
+
+    var countEl = document.getElementById('rep-count');
+    countEl.textContent = filtered.length
+      ? filtered.length + ' meeting' + (filtered.length > 1 ? 's' : '') + ' in ' + _MONTHS[_mymMonth] + ' ' + _mymYear
+      : '';
+
+    if (!filtered.length) {
       document.getElementById('reports-content').innerHTML =
-        '<div class="empty-state"><div class="empty-icon">📋</div><p>No reports match your search.</p></div>';
-      document.getElementById('rep-pagination').innerHTML = '';
+        '<div class="empty-state"><div class="empty-icon">📋</div>' +
+        '<p>No meetings in ' + _MONTHS[_mymMonth] + ' ' + _mymYear + '</p></div>';
       return;
     }
 
-    var html = '<div class="meetings-table-wrap"><table class="meetings-table"><thead><tr>' +
-      '<th>#</th><th>Meeting ID</th><th>Conduct Date</th><th>District</th>' +
-      '<th>Conducted By</th><th>Stakeholder</th><th>Purpose</th><th>Type</th><th>Links</th>' +
-      '</tr></thead><tbody>';
+    var STATUS_STYLE = {
+      'Conducted': 'background:#D1FAE5;color:#065F46;',
+      'Postponed': 'background:#FEF3C7;color:#92400E;',
+      'Cancelled': 'background:#FEE2E2;color:#991B1B;'
+    };
+    var STATUS_ICON = { 'Conducted': '✅', 'Postponed': '🔄', 'Cancelled': '❌' };
 
-    slice.forEach(function(r, idx) {
-      var links = '';
-      if (r.momUrl)   links += '<a href="' + esc(r.momUrl)   + '" target="_blank" class="rep-link rep-link-mom">MoM</a>';
-      if (r.photoUrl) links += '<a href="' + esc(r.photoUrl) + '" target="_blank" class="rep-link rep-link-photo">Photos</a>';
-      if (!links)     links  = '<span style="color:#9CA3AF;font-size:11px;">—</span>';
+    var html = '';
+    filtered.forEach(function(r) {
+      var st    = r.status || 'Conducted';
+      var stCss = STATUS_STYLE[st] || 'background:#F3F4F6;color:#374151;';
+      var stIco = STATUS_ICON[st]  || '';
+      var dateLabel = st === 'Conducted'
+        ? (r.conductDate || r.date)
+        : r.date;
 
-      html +=
-        '<tr>' +
-        '<td style="color:#9CA3AF;font-size:11px;text-align:center;">' + (start + idx + 1) + '</td>' +
-        '<td style="font-size:11px;color:#6B7280;white-space:nowrap;">' + esc(r.meetingId) + '</td>' +
-        '<td style="white-space:nowrap;font-weight:600;color:#111827;">' + esc(r.conductDate) + '</td>' +
-        '<td style="font-size:12px;">' + esc(r.district) + '</td>' +
-        '<td><div style="font-weight:600;font-size:12px;">' + esc(r.employeeName) + '</div>' +
-            '<div style="font-size:10px;color:#9CA3AF;">' + esc(r.post) + '</div></td>' +
-        '<td><div style="font-weight:600;font-size:12px;">' + esc(r.stakeholderName) + '</div>' +
-            '<div style="font-size:10px;color:#9CA3AF;">' + esc(r.stakeholderPost) + '</div></td>' +
-        '<td style="font-size:12px;max-width:130px;">' + esc(r.purpose) + '</td>' +
-        '<td><span style="font-size:11px;background:#F3F4F6;padding:2px 7px;border-radius:10px;white-space:nowrap;">' + esc(r.meetingType) + '</span></td>' +
-        '<td style="white-space:nowrap;">' + links + '</td>' +
-        '</tr>';
-    });
-    html += '</tbody></table></div>';
-    document.getElementById('reports-content').innerHTML = html;
-
-    // Pagination controls
-    var totalPages = Math.ceil(total / _repPerPage);
-    var pag = '';
-    if (totalPages > 1) {
-      pag += '<button class="pag-btn" onclick="repGoPage(' + Math.max(1, _repPage - 1) + ')"' +
-             (_repPage === 1 ? ' disabled' : '') + '>← Prev</button>';
-
-      for (var p = 1; p <= totalPages; p++) {
-        if (p === 1 || p === totalPages || (p >= _repPage - 1 && p <= _repPage + 1)) {
-          pag += '<button class="pag-btn' + (p === _repPage ? ' pag-active' : '') +
-                 '" onclick="repGoPage(' + p + ')">' + p + '</button>';
-        } else if (p === _repPage - 2 || p === _repPage + 2) {
-          pag += '<span style="color:#9CA3AF;padding:0 2px;">...</span>';
-        }
+      var detail = '';
+      if (st === 'Conducted') {
+        if (r.keyPoints) detail += '<div style="font-size:12px;color:#374151;margin-top:4px;"><b>Key Points:</b> ' + esc(r.keyPoints) + '</div>';
+        var links = '';
+        if (r.momLink)   links += ' <a href="' + esc(r.momLink)   + '" target="_blank" class="rep-link rep-link-mom">MoM</a>';
+        if (r.photoLink) links += ' <a href="' + esc(r.photoLink) + '" target="_blank" class="rep-link rep-link-photo">Photos</a>';
+        if (links) detail += '<div style="margin-top:6px;">' + links + '</div>';
+        if (r.colleagueName) detail += '<div style="font-size:11px;color:#6B7280;margin-top:4px;">With: ' + esc(r.colleagueName) + (r.colleaguePost ? ' (' + esc(r.colleaguePost) + ')' : '') + '</div>';
+      } else if (st === 'Postponed') {
+        detail += '<div style="font-size:12px;color:#92400E;margin-top:4px;">' + esc(r.reason || '') + '</div>';
+      } else if (st === 'Cancelled') {
+        if (r.reason) detail += '<div style="font-size:12px;color:#991B1B;margin-top:4px;">Reason: ' + esc(r.reason) + '</div>';
       }
 
-      pag += '<button class="pag-btn" onclick="repGoPage(' + Math.min(totalPages, _repPage + 1) + ')"' +
-             (_repPage === totalPages ? ' disabled' : '') + '>Next →</button>';
-    }
-    document.getElementById('rep-pagination').innerHTML = pag;
+      html +=
+        '<div style="border:1px solid #E5E7EB;border-radius:10px;padding:14px 16px;margin-bottom:10px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:6px;">' +
+            '<div>' +
+              '<span style="' + stCss + 'font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;margin-right:8px;">' + stIco + ' ' + st + '</span>' +
+              '<span style="font-size:11px;color:#6B7280;">' + esc(dateLabel) + '</span>' +
+            '</div>' +
+            '<span style="font-size:10px;color:#9CA3AF;">' + esc(r.meetingId) + '</span>' +
+          '</div>' +
+          '<div style="margin-top:8px;">' +
+            '<span style="font-weight:700;font-size:13px;color:#111827;">' + esc(r.adhikariName) + '</span>' +
+            '<span style="font-size:12px;color:#6B7280;margin-left:6px;">(' + esc(r.adhikariPost) + ')</span>' +
+          '</div>' +
+          '<div style="font-size:12px;color:#374151;margin-top:2px;">' + esc(r.purpose) + (r.type ? ' &bull; ' + esc(r.type) : '') + '</div>' +
+          detail +
+        '</div>';
+    });
+
+    document.getElementById('reports-content').innerHTML = html;
   }
 
-  function downloadReportsCSV() {
-    var data = _filteredReports.length ? _filteredReports : _allReports;
-    if (!data.length) { alert('No reports to download.'); return; }
+  function mymCSV() {
+    var now = new Date();
+    var monthStart = new Date(_mymYear, _mymMonth, 1).getTime();
+    var monthEnd   = new Date(_mymYear, _mymMonth + 1, 0, 23, 59, 59).getTime();
+    var data = _mymAll.filter(function(r) {
+      var ts = mymGetDate(r); return ts >= monthStart && ts <= monthEnd;
+    });
+    if (!data.length) { showToast('No meetings to download for this month.'); return; }
 
-    var headers = ['#','Meeting ID','Conduct Date','Original Date','District',
-                   'Employee','Designation','Stakeholder','Stakeholder Post',
-                   'Purpose','Meeting Type','Colleague','MoM Link','Photo Link'];
+    var headers = ['#','Meeting ID','Status','Date','Stakeholder','Stakeholder Post','Purpose','Type','Key Points','MoM','Photos','Colleague','Reason'];
     var rows = [headers];
     data.forEach(function(r, i) {
       rows.push([
-        i + 1, r.meetingId, r.conductDate, r.originalDate, r.district,
-        r.employeeName, r.post, r.stakeholderName, r.stakeholderPost,
-        r.purpose, r.meetingType, r.colleagueName, r.momUrl, r.photoUrl
+        i+1, r.meetingId, r.status,
+        r.status === 'Conducted' ? (r.conductDate||r.date) : r.date,
+        r.adhikariName, r.adhikariPost, r.purpose, r.type,
+        r.keyPoints||'', r.momLink||'', r.photoLink||'',
+        r.colleagueName||'', r.reason||''
       ]);
     });
-
     var csv = rows.map(function(row) {
-      return row.map(function(cell) {
-        var s = (cell || '').toString().replace(/"/g, '""');
-        return (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1)
-          ? '"' + s + '"' : s;
+      return row.map(function(c) {
+        var s = (c||'').toString().replace(/"/g,'""');
+        return (s.indexOf(',')!==-1||s.indexOf('"')!==-1||s.indexOf('\n')!==-1) ? '"'+s+'"' : s;
       }).join(',');
     }).join('\r\n');
-
-    var blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
-    var url  = URL.createObjectURL(blob);
-    var a    = document.createElement('a');
-    var dt   = new Date();
-    var fname = 'EG_Reports_' + dt.getFullYear() + ('0'+(dt.getMonth()+1)).slice(-2) + ('0'+dt.getDate()).slice(-2) + '.csv';
-    a.href = url; a.download = fname;
+    var blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8;'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    var fname = 'MyMeetings_' + _MONTHS[_mymMonth] + '_' + _mymYear + '.csv';
+    a.href=url; a.download=fname;
     document.body.appendChild(a); a.click();
     document.body.removeChild(a); URL.revokeObjectURL(url);
-    showToast('Downloaded ' + data.length + ' records as ' + fname);
+    showToast('Downloaded ' + data.length + ' meetings as ' + fname);
   }
 
   // ── Dropdowns ────────────────────────────────────────────────
