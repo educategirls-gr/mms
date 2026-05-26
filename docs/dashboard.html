@@ -400,7 +400,7 @@
       <span class="nav-icon">⚙️</span><span>Manage Meetings</span>
     </div>
     <div class="nav-item" id="nav-list" onclick="showView('list')">
-      <span class="nav-icon">📊</span><span>All Reports</span>
+      <span class="nav-icon">📋</span><span>My Meetings</span>
     </div>
 
   </div>
@@ -733,7 +733,7 @@
     <!-- View: All Reports -->
     <div id="view-list" class="view">
       <div class="card">
-        <div class="card-title" style="background:#166534;">📊 All Conducted Reports</div>
+        <div class="card-title" style="background:#166534;">📊 My Meetings</div>
 
         <!-- Search + per-page + download -->
         <div class="rep-search-bar">
@@ -861,7 +861,7 @@
   var TOPBAR = {
     create: { title: 'Plan Your Meeting',  sub: 'Plan your upcoming meetings' },
     manage: { title: 'Manage Meetings',    sub: 'Update meeting outcomes and action points' },
-    list:   { title: 'All Conducted Reports', sub: 'All meetings conducted — search, filter and download' }
+    list:   { title: 'My Meetings', sub: 'My conducted meetings — search, filter and download' }
   };
   function showView(view) {
     ['create','manage','list'].forEach(function(v) {
