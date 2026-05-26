@@ -1130,6 +1130,7 @@
       if (res.success) {
         invalidateFrontCache();
         closeActionModal();
+        if (res.photoError) showToast('⚠️ Photo upload failed: ' + res.photoError, 6000);
         showConductSuccess(res.momUrl, res.photoFolderUrl, res.followUpId, followUp);
         loadManageMeetings(true);
       } else { showModalAlert('conduct', res.message || 'An error occurred.'); }
@@ -1638,10 +1639,10 @@
   function goToManageFromSuccess()  { closeSuccessModal(); showView('manage'); }
 
   // ── Toast ────────────────────────────────────────────────────
-  function showToast(msg) {
+  function showToast(msg, duration) {
     var t = document.getElementById('toast');
     t.textContent = msg; t.style.display = '';
-    setTimeout(function() { t.style.display = 'none'; }, 3500);
+    setTimeout(function() { t.style.display = 'none'; }, duration || 3500);
   }
 
   // ── Sidebar toggle ───────────────────────────────────────────
