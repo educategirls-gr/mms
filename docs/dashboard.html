@@ -1378,7 +1378,7 @@
       var s = document.getElementById('colleague-search');
       if (s) { s.value = ''; }
       if (!colleaguesLoaded) {
-        gasFetch('getDistrictEmployees', { district: SESSION.district, email: SESSION.email }, renderColleagues, function() {
+        gasFetch('getAllEmployees', { email: SESSION.email }, renderColleagues, function() {
           document.getElementById('colleague-list').innerHTML =
             '<div style="padding:12px;color:#DC2626;font-size:13px;">Failed to load. Please try again.</div>';
         });
@@ -1410,10 +1410,15 @@
     el.innerHTML = '';
     list.forEach(function(c) {
       var ini = c.name.trim().split(' ').map(function(w){ return w[0]; }).slice(0,2).join('').toUpperCase();
+      var locLabel = c.district ? (c.district + (c.block ? ' · ' + c.block : '')) : '';
       var div = document.createElement('div');
       div.className = 'colleague-item';
       div.innerHTML = '<div class="ci-avatar">' + ini + '</div>' +
-        '<div><div class="ci-name">' + esc(c.name) + '</div><div class="ci-post">' + esc(c.designation) + '</div></div>';
+        '<div style="flex:1;">' +
+          '<div class="ci-name">' + esc(c.name) + '</div>' +
+          '<div class="ci-post">' + esc(c.designation) + '</div>' +
+          (locLabel ? '<div style="font-size:10px;color:#9CA3AF;margin-top:1px;">' + esc(locLabel) + '</div>' : '') +
+        '</div>';
       div.addEventListener('click', function() { selectColleague(c.name, c.designation); });
       el.appendChild(div);
     });
@@ -1424,7 +1429,9 @@
     if (!q) { renderColleagueItems(_allColleagues); return; }
     var filtered = _allColleagues.filter(function(c) {
       return c.name.toLowerCase().indexOf(q) !== -1 ||
-             (c.designation && c.designation.toLowerCase().indexOf(q) !== -1);
+             (c.designation && c.designation.toLowerCase().indexOf(q) !== -1) ||
+             (c.district && c.district.toLowerCase().indexOf(q) !== -1) ||
+             (c.block && c.block.toLowerCase().indexOf(q) !== -1);
     });
     renderColleagueItems(filtered);
   }
