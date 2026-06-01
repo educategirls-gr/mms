@@ -848,6 +848,7 @@
   // ── API helpers ──────────────────────────────────────────────
   function gasFetch(action, params, onSuccess, onFail) {
     var url = GAS_URL + '?action=' + encodeURIComponent(action);
+    if (SESSION && SESSION.token) url += '&token=' + encodeURIComponent(SESSION.token);
     if (params) {
       for (var k in params) {
         if (params.hasOwnProperty(k)) url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(params[k] != null ? params[k] : '');
@@ -855,18 +856,20 @@
     }
     fetch(url)
       .then(function(r) { return r.json(); })
-      .then(onSuccess)
+      .then(function(res){ if (res && res.message === 'AUTH_REQUIRED') { logout(); return; } onSuccess(res); })
       .catch(onFail || function(e) { err('Server error: ' + e.message); });
   }
 
   function gasPost(action, data, onSuccess, onFail) {
-    fetch(GAS_URL + '?action=' + encodeURIComponent(action), {
+    var url = GAS_URL + '?action=' + encodeURIComponent(action);
+    if (SESSION && SESSION.token) url += '&token=' + encodeURIComponent(SESSION.token);
+    fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify(data)
     })
       .then(function(r) { return r.json(); })
-      .then(onSuccess)
+      .then(function(res){ if (res && res.message === 'AUTH_REQUIRED') { logout(); return; } onSuccess(res); })
       .catch(onFail || function(e) { err('Server error: ' + e.message); });
   }
 

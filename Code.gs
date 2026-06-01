@@ -199,6 +199,16 @@ function doPost(e) {
   return apiResponse(e, 'POST');
 }
 
+// Admin allowlist — only these emails can call destructive/import actions
+var ADMIN_EMAILS = ['gr@educategirls.ngo', 'alok.mohan@educategirls.ngo'];
+function isAdmin_(email) {
+  email = (email || '').toString().trim().toLowerCase();
+  for (var i = 0; i < ADMIN_EMAILS.length; i++) {
+    if (ADMIN_EMAILS[i].toLowerCase() === email) return true;
+  }
+  return false;
+}
+
 function apiResponse(e, method) {
   var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : '';
   var result;
@@ -207,29 +217,64 @@ function apiResponse(e, method) {
     if (method === 'POST' && e.postData && e.postData.contents) {
       try { body = JSON.parse(e.postData.contents); } catch(pe) { body = {}; }
     }
-    if      (action === 'sendOTP')              result = sendOTP(e.parameter.email || '');
-    else if (action === 'verifyOTP')            result = verifyOTP(e.parameter.email || '', e.parameter.otp || '');
-    else if (action === 'getDropdownData')      result = getDropdownData(e.parameter.email || '');
-    else if (action === 'getMyMeetings')        result = getMyMeetings(e.parameter.email || '');
-    else if (action === 'getAllMyMeetings')      result = getAllMyMeetings(e.parameter.email || '');
-    else if (action === 'getDistrictEmployees')    result = getDistrictEmployees(e.parameter.district || '', e.parameter.email || '');
-    else if (action === 'getAllEmployees')          result = getAllEmployees(e.parameter.email || '');
-    else if (action === 'getDistrictAllMeetings')  result = getDistrictAllMeetings(e.parameter.district || '');
-    else if (action === 'getStateAllMeetings')     result = getStateAllMeetings();
-    else if (action === 'getDashboardStats')    result = getDashboardStats(e.parameter.email || '', e.parameter.all === '1');
-    else if (action === 'getDistrictReport')    result = getDistrictReport(e.parameter.district || '');
-    else if (action === 'getAllReports')        result = getAllReports(e.parameter.email || '');
-    else if (action === 'deleteMeeting')        result = deleteMeeting(e.parameter.meetingId || '', e.parameter.email || '');
-    else if (action === 'saveMeeting')          result = saveMeeting(body);
-    else if (action === 'conductMeeting')       result = conductMeeting(body);
-    else if (action === 'postponeMeeting')      result = postponeMeeting(body);
-    else if (action === 'cancelMeeting')        result = cancelMeeting(body);
-    else if (action === 'updateMeetingStatus')  result = updateMeetingStatus(body.meetingId || '', body);
-    else if (action === 'clearMyCache')         result = clearMyCache(e.parameter.email || '');
-    else if (action === 'bulkUpdateEmployeeDB') result = bulkUpdateEmployeeDB(body.rows || []);
-    else if (action === 'peekSourceSheet')      result = peekSourceSheet(e.parameter.sourceId || '', e.parameter.sheetIndex || '0');
-    else if (action === 'importFromSource')     result = importFromSource(e.parameter.sourceId || '', e.parameter.sheetIndex || '0');
-    else                                        result = { success: false, message: 'Unknown action: ' + action };
+    var token  = (e && e.parameter && e.parameter.token) ? e.parameter.token : '';
+    var PUBLIC = { sendOTP: 1, verifyOTP: 1 };
+    var ADMIN  = { bulkUpdateEmployeeDB: 1, importFromSource: 1, peekSourceSheet: 1 };
+
+    if (PUBLIC[action]) {
+      // ── No auth required ──────────────────────────────────────
+      if (action === 'sendOTP') result = sendOTP(e.parameter.email || '');
+      else                      result = verifyOTP(e.parameter.email || '', e.parameter.otp || '');
+    } else {
+      // ── Auth required: identity comes from the session token, ──
+      //    NOT from client-supplied params (prevents spoofing)
+      var session = getSession(token);
+      if (!session) {
+        result = { success: false, message: 'AUTH_REQUIRED' };
+      } else if (ADMIN[action] && !isAdmin_(session.email)) {
+        result = { success: false, message: 'ADMIN_ONLY' };
+      } else {
+        // Sliding expiry: refresh 1-hour TTL on every authenticated call
+        try { CacheService.getScriptCache().put('SESSION_' + token, JSON.stringify(session), 3600); } catch(se) {}
+        var role = (session.role || '').toString();
+
+        if      (action === 'getDropdownData')      result = getDropdownData(session.email);
+        else if (action === 'getMyMeetings')        result = getMyMeetings(session.email);
+        else if (action === 'getAllMyMeetings')     result = getAllMyMeetings(session.email);
+        else if (action === 'getDistrictEmployees') result = getDistrictEmployees(session.district, session.email);
+        else if (action === 'getAllEmployees')      result = getAllEmployees(session.email);
+        else if (action === 'getDistrictAllMeetings') {
+          // District role locked to own district; State may query any
+          var dist = (role === 'State') ? (e.parameter.district || session.district) : session.district;
+          result = getDistrictAllMeetings(dist);
+        }
+        else if (action === 'getStateAllMeetings')  result = (role === 'State')
+                                                       ? getStateAllMeetings()
+                                                       : { success: false, message: 'FORBIDDEN' };
+        else if (action === 'getDashboardStats')    result = getDashboardStats(session.email, e.parameter.all === '1');
+        else if (action === 'getDistrictReport') {
+          var dr = (role === 'State') ? (e.parameter.district || session.district) : session.district;
+          result = getDistrictReport(dr);
+        }
+        else if (action === 'getAllReports')        result = getAllReports(session.email);
+        else if (action === 'deleteMeeting')        result = deleteMeeting(e.parameter.meetingId || '', session.email);
+        else if (action === 'saveMeeting') {
+          // Stamp identity from session — fixes attribution + blank district
+          body.email = session.email; body.employeeName = session.name;
+          body.district = session.district; body.designation = session.designation; body.block = session.block;
+          result = saveMeeting(body);
+        }
+        else if (action === 'conductMeeting')   { body.email = session.email; result = conductMeeting(body); }
+        else if (action === 'postponeMeeting')  { body.email = session.email; result = postponeMeeting(body); }
+        else if (action === 'cancelMeeting')    { body.email = session.email; result = cancelMeeting(body); }
+        else if (action === 'updateMeetingStatus') result = updateMeetingStatus(body.meetingId || '', body);
+        else if (action === 'clearMyCache')     result = clearMyCache(session.email);
+        else if (action === 'bulkUpdateEmployeeDB') result = bulkUpdateEmployeeDB(body.rows || []);
+        else if (action === 'peekSourceSheet')  result = peekSourceSheet(e.parameter.sourceId || '', e.parameter.sheetIndex || '0');
+        else if (action === 'importFromSource') result = importFromSource(e.parameter.sourceId || '', e.parameter.sheetIndex || '0');
+        else                                    result = { success: false, message: 'Unknown action: ' + action };
+      }
+    }
   } catch(err) {
     result = { success: false, message: err.message };
   }
