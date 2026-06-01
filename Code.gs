@@ -9,9 +9,158 @@ var MEETINGS_SHEET   = 'Plan Meetings';
 var CONDUCTED_SHEET  = 'Conducted Meetings';
 var POSTPONED_SHEET  = 'Postponed Meetings';
 var CANCELLED_SHEET  = 'Cancelled Meetings';
-var DRIVE_ROOT_ID    = '1RjULM7kZFrqYggRUW6YQeuRB-aiGKrtB'; // EG-GR-Meetings Drive folder
+var DRIVE_ROOT_ID    = '1S_Y79rGOxkaRq5bD_ZEk5nWL1AcajMcd'; // EG-GR-Meetings Drive folder (gr@educategirls.ngo)
 var OTP_EXPIRY_SEC   = 600;
 var ALLOWED_DOMAIN   = 'educategirls.ngo';
+
+// ============================================================
+//  CACHE HELPERS  (GAS CacheService — script-level, 6 hr max)
+// ============================================================
+var C_TTL_EMP    = 1800;  // 30 min — employee data (rarely changes)
+var C_TTL_LIVE   = 90;    // 90 sec — dashboard stats & reports
+var C_TTL_DROP   = 900;   // 15 min — dropdown / colleague lists
+
+function cGet(key) {
+  try {
+    var v = CacheService.getScriptCache().get(key);
+    return v ? JSON.parse(v) : null;
+  } catch(e) { return null; }
+}
+function cPut(key, data, ttl) {
+  try {
+    var s = JSON.stringify(data);
+    if (s.length < 95000) CacheService.getScriptCache().put(key, s, ttl || C_TTL_LIVE);
+  } catch(e) {}
+}
+function cDel() {
+  var keys = Array.prototype.slice.call(arguments);
+  try { CacheService.getScriptCache().removeAll(keys); } catch(e) {}
+}
+function invalidateUser(email) {
+  cDel('emp_' + email,
+       'stats_' + email + '_0', 'stats_' + email + '_1',
+       'rep_' + email,
+       'mymt_' + email, 'allmymt_' + email,
+       'mymtg_' + email,
+       'stateMtg_all');
+}
+
+// ------------------------------------------------------------
+//  DEMO / PRESENTATION HELPER — Run from GAS editor
+//  Sheet mein role change karne ke baad ye run karo
+//  Turant cache clear hoga — logout/login ke baad naya role dikhega
+// ------------------------------------------------------------
+function clearCacheForDemo() {
+  var email = 'alok.mohan@educategirls.ngo'; // ← apna email yahan rakho
+  invalidateUser(email);
+  CacheService.getScriptCache().remove('distMtg_sitapur');
+  CacheService.getScriptCache().remove('stateMtg_all');
+  Logger.log('✅ Cache cleared for: ' + email + ' — ab logout karke login karo');
+}
+
+// ------------------------------------------------------------
+//  DEMO ROLE SWITCHERS — Run ONE of these from the GAS editor,
+//  then Logout + Login in the app. Role badal jayega + cache
+//  clear ho jayega automatically. Sheet manually edit nahi karni.
+//  (Email niche DEMO_EMAIL mein set hai)
+// ------------------------------------------------------------
+var DEMO_EMAIL = 'alok.mohan@educategirls.ngo';
+
+function demoSetField()    { setDemoRole_('Field');    }
+function demoSetDistrict() { setDemoRole_('District'); }
+function demoSetState()    { setDemoRole_('State');    }
+
+function setDemoRole_(role) {
+  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(EMPLOYEE_SHEET);
+  var data  = sheet.getDataRange().getValues();
+  var found = false;
+  for (var i = 1; i < data.length; i++) {
+    if ((data[i][4] || '').toString().trim().toLowerCase() === DEMO_EMAIL.toLowerCase()) {
+      sheet.getRange(i + 1, 6).setValue(role); // col F = Role
+      found = true;
+      break;
+    }
+  }
+  if (!found) { Logger.log('❌ Email not found: ' + DEMO_EMAIL); return; }
+
+  // Clear caches so the new role + meetings show immediately
+  invalidateUser(DEMO_EMAIL.toLowerCase());
+  var c = CacheService.getScriptCache();
+  ['distMtg_sitapur','stateMtg_all','allEmp'].forEach(function(k){ c.remove(k); });
+
+  Logger.log('✅ Role set to "' + role + '" for ' + DEMO_EMAIL +
+             '\n👉 Ab app mein LOGOUT karke LOGIN karo.');
+}
+
+// ------------------------------------------------------------
+//  NORMALIZE DISTRICTS — Run ONCE from GAS editor
+//  Trims + UPPERCASEs the district column in Employee_DB and all
+//  4 meeting sheets so spelling/casing is consistent everywhere.
+//  Only touches the district column; nothing else is modified.
+// ------------------------------------------------------------
+function normalizeAllDistricts() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var report = {};
+  normalizeDistrictColumn_(ss, EMPLOYEE_SHEET,  0, report); // Employee_DB → col A
+  normalizeDistrictColumn_(ss, MEETINGS_SHEET,  1, report); // Plan       → col B
+  normalizeDistrictColumn_(ss, CONDUCTED_SHEET, 1, report);
+  normalizeDistrictColumn_(ss, POSTPONED_SHEET, 1, report);
+  normalizeDistrictColumn_(ss, CANCELLED_SHEET, 1, report);
+
+  // Clear all caches so the cleaned data shows immediately
+  try { CacheService.getScriptCache().remove('stateMtg_all'); } catch(e){}
+  try { CacheService.getScriptCache().remove('allEmp'); } catch(e){}
+  try {
+    var ks = ['distMtg_sitapur','distMtg_prayagraj','distMtg_shahjahanpur',
+              'distMtg_hardoi','distMtg_gonda','distMtg_fatehpur','distMtg_bahraich'];
+    ks.forEach(function(k){ CacheService.getScriptCache().remove(k); });
+  } catch(e){}
+
+  Logger.log(JSON.stringify(report, null, 2));
+  return report;
+}
+
+function normalizeDistrictColumn_(ss, sheetName, colIdx, report) {
+  var sh = ss.getSheetByName(sheetName);
+  if (!sh) { report[sheetName] = 'SHEET NOT FOUND'; return; }
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) { report[sheetName] = 'no data rows'; return; }
+  var rng  = sh.getRange(2, colIdx + 1, lastRow - 1, 1);
+  var vals = rng.getValues();
+  var changed = 0;
+  for (var i = 0; i < vals.length; i++) {
+    var orig = (vals[i][0] || '').toString();
+    var norm = orig.trim().toUpperCase();
+    if (norm !== orig) { vals[i][0] = norm; changed++; }
+  }
+  rng.setValues(vals);
+  report[sheetName] = changed + ' of ' + vals.length + ' rows normalized';
+}
+
+// ------------------------------------------------------------
+//  DIAGNOSTIC — district column audit across all meeting sheets
+//  Returns a summary of district values so we can see why a
+//  district filter (e.g. SITAPUR) shows fewer meetings than expected.
+// ------------------------------------------------------------
+function diagnoseDistricts() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheets = [MEETINGS_SHEET, CONDUCTED_SHEET, POSTPONED_SHEET, CANCELLED_SHEET];
+  var out = {};
+  sheets.forEach(function(name) {
+    var sh = ss.getSheetByName(name);
+    if (!sh) { out[name] = 'SHEET NOT FOUND'; return; }
+    var data = sh.getDataRange().getValues();
+    var counts = {};
+    for (var i = 1; i < data.length; i++) {
+      var d = (data[i][1] || '(blank)').toString().trim();
+      counts[d] = (counts[d] || 0) + 1;
+    }
+    out[name] = counts;
+  });
+  Logger.log(JSON.stringify(out, null, 2));
+  return out;
+}
 
 // ------------------------------------------------------------
 //  AUTHORIZE ALL SERVICES — Run this once from GAS editor
@@ -24,8 +173,8 @@ function authorizeAll() {
     Logger.log('✅ Spreadsheet: ' + ss.getName());
 
     // 2. Drive access
-    var folder = DriveApp.getFolderById(DRIVE_ROOT_ID);
-    Logger.log('✅ Drive folder: ' + folder.getName());
+    var folder = getRootMeetingsFolder();
+    Logger.log('✅ Drive folder: ' + folder.getName() + ' (' + folder.getId() + ')');
 
     // 3. Mail access
     var quota = MailApp.getRemainingDailyQuota();
@@ -63,17 +212,23 @@ function apiResponse(e, method) {
     else if (action === 'getDropdownData')      result = getDropdownData(e.parameter.email || '');
     else if (action === 'getMyMeetings')        result = getMyMeetings(e.parameter.email || '');
     else if (action === 'getAllMyMeetings')      result = getAllMyMeetings(e.parameter.email || '');
-    else if (action === 'getDistrictEmployees') result = getDistrictEmployees(e.parameter.district || '', e.parameter.email || '');
-    else if (action === 'getAllEmployees')       result = getAllEmployees(e.parameter.email || '');
+    else if (action === 'getDistrictEmployees')    result = getDistrictEmployees(e.parameter.district || '', e.parameter.email || '');
+    else if (action === 'getAllEmployees')          result = getAllEmployees(e.parameter.email || '');
+    else if (action === 'getDistrictAllMeetings')  result = getDistrictAllMeetings(e.parameter.district || '');
+    else if (action === 'getStateAllMeetings')     result = getStateAllMeetings();
     else if (action === 'getDashboardStats')    result = getDashboardStats(e.parameter.email || '', e.parameter.all === '1');
     else if (action === 'getDistrictReport')    result = getDistrictReport(e.parameter.district || '');
     else if (action === 'getAllReports')        result = getAllReports(e.parameter.email || '');
-    else if (action === 'deleteMeeting')        result = deleteMeeting(e.parameter.meetingId || '');
+    else if (action === 'deleteMeeting')        result = deleteMeeting(e.parameter.meetingId || '', e.parameter.email || '');
     else if (action === 'saveMeeting')          result = saveMeeting(body);
     else if (action === 'conductMeeting')       result = conductMeeting(body);
     else if (action === 'postponeMeeting')      result = postponeMeeting(body);
     else if (action === 'cancelMeeting')        result = cancelMeeting(body);
     else if (action === 'updateMeetingStatus')  result = updateMeetingStatus(body.meetingId || '', body);
+    else if (action === 'clearMyCache')         result = clearMyCache(e.parameter.email || '');
+    else if (action === 'bulkUpdateEmployeeDB') result = bulkUpdateEmployeeDB(body.rows || []);
+    else if (action === 'peekSourceSheet')      result = peekSourceSheet(e.parameter.sourceId || '', e.parameter.sheetIndex || '0');
+    else if (action === 'importFromSource')     result = importFromSource(e.parameter.sourceId || '', e.parameter.sheetIndex || '0');
     else                                        result = { success: false, message: 'Unknown action: ' + action };
   } catch(err) {
     result = { success: false, message: err.message };
@@ -152,9 +307,24 @@ function include(filename) {
 // ------------------------------------------------------------
 function authorizeApp() {
   SpreadsheetApp.openById(SPREADSHEET_ID).getName();
-  DriveApp.getFolderById(DRIVE_ROOT_ID).getName();
+  getRootMeetingsFolder().getName();
   MailApp.getRemainingDailyQuota();
   Logger.log('Authorization successful.');
+}
+
+// ------------------------------------------------------------
+//  RUN THIS ONCE to create Drive folder under gr account
+//  and get the new DRIVE_ROOT_ID to paste in Code.gs
+// ------------------------------------------------------------
+function setupDriveFolder() {
+  var folderName = 'EG-GR-Meetings';
+  var root = DriveApp.getRootFolder();
+  var it = root.getFoldersByName(folderName);
+  var folder = it.hasNext() ? it.next() : root.createFolder(folderName);
+  folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  Logger.log('=== COPY THIS FOLDER ID ===');
+  Logger.log('DRIVE_ROOT_ID = "' + folder.getId() + '"');
+  Logger.log('Folder URL: ' + folder.getUrl());
 }
 
 // ------------------------------------------------------------
@@ -348,6 +518,7 @@ function saveMeeting(data) {
       try { sendColleagueNotification(data, mtgId); } catch(mailErr) { /* don't fail save if mail fails */ }
     }
 
+    invalidateUser((data.email || '').trim().toLowerCase());
     return { success: true, meetingId: mtgId };
   } catch (err) {
     return { success: false, message: err.message };
@@ -402,47 +573,62 @@ function getMyMeetings(email) {
 //  DISTRICT EMPLOYEES — for colleague picker
 // ------------------------------------------------------------
 function getDistrictEmployees(district, currentEmail) {
+  var distKey = 'distEmp_' + district.trim().toLowerCase();
+  var cur     = currentEmail.trim().toLowerCase();
+  var cached  = cGet(distKey);
+  if (cached) return cached.filter(function(r){ return r._email !== cur; });
+
   var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName(EMPLOYEE_SHEET);
   if (!sheet) return [];
 
   var data = sheet.getDataRange().getValues();
-  var list = [];
+  var all  = [];
+  var distL = district.trim().toLowerCase();
   for (var i = 1; i < data.length; i++) {
     var d = data[i][0] ? data[i][0].toString().trim().toLowerCase() : '';
     var e = data[i][4] ? data[i][4].toString().trim().toLowerCase() : '';
-    if (d === district.trim().toLowerCase() && e !== currentEmail.trim().toLowerCase()) {
-      list.push({
-        name:        data[i][2] || '',
-        designation: data[i][3] || ''
+    if (d === distL) {
+      all.push({
+        name:        (data[i][2] || '').toString().trim(),
+        designation: (data[i][3] || '').toString().trim(),
+        district:    (data[i][0] || '').toString().trim(),
+        block:       (data[i][1] || '').toString().trim(),
+        _email:      e
       });
     }
   }
-  return list;
+  cPut(distKey, all, C_TTL_DROP);
+  return all.filter(function(r){ return r._email !== cur; });
 }
 
 // ------------------------------------------------------------
 //  ALL EMPLOYEES — for colleague picker (no district filter)
 // ------------------------------------------------------------
 function getAllEmployees(currentEmail) {
+  var cur    = currentEmail.trim().toLowerCase();
+  var cached = cGet('allEmp');
+  if (cached) return cached.filter(function(r){ return r._email !== cur; });
+
   var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName(EMPLOYEE_SHEET);
   if (!sheet) return [];
   var data  = sheet.getDataRange().getValues();
-  var list  = [];
-  var cur   = currentEmail.trim().toLowerCase();
+  var all   = [];
   for (var i = 1; i < data.length; i++) {
     var emp = data[i][4] ? data[i][4].toString().trim().toLowerCase() : '';
-    if (!emp || emp === cur) continue;
-    list.push({
+    if (!emp) continue;
+    all.push({
       name:        (data[i][2] || '').toString().trim(),
       designation: (data[i][3] || '').toString().trim(),
       district:    (data[i][0] || '').toString().trim(),
-      block:       (data[i][1] || '').toString().trim()
+      block:       (data[i][1] || '').toString().trim(),
+      _email:      emp
     });
   }
-  list.sort(function(a, b) { return a.name.localeCompare(b.name); });
-  return list;
+  all.sort(function(a, b) { return a.name.localeCompare(b.name); });
+  cPut('allEmp', all, C_TTL_DROP);
+  return all.filter(function(r){ return r._email !== cur; });
 }
 
 // ------------------------------------------------------------
@@ -516,6 +702,15 @@ function getOrCreateFolder(parent, name) {
   return it.hasNext() ? it.next() : parent.createFolder(name);
 }
 
+// Auto-find or create root meetings folder in script owner's Drive
+function getRootMeetingsFolder() {
+  var name = 'EG-GR-Meetings';
+  var root = DriveApp.getRootFolder();
+  var folder = getOrCreateFolder(root, name);
+  try { folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch(e) {}
+  return folder;
+}
+
 // ------------------------------------------------------------
 //  CONDUCT MEETING — saves to Conducted sheet, Drive, MoM
 // ------------------------------------------------------------
@@ -540,22 +735,24 @@ function conductMeeting(payload) {
     }
 
     // 2. Save photos to Drive — wrapped in try-catch so sheet save always happens
+    var photoError = '';
     try {
       if (payload.photos && payload.photos.length > 0) {
-        var root  = DriveApp.getFolderById(DRIVE_ROOT_ID);
+        var root  = getRootMeetingsFolder();
         var distF = getOrCreateFolder(root, payload.district || 'General');
         var mtgF  = getOrCreateFolder(distF, payload.meetingId);
         mtgF.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
         photoFolderUrl = mtgF.getUrl();
         payload.photos.forEach(function(p, idx) {
-          var ext  = (p.type || 'image/jpeg').split('/')[1];
-          var blob = Utilities.newBlob(Utilities.base64Decode(p.data), p.type,
+          var ext  = (p.type || 'image/jpeg').split('/')[1] || 'jpg';
+          var decoded = Utilities.base64Decode(p.data);
+          var blob = Utilities.newBlob(decoded, p.type || 'image/jpeg',
                        payload.meetingId + '_' + (idx+1) + '.' + ext);
           var f = mtgF.createFile(blob);
           f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
         });
       }
-    } catch(de) { photoFolderUrl = ''; }
+    } catch(de) { photoFolderUrl = ''; photoError = de.message || 'Drive error'; }
 
     // 3. Create follow-up meeting first (so followUpId goes into MoM)
     var followUpId = '';
@@ -627,7 +824,8 @@ function conductMeeting(payload) {
       try { sendMOMNotification(payload, momUrl, photoFolderUrl, followUpId); } catch(mailErr) { /* don't fail conduct if mail fails */ }
     }
 
-    return { success: true, momUrl: momUrl, photoFolderUrl: photoFolderUrl, followUpId: followUpId };
+    invalidateUser((payload.email || '').trim().toLowerCase());
+    return { success: true, momUrl: momUrl, photoFolderUrl: photoFolderUrl, followUpId: followUpId, photoError: photoError };
   } catch(err) {
     return { success: false, message: err.message };
   }
@@ -735,7 +933,7 @@ function createMoMDoc(d, photoFolderUrl) {
 
   if (photoFolderUrl) {
     try {
-      var root  = DriveApp.getFolderById(DRIVE_ROOT_ID);
+      var root  = getRootMeetingsFolder();
       var distF = getOrCreateFolder(root, d.district || 'General');
       var mtgF  = getOrCreateFolder(distF, d.meetingId);
       mtgF.addFile(file);
@@ -789,6 +987,7 @@ function postponeMeeting(payload) {
       now.toLocaleString('en-IN')
     ]);
 
+    invalidateUser((payload.email || '').trim().toLowerCase());
     return { success: true };
   } catch(err) {
     return { success: false, message: err.message };
@@ -860,6 +1059,7 @@ function cancelMeeting(payload) {
     // Update status in Plan Meetings to "Cancelled" — NEVER delete, keeps master ledger intact for dashboard reporting
     sheet.getRange(rowIdx + 1, 14).setValue('Cancelled');
 
+    invalidateUser((payload.email || '').trim().toLowerCase());
     return { success: true };
   } catch(err) {
     return { success: false, message: err.message };
@@ -869,8 +1069,16 @@ function cancelMeeting(payload) {
 // ------------------------------------------------------------
 //  DELETE MEETING
 // ------------------------------------------------------------
-function deleteMeeting(meetingId) {
+function deleteMeeting(meetingId, email) {
   try {
+    // Field role cannot delete — prevents fake-meeting create-then-delete (full audit trail)
+    if (email) {
+      var emp = getEmployeeByEmail(email.trim().toLowerCase());
+      var role = emp && emp.role ? emp.role.toString().trim().toLowerCase() : '';
+      if (role === 'field') {
+        return { success: false, message: 'Delete not allowed for Field role.' };
+      }
+    }
     var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
     var sheet = ss.getSheetByName(MEETINGS_SHEET);
     if (!sheet) return { success: false, message: 'Sheet not found.' };
@@ -969,8 +1177,12 @@ function getActionedMeetings(email) {
 // ------------------------------------------------------------
 function getAllMyMeetings(email) {
   try {
-    var ss       = SpreadsheetApp.openById(SPREADSHEET_ID);
     var emailKey = email.trim().toLowerCase();
+    var cacheKey = 'mymtg_' + emailKey;
+    var hit = cGet(cacheKey);
+    if (hit) return hit;
+
+    var ss       = SpreadsheetApp.openById(SPREADSHEET_ID);
     var tz       = Session.getScriptTimeZone();
     var meetings = [];
 
@@ -1062,10 +1274,248 @@ function getAllMyMeetings(email) {
       }
     }
 
+    cPut(cacheKey, meetings, C_TTL_LIVE);
     return meetings;
   } catch(err) {
     return [];
   }
+}
+
+// ------------------------------------------------------------
+//  DISTRICT ALL MEETINGS — for District Meetings view
+//  All statuses: Planned, Conducted, Postponed, Cancelled
+// ------------------------------------------------------------
+function getDistrictAllMeetings(district) {
+  try {
+    var distL    = district.trim().toLowerCase();
+    var cacheKey = 'distMtg_' + distL;
+    var hit      = cGet(cacheKey);
+    if (hit) return hit;
+
+    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var meetings = [];
+
+    // 1. Plan Meetings — Planned / Follow-up only (Cancelled/Postponed go to their own sheets)
+    var planSheet = ss.getSheetByName(MEETINGS_SHEET);
+    if (planSheet) {
+      var pd = planSheet.getDataRange().getValues();
+      for (var i = 1; i < pd.length; i++) {
+        if ((pd[i][1] || '').toString().trim().toLowerCase() !== distL) continue;
+        var st = (pd[i][13] || 'Planned').toString();
+        if (st !== 'Planned' && st !== 'Follow-up') continue;
+        meetings.push({
+          meetingId:    (pd[i][0]  || '').toString(),
+          employeeName: (pd[i][2]  || '').toString(),
+          designation:  (pd[i][3]  || '').toString(),
+          date:         fmtDateVal(pd[i][5]),
+          type:         (pd[i][8]  || '').toString(),
+          adhikariName: (pd[i][9]  || '').toString(),
+          adhikariPost: (pd[i][10] || '').toString(),
+          purpose:      (pd[i][11] || '').toString(),
+          colleagueName:(pd[i][17] || '').toString(),
+          colleaguePost:(pd[i][18] || '').toString(),
+          status: st, conductDate: '', keyPoints: '', photoLink: '', momLink: '', reason: ''
+        });
+      }
+    }
+
+    // 2. Conducted
+    var condSheet = ss.getSheetByName(CONDUCTED_SHEET);
+    if (condSheet) {
+      var cd = condSheet.getDataRange().getValues();
+      for (var i = 1; i < cd.length; i++) {
+        if ((cd[i][1] || '').toString().trim().toLowerCase() !== distL) continue;
+        meetings.push({
+          meetingId:    (cd[i][0]  || '').toString(),
+          employeeName: (cd[i][2]  || '').toString(),
+          designation:  (cd[i][3]  || '').toString(),
+          date:         fmtDateVal(cd[i][5]),
+          conductDate:  fmtDateVal(cd[i][13]),
+          type:         (cd[i][8]  || '').toString(),
+          adhikariName: (cd[i][9]  || '').toString(),
+          adhikariPost: (cd[i][10] || '').toString(),
+          purpose:      (cd[i][11] || '').toString(),
+          keyPoints:    (cd[i][15] || '').toString(),
+          photoLink:    (cd[i][16] || '').toString(),
+          momLink:      (cd[i][17] || '').toString(),
+          colleagueName:(cd[i][18] || '').toString(),
+          colleaguePost:(cd[i][19] || '').toString(),
+          status: 'Conducted', reason: ''
+        });
+      }
+    }
+
+    // 3. Postponed
+    var postSheet = ss.getSheetByName(POSTPONED_SHEET);
+    if (postSheet) {
+      var xd = postSheet.getDataRange().getValues();
+      for (var i = 1; i < xd.length; i++) {
+        if ((xd[i][1] || '').toString().trim().toLowerCase() !== distL) continue;
+        meetings.push({
+          meetingId:    (xd[i][0] || '').toString(),
+          employeeName: (xd[i][2] || '').toString(),
+          designation:  '',
+          date:         fmtDateVal(xd[i][7]),
+          conductDate:  '',
+          type:         '',
+          adhikariName: (xd[i][4] || '').toString(),
+          adhikariPost: (xd[i][5] || '').toString(),
+          purpose:      (xd[i][6] || '').toString(),
+          reason:       (xd[i][9] || '').toString(),
+          colleagueName:'', colleaguePost:'', keyPoints:'', photoLink:'', momLink:'',
+          status: 'Postponed'
+        });
+      }
+    }
+
+    // 4. Cancelled
+    var cancelSheet = ss.getSheetByName(CANCELLED_SHEET);
+    if (cancelSheet) {
+      var xc = cancelSheet.getDataRange().getValues();
+      for (var i = 1; i < xc.length; i++) {
+        if ((xc[i][1] || '').toString().trim().toLowerCase() !== distL) continue;
+        meetings.push({
+          meetingId:    (xc[i][0]  || '').toString(),
+          employeeName: (xc[i][2]  || '').toString(),
+          designation:  (xc[i][3]  || '').toString(),
+          date:         fmtDateVal(xc[i][5]),
+          conductDate:  '',
+          type:         (xc[i][8]  || '').toString(),
+          adhikariName: (xc[i][9]  || '').toString(),
+          adhikariPost: (xc[i][10] || '').toString(),
+          purpose:      (xc[i][11] || '').toString(),
+          reason:       (xc[i][15] || '').toString(),
+          colleagueName:(xc[i][13] || '').toString(),
+          colleaguePost:(xc[i][14] || '').toString(),
+          keyPoints:'', photoLink:'', momLink:'',
+          status: 'Cancelled'
+        });
+      }
+    }
+
+    cPut(cacheKey, meetings, C_TTL_LIVE);
+    return meetings;
+  } catch(err) { return []; }
+}
+
+// ------------------------------------------------------------
+//  STATE ALL MEETINGS — for State Meetings view
+//  All districts, all statuses
+// ------------------------------------------------------------
+function getStateAllMeetings() {
+  try {
+    var cacheKey = 'stateMtg_all';
+    var hit      = cGet(cacheKey);
+    if (hit) return hit;
+
+    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var meetings = [];
+
+    // 1. Plan Meetings — Planned / Follow-up only
+    var planSheet = ss.getSheetByName(MEETINGS_SHEET);
+    if (planSheet) {
+      var pd = planSheet.getDataRange().getValues();
+      for (var i = 1; i < pd.length; i++) {
+        if (!pd[i][0]) continue;
+        var st = (pd[i][13] || 'Planned').toString();
+        if (st !== 'Planned' && st !== 'Follow-up') continue;
+        meetings.push({
+          meetingId:    (pd[i][0]  || '').toString(),
+          district:     (pd[i][1]  || '').toString(),
+          employeeName: (pd[i][2]  || '').toString(),
+          designation:  (pd[i][3]  || '').toString(),
+          date:         fmtDateVal(pd[i][5]),
+          type:         (pd[i][8]  || '').toString(),
+          adhikariName: (pd[i][9]  || '').toString(),
+          adhikariPost: (pd[i][10] || '').toString(),
+          purpose:      (pd[i][11] || '').toString(),
+          colleagueName:(pd[i][17] || '').toString(),
+          colleaguePost:(pd[i][18] || '').toString(),
+          status: st, conductDate: '', keyPoints: '', photoLink: '', momLink: '', reason: ''
+        });
+      }
+    }
+
+    // 2. Conducted
+    var condSheet = ss.getSheetByName(CONDUCTED_SHEET);
+    if (condSheet) {
+      var cd = condSheet.getDataRange().getValues();
+      for (var i = 1; i < cd.length; i++) {
+        if (!cd[i][0]) continue;
+        meetings.push({
+          meetingId:    (cd[i][0]  || '').toString(),
+          district:     (cd[i][1]  || '').toString(),
+          employeeName: (cd[i][2]  || '').toString(),
+          designation:  (cd[i][3]  || '').toString(),
+          date:         fmtDateVal(cd[i][5]),
+          conductDate:  fmtDateVal(cd[i][13]),
+          type:         (cd[i][8]  || '').toString(),
+          adhikariName: (cd[i][9]  || '').toString(),
+          adhikariPost: (cd[i][10] || '').toString(),
+          purpose:      (cd[i][11] || '').toString(),
+          keyPoints:    (cd[i][15] || '').toString(),
+          photoLink:    (cd[i][16] || '').toString(),
+          momLink:      (cd[i][17] || '').toString(),
+          colleagueName:(cd[i][18] || '').toString(),
+          colleaguePost:(cd[i][19] || '').toString(),
+          status: 'Conducted', reason: ''
+        });
+      }
+    }
+
+    // 3. Postponed
+    var postSheet = ss.getSheetByName(POSTPONED_SHEET);
+    if (postSheet) {
+      var xd = postSheet.getDataRange().getValues();
+      for (var i = 1; i < xd.length; i++) {
+        if (!xd[i][0]) continue;
+        meetings.push({
+          meetingId:    (xd[i][0] || '').toString(),
+          district:     (xd[i][1] || '').toString(),
+          employeeName: (xd[i][2] || '').toString(),
+          designation:  '',
+          date:         fmtDateVal(xd[i][7]),
+          conductDate:  '',
+          type:         '',
+          adhikariName: (xd[i][4] || '').toString(),
+          adhikariPost: (xd[i][5] || '').toString(),
+          purpose:      (xd[i][6] || '').toString(),
+          reason:       (xd[i][9] || '').toString(),
+          colleagueName:'', colleaguePost:'', keyPoints:'', photoLink:'', momLink:'',
+          status: 'Postponed'
+        });
+      }
+    }
+
+    // 4. Cancelled
+    var cancelSheet = ss.getSheetByName(CANCELLED_SHEET);
+    if (cancelSheet) {
+      var xc = cancelSheet.getDataRange().getValues();
+      for (var i = 1; i < xc.length; i++) {
+        if (!xc[i][0]) continue;
+        meetings.push({
+          meetingId:    (xc[i][0]  || '').toString(),
+          district:     (xc[i][1]  || '').toString(),
+          employeeName: (xc[i][2]  || '').toString(),
+          designation:  (xc[i][3]  || '').toString(),
+          date:         fmtDateVal(xc[i][5]),
+          conductDate:  '',
+          type:         (xc[i][8]  || '').toString(),
+          adhikariName: (xc[i][9]  || '').toString(),
+          adhikariPost: (xc[i][10] || '').toString(),
+          purpose:      (xc[i][11] || '').toString(),
+          reason:       (xc[i][15] || '').toString(),
+          colleagueName:(xc[i][13] || '').toString(),
+          colleaguePost:(xc[i][14] || '').toString(),
+          keyPoints:'', photoLink:'', momLink:'',
+          status: 'Cancelled'
+        });
+      }
+    }
+
+    cPut(cacheKey, meetings, C_TTL_LIVE);
+    return meetings;
+  } catch(err) { return []; }
 }
 
 // ------------------------------------------------------------
@@ -1399,11 +1849,12 @@ function getDistrictReport(district) {
 // ------------------------------------------------------------
 function getAllReports(email) {
   try {
-    var ss       = SpreadsheetApp.openById(SPREADSHEET_ID);
-    var emp      = getEmployeeByEmail(email.trim().toLowerCase());
-    var empR     = getEmployeeByEmail(email.trim().toLowerCase());
-    var isState  = empR && (empR.role === 'State' || empR.role === 'state');
-    var userDist = empR ? empR.district.trim().toLowerCase() : '';
+    var repKey = 'rep_' + email.trim().toLowerCase();
+    var repHit = cGet(repKey);
+    if (repHit) return repHit;
+
+    var ss        = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var userEmail = email.trim().toLowerCase();
 
     var cSheet = ss.getSheetByName(CONDUCTED_SHEET);
     if (!cSheet || cSheet.getLastRow() <= 1) return { success: true, reports: [] };
@@ -1411,8 +1862,10 @@ function getAllReports(email) {
     var cd      = cSheet.getDataRange().getValues();
     var reports = [];
     for (var i = 1; i < cd.length; i++) {
+      // Show only this user's own conducted meetings (col 4 = employee email)
+      var rowEmail = (cd[i][4] || '').toString().trim().toLowerCase();
+      if (rowEmail !== userEmail) continue;
       var dist = (cd[i][1] || '').toString().trim();
-      if (!isState && dist.toLowerCase() !== userDist) continue;
       reports.push({
         meetingId:       (cd[i][0]  || '').toString(),
         district:        dist,
@@ -1433,7 +1886,9 @@ function getAllReports(email) {
     }
     // Newest first
     reports.sort(function(a, b) { return b.conductDate.localeCompare(a.conductDate); });
-    return { success: true, reports: reports };
+    var repResult = { success: true, reports: reports };
+    cPut(repKey, repResult, C_TTL_LIVE);
+    return repResult;
   } catch(err) {
     return { success: false, message: err.message };
   }
@@ -1447,6 +1902,10 @@ function getAllReports(email) {
 // ------------------------------------------------------------
 function getDashboardStats(email, allDistricts) {
   try {
+    var statKey = 'stats_' + email.trim().toLowerCase() + '_' + (allDistricts ? '1' : '0');
+    var statHit = cGet(statKey);
+    if (statHit) return statHit;
+
     var ss  = SpreadsheetApp.openById(SPREADSHEET_ID);
     var emp = getEmployeeByEmail(email);
     var userRole     = emp ? (emp.role     || 'Field') : 'Field';
@@ -1569,7 +2028,7 @@ function getDashboardStats(email, allDistricts) {
       if (stkPostMap[sp] > topStkCount) { topStkCount = stkPostMap[sp]; topStkPost = sp; }
     }
 
-    return {
+    var statsResult = {
       success:             true,
       role:                userRole,
       district:            userDistrict,
@@ -1585,6 +2044,8 @@ function getDashboardStats(email, allDistricts) {
       topStakeholderPost:  topStkPost,
       topStakeholderCount: topStkCount
     };
+    cPut(statKey, statsResult, C_TTL_LIVE);
+    return statsResult;
   } catch(err) {
     return { success: false, message: err.message };
   }
@@ -1713,16 +2174,21 @@ function insertSampleData() {
 }
 
 function getEmployeeByEmail(email) {
+  var key = 'emp_' + email;
+  var hit = cGet(key);
+  if (hit !== null) return hit;   // null-employee cached as JSON null → re-fetch only on miss
+
   var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName(EMPLOYEE_SHEET);
   if (!sheet) return null;
 
   var data = sheet.getDataRange().getValues();
   // Columns: District(0), Block(1), Employee Name(2), Designation(3), Email(4), Role(5)
+  var result = null;
   for (var i = 1; i < data.length; i++) {
     var rowEmail = data[i][4] ? data[i][4].toString().trim().toLowerCase() : '';
     if (rowEmail === email) {
-      return {
+      result = {
         district:    (data[i][0] || '').toString().trim(),
         block:       (data[i][1] || '').toString().trim(),
         name:        (data[i][2] || '').toString().trim(),
@@ -1730,7 +2196,146 @@ function getEmployeeByEmail(email) {
         email:       (data[i][4] || '').toString().trim(),
         role:        (data[i][5] || 'Field').toString().trim()
       };
+      break;
     }
   }
-  return null;
+  cPut(key, result, C_TTL_EMP);
+  return result;
+}
+
+// ------------------------------------------------------------
+//  BULK UPDATE EMPLOYEE_DB — POST action: bulkUpdateEmployeeDB
+//  Accepts { rows: [[District,Block,Name,Designation,Email,Role], ...] }
+//  Clears existing data (except header) and writes new rows
+// ------------------------------------------------------------
+function bulkUpdateEmployeeDB(rows) {
+  try {
+    var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var sheet = ss.getSheetByName(EMPLOYEE_SHEET);
+    if (!sheet) return { success: false, message: 'Employee_DB sheet not found' };
+
+    // Clear existing data rows (keep header at row 1)
+    var lastRow = sheet.getLastRow();
+    if (lastRow > 1) {
+      sheet.deleteRows(2, lastRow - 1);
+    }
+
+    // Write new data
+    if (rows && rows.length > 0) {
+      sheet.getRange(2, 1, rows.length, 6).setValues(rows);
+    }
+
+    return { success: true, count: rows ? rows.length : 0, message: 'Employee_DB updated successfully' };
+  } catch(err) {
+    return { success: false, message: err.message };
+  }
+}
+
+// ------------------------------------------------------------
+//  PEEK SOURCE SHEET — returns sheet names + first 3 data rows
+//  action=peekSourceSheet&sourceId=SPREADSHEET_ID&sheetIndex=0
+// ------------------------------------------------------------
+function peekSourceSheet(sourceId, sheetIndex) {
+  try {
+    var src    = SpreadsheetApp.openById(sourceId);
+    var sheets = src.getSheets();
+    var info   = sheets.map(function(s){
+      return { name: s.getName(), gid: s.getSheetId(), rows: s.getLastRow() - 1 };
+    });
+    var ws = findSheet_(sheets, sheetIndex);
+    var sample = ws.getRange(1, 1, Math.min(4, ws.getLastRow()), ws.getLastColumn()).getValues();
+    return { success: true, sheets: info, selectedSheet: ws.getName(), selectedGid: ws.getSheetId(), sample: sample };
+  } catch(err) {
+    return { success: false, message: err.message };
+  }
+}
+
+// Helper: find sheet by gid (if sheetIndex > 100) or by array index
+function findSheet_(sheets, sheetIndex) {
+  var n = parseInt(sheetIndex) || 0;
+  if (n > 100) {
+    // treat as gid
+    for (var i = 0; i < sheets.length; i++) {
+      if (sheets[i].getSheetId() === n) return sheets[i];
+    }
+  }
+  return sheets[n] || sheets[0];
+}
+
+// ------------------------------------------------------------
+//  IMPORT FROM SOURCE SHEET → Employee_DB
+//  action=importFromSource&sourceId=SPREADSHEET_ID&sheetIndex=0
+//  Reads first tab of source spreadsheet and overwrites Employee_DB
+// ------------------------------------------------------------
+function importFromSource(sourceId, sheetIndex) {
+  try {
+    // 1. Read source
+    var src    = SpreadsheetApp.openById(sourceId);
+    var sheets = src.getSheets();
+    var srcWs  = findSheet_(sheets, sheetIndex);
+    if (!srcWs) return { success: false, message: 'Source sheet not found for: ' + sheetIndex };
+
+    var srcData = srcWs.getDataRange().getValues();
+    if (srcData.length <= 1) return { success: false, message: 'Source sheet has no data rows' };
+
+    // Data rows (skip header row 0)
+    // Filter: skip vacant/empty rows
+    // Employee_DB format: col0=District, col1=Block, col2=Name, col3=Designation, col4=Email, col5=Role
+    var dataRows = srcData.slice(1).filter(function(row) {
+      var name  = (row[2] || '').toString().trim().toLowerCase();
+      var email = (row[4] || '').toString().trim().toLowerCase();
+      // Skip if row is entirely empty
+      var allEmpty = row.every(function(c){ return !c || c.toString().trim() === ''; });
+      if (allEmpty) return false;
+      // Skip if name is vacant/empty
+      if (!name || name === 'vacant' || name.indexOf('vacant') === 0) return false;
+      // Skip if email is vacant/missing/error
+      if (!email || email === 'vacant' || email === '#n/a' || email === 'n/a') return false;
+      return true;
+    });
+
+    // 2. Write to target Employee_DB
+    var tgt   = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var tgtWs = tgt.getSheetByName(EMPLOYEE_SHEET);
+    if (!tgtWs) return { success: false, message: 'Employee_DB sheet not found in target' };
+
+    var lastRow = tgtWs.getLastRow();
+    if (lastRow > 1) {
+      tgtWs.deleteRows(2, lastRow - 1);
+    }
+
+    var colCount = srcData[0].length;
+    tgtWs.getRange(2, 1, dataRows.length, colCount).setValues(dataRows);
+
+    return {
+      success: true,
+      sourceSheet: srcWs.getName(),
+      rowsImported: dataRows.length,
+      columns: colCount,
+      message: 'Import complete — vacant rows skipped'
+    };
+  } catch(err) {
+    return { success: false, message: err.message };
+  }
+}
+
+
+// ------------------------------------------------------------
+//  CLEAR MY CACHE — call after role/data change to force refresh
+//  action=clearMyCache&email=user@educategirls.ngo
+// ------------------------------------------------------------
+function clearMyCache(email) {
+  try {
+    var e = email.trim().toLowerCase();
+    invalidateUser(e);
+    // Also clear district employee lists
+    CacheService.getScriptCache().removeAll([
+      'allEmp', 'emp_' + e,
+      'distEmp_bahraich','distEmp_fatehpur','distEmp_gonda',
+      'distEmp_hardoi','distEmp_shahjahanpur','distEmp_sitapur','distEmp_prayagraj'
+    ]);
+    return { success: true, message: 'Cache cleared for ' + email };
+  } catch(err) {
+    return { success: false, message: err.message };
+  }
 }

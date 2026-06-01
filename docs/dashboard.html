@@ -597,7 +597,7 @@
               <div class="aoc-sub">No Conduct</div>
             </div>
           </div>
-          <div style="border-top:1px solid #F3F4F6;padding-top:10px;text-align:right;">
+          <div id="delete-meeting-row" style="border-top:1px solid #F3F4F6;padding-top:10px;text-align:right;">
             <button onclick="deleteMeetingRow()" style="background:none;border:1px solid #FECACA;color:#DC2626;font-size:12px;cursor:pointer;border-radius:6px;padding:5px 12px;font-weight:600;">Delete Meeting</button>
           </div>
         </div>
@@ -927,6 +927,12 @@
     }
     if (_role === 'State') {
       document.getElementById('nav-state').style.display = '';
+    }
+
+    // Field role: hide "Delete Meeting" — prevents fake-meeting create-then-delete (keeps full audit trail)
+    if (_role === 'Field') {
+      var _delRow = document.getElementById('delete-meeting-row');
+      if (_delRow) _delRow.style.display = 'none';
     }
 
     var parts = SESSION.name.trim().split(' ');
@@ -1297,7 +1303,7 @@
   function deleteMeetingRow() {
     var m = _manageMeetings[MODAL_IDX];
     if (!confirm('Permanently delete meeting "' + m.meetingId + '"?')) return;
-    gasFetch('deleteMeeting', { meetingId: m.meetingId }, function(res) {
+    gasFetch('deleteMeeting', { meetingId: m.meetingId, email: SESSION.email }, function(res) {
       if (res.success) { invalidateFrontCache(); closeActionModal(); showToast('Meeting deleted successfully.'); loadManageMeetings(true); }
       else alert('Delete failed: ' + res.message);
     }, function(e) { alert('Error: ' + e.message); });
