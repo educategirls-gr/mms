@@ -980,9 +980,11 @@
     state:    { title: 'State Meetings',    sub: 'All meetings across the state' }
   };
   function showView(view) {
-    ['create','manage','list'].forEach(function(v) {
-      document.getElementById('view-' + v).classList.remove('active');
-      document.getElementById('nav-'  + v).classList.remove('active');
+    ['create','manage','list','district','state'].forEach(function(v) {
+      var vEl = document.getElementById('view-' + v);
+      var nEl = document.getElementById('nav-'  + v);
+      if (vEl) vEl.classList.remove('active');
+      if (nEl) nEl.classList.remove('active');
     });
     document.getElementById('view-' + view).classList.add('active');
     document.getElementById('nav-'  + view).classList.add('active');
