@@ -143,6 +143,47 @@ function normalizeDistrictColumn_(ss, sheetName, colIdx, report) {
 //  Returns a summary of district values so we can see why a
 //  district filter (e.g. SITAPUR) shows fewer meetings than expected.
 // ------------------------------------------------------------
+// Canonicalize role names so typos/variants map to the 4 system roles.
+// "Zonal" / "Zonal Lead" → "Zone"; case-corrects State/District/Field/Zone.
+function normalizeRole_(raw) {
+  var r = (raw || 'Field').toString().trim();
+  var lc = r.toLowerCase();
+  if (lc.indexOf('zone') === 0 || lc.indexOf('zonal') === 0) return 'Zone';
+  if (lc === 'state')    return 'State';
+  if (lc === 'district') return 'District';
+  if (lc === 'field')    return 'Field';
+  return r;
+}
+
+function diagnoseZoneTeam() {
+  var EMAIL = 'alok.mohan@educategirls.ngo'; // ← apna email
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(EMPLOYEE_SHEET);
+  var data = sheet.getDataRange().getValues();
+  // Cols: District(0) Block(1) Name(2) Desig(3) Email(4) Role(5) Zone(6)
+  var me = null, roleCount = {}, zoneCount = {};
+  for (var i = 1; i < data.length; i++) {
+    var em = (data[i][4]||'').toString().trim().toLowerCase();
+    var role = (data[i][5]||'(blank)').toString().trim();
+    var zone = (data[i][6]||'(blank)').toString().trim();
+    roleCount[role] = (roleCount[role]||0)+1;
+    zoneCount[zone] = (zoneCount[zone]||0)+1;
+    if (em === EMAIL.toLowerCase()) {
+      me = { district:data[i][0], block:data[i][1], name:data[i][2], desig:data[i][3], email:data[i][4], role:data[i][5], zone:data[i][6] };
+    }
+  }
+  Logger.log('MY ROW: ' + JSON.stringify(me));
+  Logger.log('ROLE counts: ' + JSON.stringify(roleCount));
+  Logger.log('ZONE counts: ' + JSON.stringify(zoneCount));
+  if (me) {
+    CacheService.getScriptCache().remove('zoneEmp_' + (me.zone||'').toString().trim().toUpperCase());
+    var res = getZoneTeamEmployees(me.zone, me.email);
+    Logger.log('getZoneTeamEmployees("' + me.zone + '") → ' + res.length + ' people');
+    Logger.log('Names: ' + res.map(function(r){return r.name + ' [' + r.district + '/' + (r._email)+']';}).join('  |  '));
+  }
+  return me;
+}
+
 function diagnoseDistricts() {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheets = [MEETINGS_SHEET, CONDUCTED_SHEET, POSTPONED_SHEET, CANCELLED_SHEET];
@@ -2394,7 +2435,7 @@ function getEmployeeByEmail(email) {
         name:        (data[i][2] || '').toString().trim(),
         designation: (data[i][3] || '').toString().trim(),
         email:       (data[i][4] || '').toString().trim(),
-        role:        (data[i][5] || 'Field').toString().trim(),
+        role:        normalizeRole_(data[i][5]),
         zone:        (data[i][6] || '').toString().trim()  // G = Zone
       };
       break;
