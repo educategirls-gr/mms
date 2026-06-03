@@ -243,6 +243,7 @@ function apiResponse(e, method) {
         else if (action === 'getAllMyMeetings')     result = getAllMyMeetings(session.email);
         else if (action === 'getDistrictEmployees') result = getDistrictEmployees(session.district, session.email);
         else if (action === 'getAllEmployees')      result = getAllEmployees(session.email);
+        else if (action === 'getZoneTeamEmployees') result = getZoneTeamEmployees(session.zone, session.email);
         else if (action === 'getDistrictAllMeetings') {
           // District role locked to own district; State may query any
           var dist = (role === 'State') ? (e.parameter.district || session.district) : session.district;
@@ -682,6 +683,43 @@ function getAllEmployees(currentEmail) {
   }
   all.sort(function(a, b) { return a.name.localeCompare(b.name); });
   cPut('allEmp', all, C_TTL_DROP);
+  return all.filter(function(r){ return r._email !== cur; });
+}
+
+// ------------------------------------------------------------
+//  ZONE TEAM EMPLOYEES — for colleague picker (Zone role)
+//  All employees in the user's zone + all State-team members
+// ------------------------------------------------------------
+function getZoneTeamEmployees(zone, currentEmail) {
+  zone       = (zone || '').toString().trim().toUpperCase();
+  var cur    = (currentEmail || '').trim().toLowerCase();
+  var cacheKey = 'zoneEmp_' + zone;
+  var cached = cGet(cacheKey);
+  if (cached) return cached.filter(function(r){ return r._email !== cur; });
+
+  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(EMPLOYEE_SHEET);
+  if (!sheet) return [];
+  var data  = sheet.getDataRange().getValues();
+  // Cols: District(0), Block(1), Name(2), Designation(3), Email(4), Role(5), Zone(6)
+  var all = [];
+  for (var i = 1; i < data.length; i++) {
+    var emp = data[i][4] ? data[i][4].toString().trim().toLowerCase() : '';
+    if (!emp) continue;
+    var z    = (data[i][6] || '').toString().trim().toUpperCase();
+    var role = (data[i][5] || '').toString().trim().toLowerCase();
+    if ((zone && z === zone) || role === 'state') {
+      all.push({
+        name:        (data[i][2] || '').toString().trim(),
+        designation: (data[i][3] || '').toString().trim(),
+        district:    (data[i][0] || '').toString().trim(),
+        block:       (data[i][1] || '').toString().trim(),
+        _email:      emp
+      });
+    }
+  }
+  all.sort(function(a, b) { return a.name.localeCompare(b.name); });
+  cPut(cacheKey, all, C_TTL_DROP);
   return all.filter(function(r){ return r._email !== cur; });
 }
 

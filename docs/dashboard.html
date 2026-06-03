@@ -2179,11 +2179,14 @@
       if (s) { s.value = ''; }
       if (!colleaguesLoaded) {
         var _r = (SESSION.role || '').toLowerCase();
-        var isStateUser = _r === 'state' || _r === 'zone';  // Zone leads have no single district → show all
-        var colAction   = isStateUser ? 'getAllEmployees' : 'getDistrictEmployees';
-        var colParams   = isStateUser
-          ? { email: SESSION.email }
-          : { district: SESSION.district, email: SESSION.email };
+        var colAction, colParams;
+        if (_r === 'state') {            // State → everyone
+          colAction = 'getAllEmployees';      colParams = { email: SESSION.email };
+        } else if (_r === 'zone') {      // Zone → own zone employees + State team
+          colAction = 'getZoneTeamEmployees'; colParams = { email: SESSION.email };
+        } else {                          // District / Field → own district
+          colAction = 'getDistrictEmployees'; colParams = { district: SESSION.district, email: SESSION.email };
+        }
         gasFetch(colAction, colParams, renderColleagues, function() {
           document.getElementById('colleague-list').innerHTML =
             '<div style="padding:12px;color:#DC2626;font-size:13px;">Failed to load. Please try again.</div>';
