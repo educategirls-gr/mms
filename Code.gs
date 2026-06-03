@@ -251,6 +251,13 @@ function apiResponse(e, method) {
         else if (action === 'getStateAllMeetings')  result = (role === 'State')
                                                        ? getStateAllMeetings()
                                                        : { success: false, message: 'FORBIDDEN' };
+        else if (action === 'getZoneAllMeetings') {
+          // Zone role locked to own zone; State may query any zone
+          var zn = (role === 'State') ? (e.parameter.zone || session.zone) : session.zone;
+          result = (role === 'Zone' || role === 'State')
+                     ? getZoneAllMeetings(zn)
+                     : { success: false, message: 'FORBIDDEN' };
+        }
         else if (action === 'getDashboardStats')    result = getDashboardStats(session.email, e.parameter.all === '1');
         else if (action === 'getDistrictReport') {
           var dr = (role === 'State') ? (e.parameter.district || session.district) : session.district;
@@ -440,6 +447,7 @@ function verifyOTP(email, otp) {
     block:       emp.block,
     designation: emp.designation,
     role:        emp.role,
+    zone:        emp.zone || '',
     loginTime:   new Date().toISOString()
   });
   cache.put('SESSION_' + token, session, 3600); // 1 hour
@@ -452,6 +460,7 @@ function verifyOTP(email, otp) {
     district:    emp.district,
     block:       emp.block,
     designation: emp.designation,
+    zone:        emp.zone || '',
     email:       emp.email
   };
 }
@@ -1564,6 +1573,51 @@ function getStateAllMeetings() {
 }
 
 // ------------------------------------------------------------
+//  ZONE ALL MEETINGS — for Zone Meetings view (Zone role)
+//  A zone spans multiple districts; show every meeting whose
+//  district belongs to this zone (mapping comes from Employee_DB).
+// ------------------------------------------------------------
+function getDistrictsInZone_(zone) {
+  zone = (zone || '').toString().trim().toUpperCase();
+  if (!zone) return {};
+  var cacheKey = 'zoneDist_' + zone;
+  var hit = cGet(cacheKey);
+  if (hit) return hit;
+  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(EMPLOYEE_SHEET);
+  var set   = {};
+  if (sheet) {
+    var data = sheet.getDataRange().getValues();
+    // Columns: District(0) ... Role(5), Zone(6)
+    for (var i = 1; i < data.length; i++) {
+      var z = (data[i][6] || '').toString().trim().toUpperCase();
+      var d = (data[i][0] || '').toString().trim().toUpperCase();
+      if (z && z === zone && d) set[d] = true;
+    }
+  }
+  cPut(cacheKey, set, C_TTL_DROP);
+  return set;
+}
+
+function getZoneAllMeetings(zone) {
+  try {
+    zone = (zone || '').toString().trim().toUpperCase();
+    if (!zone) return [];
+    var cacheKey = 'zoneMtg_' + zone;
+    var hit = cGet(cacheKey);
+    if (hit) return hit;
+
+    var districts = getDistrictsInZone_(zone);           // { DISTRICT: true }
+    var all       = getStateAllMeetings();                // reuse (cached, all districts)
+    var filtered  = all.filter(function(m) {
+      return districts[(m.district || '').toString().trim().toUpperCase()] === true;
+    });
+    cPut(cacheKey, filtered, C_TTL_LIVE);
+    return filtered;
+  } catch(err) { return []; }
+}
+
+// ------------------------------------------------------------
 //  COLLEAGUE MEETING NOTIFICATION EMAIL
 // ------------------------------------------------------------
 function sendColleagueNotification(data, mtgId) {
@@ -2239,7 +2293,8 @@ function getEmployeeByEmail(email) {
         name:        (data[i][2] || '').toString().trim(),
         designation: (data[i][3] || '').toString().trim(),
         email:       (data[i][4] || '').toString().trim(),
-        role:        (data[i][5] || 'Field').toString().trim()
+        role:        (data[i][5] || 'Field').toString().trim(),
+        zone:        (data[i][6] || '').toString().trim()  // G = Zone
       };
       break;
     }

@@ -408,6 +408,9 @@
     <div class="nav-item" id="nav-district" onclick="showView('district')" style="display:none;">
       <span class="nav-icon">🏢</span><span>District Meetings</span>
     </div>
+    <div class="nav-item" id="nav-zone" onclick="showView('zone')" style="display:none;">
+      <span class="nav-icon">🧭</span><span>Zone Meetings</span>
+    </div>
     <div class="nav-item" id="nav-state" onclick="showView('state')" style="display:none;">
       <span class="nav-icon">🗺️</span><span>State Meetings</span>
     </div>
@@ -833,12 +836,48 @@
       </div>
     </div>
 
+    <!-- View: Zone Meetings (Zone role only) -->
+    <div id="view-zone" class="view">
+      <div class="card">
+        <div class="card-title" style="background:#5B21B6;">🧭 Zone Meetings</div>
+
+        <!-- Month Navigation -->
+        <div style="display:flex;align-items:center;justify-content:center;gap:12px;padding:10px 0 14px;">
+          <button onclick="zmPrevMonth()" class="pag-btn" style="font-size:16px;padding:4px 14px;">&#8592;</button>
+          <span id="zm-month-label" style="font-weight:700;font-size:15px;color:#111827;min-width:130px;text-align:center;"></span>
+          <button onclick="zmNextMonth()" id="zm-next-btn" class="pag-btn" style="font-size:16px;padding:4px 14px;">&#8594;</button>
+        </div>
+
+        <!-- District Filter + Status Filter + Search + Download -->
+        <div class="rep-search-bar">
+          <select id="zm-district" onchange="zmRender()" style="flex-shrink:0;padding:8px 10px;font-size:13px;border:1.5px solid #E5E7EB;border-radius:8px;background:#fff;">
+            <option value="">All Districts</option>
+          </select>
+          <select id="zm-status" onchange="zmRender()" style="flex-shrink:0;padding:8px 10px;font-size:13px;border:1.5px solid #E5E7EB;border-radius:8px;background:#fff;">
+            <option value="">All Status</option>
+            <option value="Planned">Planned</option>
+            <option value="Follow-up">Follow-up</option>
+            <option value="Conducted">Conducted</option>
+            <option value="Postponed">Postponed</option>
+            <option value="Cancelled">Cancelled</option>
+          </select>
+          <input type="text" id="zm-search" placeholder="Search district, employee, stakeholder..." oninput="zmRender()" style="flex:1;">
+          <button class="btn-dl" onclick="zmCSV()">&#8595; Download CSV</button>
+        </div>
+        <div id="zm-count" style="font-size:12px;color:#6B7280;margin-bottom:8px;"></div>
+
+        <div id="zm-content">
+          <div class="empty-state"><div class="empty-icon">&#9203;</div><p>Loading...</p></div>
+        </div>
+      </div>
+    </div>
+
 
   </div>
 </div>
 
 <script>
-  var GAS_URL = 'https://script.google.com/macros/s/AKfycbzMfw7WbHGDI1slY8g33fABKnm8H4F2v7bftvIyEESY8n57a_yKSm2nA5ehD-MPqA/exec';
+  var GAS_URL = 'https://script.google.com/macros/s/AKfycbx6npOoWS7WmNyoKqRyUaSJVzbZ3QoC4uxdDEjX42nwRzi_auTl_2sAGTeMtliet9ZH/exec';
 
   var SESSION = (function() {
     try { return JSON.parse(sessionStorage.getItem('eg_grm_session') || 'null'); } catch(e) { return null; }
@@ -917,7 +956,7 @@
     document.getElementById('p-district').textContent = SESSION.district;
 
     // Role badge
-    var _roleColors = { 'State': '#10B981', 'District': '#3B82F6', 'Field': '#F59E0B' };
+    var _roleColors = { 'State': '#10B981', 'District': '#3B82F6', 'Field': '#F59E0B', 'Zone': '#7C3AED' };
     var _role = SESSION.role || '';
     var _rbadge = document.getElementById('p-role-badge');
     _rbadge.textContent = _role + ' Level';
@@ -927,6 +966,9 @@
     // Show role-specific meetings tab
     if (_role === 'District') {
       document.getElementById('nav-district').style.display = '';
+    }
+    if (_role === 'Zone') {
+      document.getElementById('nav-zone').style.display = '';
     }
     if (_role === 'State') {
       document.getElementById('nav-state').style.display = '';
@@ -977,10 +1019,11 @@
     manage: { title: 'Manage Meetings',    sub: 'Update meeting outcomes and action points' },
     list:     { title: 'My Meetings',      sub: '' },
     district: { title: 'District Meetings', sub: 'All meetings in your district' },
+    zone:     { title: 'Zone Meetings',     sub: 'All meetings across your zone' },
     state:    { title: 'State Meetings',    sub: 'All meetings across the state' }
   };
   function showView(view) {
-    ['create','manage','list','district','state'].forEach(function(v) {
+    ['create','manage','list','district','zone','state'].forEach(function(v) {
       var vEl = document.getElementById('view-' + v);
       var nEl = document.getElementById('nav-'  + v);
       if (vEl) vEl.classList.remove('active');
@@ -994,6 +1037,7 @@
     if (view === 'list')     loadReports();
     if (view === 'manage')   loadManageMeetings();
     if (view === 'district') loadDistrictMeetings();
+    if (view === 'zone')     loadZoneMeetings();
     if (view === 'state')    loadStateMeetings();
     // Close sidebar on mobile after navigation
     document.getElementById('sidebar').classList.remove('mob-open');
@@ -1005,8 +1049,9 @@
   var _mymCache    = { data: null, ts: 0 };
   var _distCache   = { data: null, ts: 0 };
   var _stateCache  = { data: null, ts: 0 };
+  var _zoneCache   = { data: null, ts: 0 };
   var _CACHE_TTL   = 120000; // 2 minutes in ms
-  function invalidateFrontCache() { _manageCache.ts = 0; _mymCache.ts = 0; _distCache.ts = 0; _stateCache.ts = 0; }
+  function invalidateFrontCache() { _manageCache.ts = 0; _mymCache.ts = 0; _distCache.ts = 0; _stateCache.ts = 0; _zoneCache.ts = 0; }
 
   // ── Manage Meetings ──────────────────────────────────────────
   function loadManageMeetings(force) {
@@ -1890,6 +1935,204 @@
     showToast('Downloaded ' + data.length + ' meetings as ' + fname);
   }
 
+  // ── Zone Meetings (Zone role) — mirrors State, scoped to zone ──
+  var _zmAll   = [];
+  var _zmMonth = new Date().getMonth();
+  var _zmYear  = new Date().getFullYear();
+
+  function loadZoneMeetings(force) {
+    _zmMonth = new Date().getMonth();
+    _zmYear  = new Date().getFullYear();
+    zmUpdateLabel();
+    var now = Date.now();
+    if (!force && _zoneCache.data && (now - _zoneCache.ts) < _CACHE_TTL) {
+      _zmAll = _zoneCache.data;
+      zmBuildDistrictFilter();
+      zmRender();
+      return;
+    }
+    document.getElementById('zm-content').innerHTML =
+      '<div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>';
+    document.getElementById('zm-count').textContent = '';
+    gasFetch('getZoneAllMeetings', {}, function(list) {
+      _zoneCache = { data: (list && list.length !== undefined) ? list : [], ts: Date.now() };
+      _zmAll = _zoneCache.data;
+      zmBuildDistrictFilter();
+      zmRender();
+    }, function() {
+      document.getElementById('zm-content').innerHTML =
+        '<div class="empty-state"><p style="color:#DC2626;">Failed to load. Please try again.</p></div>';
+    });
+  }
+
+  function zmBuildDistrictFilter() {
+    var sel = document.getElementById('zm-district');
+    var cur = sel.value;
+    var districts = {};
+    _zmAll.forEach(function(r) { if (r.district) districts[r.district] = 1; });
+    sel.innerHTML = '<option value="">All Districts</option>';
+    Object.keys(districts).sort().forEach(function(d) {
+      var o = document.createElement('option');
+      o.value = d; o.textContent = d;
+      if (d === cur) o.selected = true;
+      sel.appendChild(o);
+    });
+  }
+
+  function zmUpdateLabel() {
+    var now = new Date();
+    document.getElementById('zm-month-label').textContent = _MONTHS[_zmMonth] + ' ' + _zmYear;
+    var isCurrent = (_zmYear === now.getFullYear() && _zmMonth === now.getMonth());
+    document.getElementById('zm-next-btn').disabled = isCurrent;
+    document.getElementById('zm-next-btn').style.opacity = isCurrent ? '0.4' : '1';
+  }
+  function zmPrevMonth() { _zmMonth--; if (_zmMonth < 0) { _zmMonth = 11; _zmYear--; } zmUpdateLabel(); zmRender(); }
+  function zmNextMonth() {
+    var now = new Date();
+    if (_zmYear === now.getFullYear() && _zmMonth === now.getMonth()) return;
+    _zmMonth++; if (_zmMonth > 11) { _zmMonth = 0; _zmYear++; }
+    zmUpdateLabel(); zmRender();
+  }
+
+  function zmGetDate(r) {
+    return toTs((r.status === 'Conducted' && r.conductDate) ? r.conductDate : r.date);
+  }
+
+  function zmRender() {
+    var q   = (document.getElementById('zm-search').value || '').trim().toLowerCase();
+    var dst = document.getElementById('zm-district').value;
+    var st  = document.getElementById('zm-status').value;
+    var monthStart = new Date(_zmYear, _zmMonth, 1).getTime();
+    var monthEnd   = new Date(_zmYear, _zmMonth + 1, 0, 23, 59, 59).getTime();
+
+    var filtered = _zmAll.filter(function(r) {
+      var ts = zmGetDate(r);
+      if (ts < monthStart || ts > monthEnd) return false;
+      if (dst && (r.district || '').toLowerCase() !== dst.toLowerCase()) return false;
+      if (st  && r.status !== st) return false;
+      if (q) {
+        var hay = [r.meetingId, r.district, r.employeeName, r.designation,
+                   r.adhikariName, r.adhikariPost, r.purpose, r.status, r.colleagueName].join(' ').toLowerCase();
+        if (hay.indexOf(q) === -1) return false;
+      }
+      return true;
+    });
+    filtered.sort(function(a, b) { return zmGetDate(b) - zmGetDate(a); });
+
+    var countEl = document.getElementById('zm-count');
+    countEl.textContent = filtered.length
+      ? filtered.length + ' meeting' + (filtered.length > 1 ? 's' : '') + ' in ' + _MONTHS[_zmMonth] + ' ' + _zmYear
+      : '';
+
+    if (!filtered.length) {
+      document.getElementById('zm-content').innerHTML =
+        '<div class="empty-state"><div class="empty-icon">🧭</div>' +
+        '<p>No meetings in ' + _MONTHS[_zmMonth] + ' ' + _zmYear + '</p></div>';
+      return;
+    }
+
+    var STATUS_STYLE = {
+      'Planned':'background:#EFF6FF;color:#1D4ED8;', 'Follow-up':'background:#F3E8FF;color:#7C3AED;',
+      'Conducted':'background:#D1FAE5;color:#065F46;', 'Postponed':'background:#FEF3C7;color:#92400E;',
+      'Cancelled':'background:#FEE2E2;color:#991B1B;'
+    };
+    var STATUS_ICON = { 'Planned':'📅','Follow-up':'🔁','Conducted':'✅','Postponed':'🔄','Cancelled':'❌' };
+
+    var html =
+      '<div style="overflow-x:auto;">' +
+      '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
+      '<thead><tr style="background:#F3F4F6;border-bottom:2px solid #E5E7EB;">' +
+        '<th style="padding:8px 6px;text-align:left;color:#6B7280;font-weight:600;">#</th>' +
+        '<th style="padding:8px 6px;text-align:left;color:#6B7280;font-weight:600;white-space:nowrap;">Date</th>' +
+        '<th style="padding:8px 6px;text-align:left;color:#6B7280;font-weight:600;">Status</th>' +
+        '<th style="padding:8px 6px;text-align:left;color:#6B7280;font-weight:600;">District</th>' +
+        '<th style="padding:8px 6px;text-align:left;color:#6B7280;font-weight:600;">Employee</th>' +
+        '<th style="padding:8px 6px;text-align:left;color:#6B7280;font-weight:600;">Stakeholder</th>' +
+        '<th style="padding:8px 6px;text-align:left;color:#6B7280;font-weight:600;">Purpose</th>' +
+        '<th style="padding:8px 6px;text-align:left;color:#6B7280;font-weight:600;">Details</th>' +
+        '<th style="padding:8px 6px;text-align:left;color:#6B7280;font-weight:600;white-space:nowrap;">ID</th>' +
+      '</tr></thead><tbody>';
+
+    filtered.forEach(function(r, i) {
+      var st2   = r.status || 'Planned';
+      var stCss = STATUS_STYLE[st2] || 'background:#F3F4F6;color:#374151;';
+      var stIco = STATUS_ICON[st2]  || '';
+      var dateLabel = (st2 === 'Conducted' && r.conductDate) ? r.conductDate : r.date;
+
+      var details = '';
+      if (st2 === 'Conducted') {
+        if (r.keyPoints) details += '<div style="color:#374151;">' + esc(r.keyPoints) + '</div>';
+        var links = '';
+        if (r.momLink)   links += '<a href="' + esc(r.momLink)   + '" target="_blank" class="rep-link rep-link-mom" style="margin-right:4px;">MoM</a>';
+        if (r.photoLink) links += '<a href="' + esc(r.photoLink) + '" target="_blank" class="rep-link rep-link-photo">Photos</a>';
+        if (links) details += '<div style="margin-top:3px;">' + links + '</div>';
+        if (r.colleagueName) details += '<div style="color:#9CA3AF;font-size:11px;margin-top:2px;">Sathi: ' + esc(r.colleagueName) + (r.colleaguePost ? ' (' + esc(r.colleaguePost) + ')' : '') + '</div>';
+      } else if (r.reason) {
+        details = '<span style="color:#92400E;font-size:11px;">' + esc(r.reason) + '</span>';
+      }
+
+      var rowBg = i % 2 === 0 ? '#ffffff' : '#F9FAFB';
+      html +=
+        '<tr style="background:' + rowBg + ';border-bottom:1px solid #F3F4F6;vertical-align:top;">' +
+          '<td style="padding:8px 6px;color:#9CA3AF;">' + (i+1) + '</td>' +
+          '<td style="padding:8px 6px;white-space:nowrap;color:#374151;">' + esc(dateLabel) + '</td>' +
+          '<td style="padding:8px 6px;white-space:nowrap;">' +
+            '<span style="' + stCss + 'font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;">' + stIco + ' ' + st2 + '</span>' +
+          '</td>' +
+          '<td style="padding:8px 6px;color:#374151;font-weight:600;">' + esc(r.district) + '</td>' +
+          '<td style="padding:8px 6px;">' +
+            '<div style="font-weight:600;color:#111827;">' + esc(r.employeeName) + '</div>' +
+            '<div style="color:#6B7280;font-size:11px;">' + esc(r.designation) + '</div>' +
+          '</td>' +
+          '<td style="padding:8px 6px;">' +
+            '<div style="font-weight:600;color:#111827;">' + esc(r.adhikariName) + '</div>' +
+            '<div style="color:#6B7280;font-size:11px;">' + esc(r.adhikariPost) + '</div>' +
+          '</td>' +
+          '<td style="padding:8px 6px;">' +
+            '<div style="color:#374151;">' + esc(r.purpose) + '</div>' +
+            (r.type ? '<div style="color:#6B7280;font-size:11px;">' + esc(r.type) + '</div>' : '') +
+          '</td>' +
+          '<td style="padding:8px 6px;max-width:200px;">' + details + '</td>' +
+          '<td style="padding:8px 6px;color:#9CA3AF;font-size:10px;white-space:nowrap;">' + esc(r.meetingId) + '</td>' +
+        '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+    document.getElementById('zm-content').innerHTML = html;
+  }
+
+  function zmCSV() {
+    var monthStart = new Date(_zmYear, _zmMonth, 1).getTime();
+    var monthEnd   = new Date(_zmYear, _zmMonth + 1, 0, 23, 59, 59).getTime();
+    var data = _zmAll.filter(function(r) {
+      var ts = zmGetDate(r); return ts >= monthStart && ts <= monthEnd;
+    });
+    if (!data.length) { showToast('No meetings to download for this month.'); return; }
+    var headers = ['#','Meeting ID','Status','Date','District','Employee','Designation','Stakeholder','Post','Purpose','Type','Sathi','Key Points','MoM','Photos','Reason'];
+    var rows = [headers];
+    data.forEach(function(r, i) {
+      var dateLabel = (r.status === 'Conducted' && r.conductDate) ? r.conductDate : r.date;
+      rows.push([i+1, r.meetingId, r.status, dateLabel, r.district,
+        r.employeeName, r.designation, r.adhikariName, r.adhikariPost,
+        r.purpose, r.type||'', r.colleagueName||'',
+        r.keyPoints||'', r.momLink||'', r.photoLink||'', r.reason||'']);
+    });
+    var csv = rows.map(function(row) {
+      return row.map(function(c) {
+        var s = (c||'').toString().replace(/"/g,'""');
+        return (s.indexOf(',')!==-1||s.indexOf('"')!==-1||s.indexOf('\n')!==-1) ? '"'+s+'"' : s;
+      }).join(',');
+    }).join('\r\n');
+    var blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8;'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    var fname = 'ZoneMeetings_' + _MONTHS[_zmMonth] + '_' + _zmYear + '.csv';
+    a.href=url; a.download=fname;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+    showToast('Downloaded ' + data.length + ' meetings as ' + fname);
+  }
+
   // ── Dropdowns ────────────────────────────────────────────────
   function populateDropdowns(data) {
     if (data && data.error === 'ACCESS_REVOKED') {
@@ -1935,7 +2178,8 @@
       var s = document.getElementById('colleague-search');
       if (s) { s.value = ''; }
       if (!colleaguesLoaded) {
-        var isStateUser = SESSION.role === 'State' || SESSION.role === 'state';
+        var _r = (SESSION.role || '').toLowerCase();
+        var isStateUser = _r === 'state' || _r === 'zone';  // Zone leads have no single district → show all
         var colAction   = isStateUser ? 'getAllEmployees' : 'getDistrictEmployees';
         var colParams   = isStateUser
           ? { email: SESSION.email }
