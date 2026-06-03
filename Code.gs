@@ -393,7 +393,7 @@ function sendOTP(email) {
 
   var employee = getEmployeeByEmail(email);
   if (!employee) {
-    return { success: false, message: 'Your email is not registered in the system. Please contact HR.' };
+    return { success: false, message: 'Your email is not registered in the system. Please contact Admin.' };
   }
 
   var otp = Math.floor(100000 + Math.random() * 900000).toString();
