@@ -541,6 +541,26 @@ function saveMeeting(data) {
                 ('0'+now.getDate()).slice(-2) + '-' +
                 ('0'+now.getHours()).slice(-2) + ('0'+now.getMinutes()).slice(-2) + ('0'+now.getSeconds()).slice(-2);
 
+    // ── Upload meeting documents to Drive (optional) ──────────
+    var docFolderUrl = '';
+    try {
+      if (data.documents && data.documents.length > 0) {
+        var droot = getRootMeetingsFolder();
+        var ddist = getOrCreateFolder(droot, data.district || 'General');
+        var dmtg  = getOrCreateFolder(ddist, mtgId);
+        var ddoc  = getOrCreateFolder(dmtg, 'Documents');
+        ddoc.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        docFolderUrl = ddoc.getUrl();
+        data.documents.forEach(function(doc, idx) {
+          var decoded = Utilities.base64Decode(doc.data);
+          var blob = Utilities.newBlob(decoded, doc.type || 'application/octet-stream',
+                       doc.name || (mtgId + '_doc' + (idx+1)));
+          var f = ddoc.createFile(blob);
+          f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        });
+      }
+    } catch(docErr) { docFolderUrl = ''; }
+
     var row = [
       mtgId,                    // A  Meeting ID
       data.district     || '',  // B  District
@@ -562,7 +582,8 @@ function saveMeeting(data) {
       data.colleagueName|| '',  // R  Colleague Name
       data.colleaguePost   || '',  // S  Colleague Post
       now.toLocaleString('en-IN'), // T  Submitted At
-      data.parentMeetingId || ''   // U  Parent Meeting ID (for follow-ups)
+      data.parentMeetingId || '',  // U  Parent Meeting ID (for follow-ups)
+      docFolderUrl                 // V  Documents folder URL
     ];
 
     sheet.appendRow(row);
@@ -574,7 +595,7 @@ function saveMeeting(data) {
     }
 
     invalidateUser((data.email || '').trim().toLowerCase());
-    return { success: true, meetingId: mtgId };
+    return { success: true, meetingId: mtgId, docUrl: docFolderUrl };
   } catch (err) {
     return { success: false, message: err.message };
   }
@@ -614,7 +635,8 @@ function getMyMeetings(email) {
           reason:       (sheetData[i][16] || '').toString(),  // Q
           colleagueName:(sheetData[i][17] || '').toString(),  // R
           colleaguePost:(sheetData[i][18] || '').toString(),  // S
-          parentMeetingId: (sheetData[i][20] || '').toString() // U
+          parentMeetingId: (sheetData[i][20] || '').toString(), // U
+          docUrl:       (sheetData[i][21] || '').toString()   // V  Documents folder
         });
       }
     }

@@ -523,6 +523,15 @@
           <div class="field full">
             <label>Meeting Agenda <span class="req">*</span></label>
             <textarea id="meetingAgenda" placeholder="Briefly describe what will be discussed in this meeting..."></textarea>
+            <div style="margin-top:10px;">
+              <label style="display:block;margin-bottom:6px;">Meeting Documents <span style="color:#9CA3AF;font-weight:400">(optional)</span>
+                <span style="color:#9CA3AF;font-weight:400;font-size:11px;">PDF / Word / images — up to 5 files, 5MB each</span>
+              </label>
+              <input type="file" id="meetingDocs" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,image/*"
+                     onchange="onDocsSelect(this)"
+                     style="font-size:13px;border:1.5px dashed #D1D5DB;border-radius:8px;padding:8px;width:100%;background:#F9FAFB;cursor:pointer;">
+              <div id="docs-list" style="margin-top:6px;font-size:12px;color:#374151;"></div>
+            </div>
           </div>
         </div>
         <div class="form-divider"></div>
@@ -632,8 +641,8 @@
           </div>
           <div class="form-row">
             <div class="field full">
-              <label>Meeting Photos <span class="req">*</span>
-                <span style="color:#9CA3AF;font-weight:400;font-size:11px;">Minimum 2, Maximum 5. You can capture directly from your camera.</span>
+              <label>Meeting Photos <span style="color:#9CA3AF;font-weight:400">(optional)</span>
+                <span style="color:#9CA3AF;font-weight:400;font-size:11px;">Up to 5. You can capture directly from your camera.</span>
               </label>
               <div class="photo-grid" id="photo-grid"></div>
               <input type="file" id="ph-inp-1" accept="image/*" style="display:none;" onchange="onPhotoSelect(1,this)">
@@ -1101,7 +1110,9 @@
         '<td><strong>' + esc(relDate(m.date)) + '</strong><br><small style="color:#9CA3AF;font-size:10px">' + esc(m.date) + '</small></td>' +
         '<td style="white-space:nowrap;font-size:12px">' + esc(m.meetingTime) + '</td>' +
         '<td><strong style="font-size:13px">' + esc(m.adhikariName) + '</strong><br><small style="color:#6B7280">' + esc(m.adhikariPost) + '</small></td>' +
-        '<td style="max-width:140px;font-size:12px">' + esc(m.purpose) + '</td>' +
+        '<td style="max-width:140px;font-size:12px">' + esc(m.purpose) +
+          (m.docUrl ? '<br><a href="' + esc(m.docUrl) + '" target="_blank" style="font-size:11px;color:#0F766E;font-weight:600;text-decoration:none;">📎 Documents</a>' : '') +
+        '</td>' +
         '<td><span class="badge ' + bc + '">' + esc(m.status || 'Planned') + '</span></td>' +
         '<td>' + (showAction
           ? '<button class="btn-action" data-idx="' + idx + '">⚡ Action</button>'
@@ -1184,7 +1195,7 @@
       (function(idx) {
         var box = document.createElement('div');
         box.id = 'pbox-' + idx;
-        box.className = 'photo-box' + (idx <= 2 ? ' pbox-req' : '');
+        box.className = 'photo-box';
         box.innerHTML = emptyBoxHTML(idx);
         box.addEventListener('click', function() { document.getElementById('ph-inp-' + idx).click(); });
         grid.appendChild(box);
@@ -1245,10 +1256,12 @@
         allFiles.push(inp.files[0]);
       }
     }
-    if (allFiles.length < 2) { showModalAlert('conduct', 'Please select at least 2 photos.'); return; }
+    // Photos are optional now — proceed even with 0 photos
     var m   = _manageMeetings[MODAL_IDX];
     var btn = document.getElementById('conduct-submit-btn');
-    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Uploading photos...';
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>' + (allFiles.length ? 'Uploading photos...' : 'Generating MoM...');
+    if (allFiles.length === 0) { doSendConduct(m, date, btn, kp, [], followUp); return; }
     var photos = [], done = 0;
     allFiles.forEach(function(f) {
       var reader = new FileReader();
@@ -2279,7 +2292,28 @@
       purpose: purpose2, agenda: agenda,
       colleagueName: v('colleagueName'), colleaguePost: v('colleaguePost')
     };
+    // Collect optional meeting documents
+    var docInput = document.getElementById('meetingDocs');
+    var docFiles = (docInput && docInput.files) ? Array.prototype.slice.call(docInput.files) : [];
+    if (docFiles.length > 5) { err('You can attach up to 5 documents.'); return; }
+    for (var di = 0; di < docFiles.length; di++) {
+      if (docFiles[di].size > 5 * 1024 * 1024) { err('"' + docFiles[di].name + '" exceeds the 5MB limit.'); return; }
+    }
     loading(true);
+    if (docFiles.length === 0) { doSubmitMeeting(data); return; }
+    var docs = [], done = 0;
+    docFiles.forEach(function(f) {
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        docs.push({ name: f.name, type: f.type, data: e.target.result.split(',')[1] });
+        if (++done === docFiles.length) { data.documents = docs; doSubmitMeeting(data); }
+      };
+      reader.onerror = function() { loading(false); err('Failed to read "' + f.name + '".'); };
+      reader.readAsDataURL(f);
+    });
+  }
+
+  function doSubmitMeeting(data) {
     gasPost('saveMeeting', data, function(res) {
       loading(false);
       if (res.success) {
@@ -2292,6 +2326,15 @@
         err('Error: ' + res.message);
       }
     }, function(e) { loading(false); err('Error: ' + e.message); });
+  }
+
+  function onDocsSelect(input) {
+    var list = document.getElementById('docs-list');
+    if (!input.files || !input.files.length) { list.innerHTML = ''; return; }
+    var names = Array.prototype.slice.call(input.files).map(function(f) {
+      return '📎 ' + esc(f.name) + ' <span style="color:#9CA3AF;">(' + (f.size/1024/1024).toFixed(1) + ' MB)</span>';
+    });
+    list.innerHTML = names.join('<br>');
   }
 
   // ── Helpers ──────────────────────────────────────────────────
@@ -2352,6 +2395,8 @@
     document.getElementById('row-other-purpose').style.display = 'none';
     document.getElementById('colleague-picker').style.display  = 'none';
     colleaguesLoaded = false;
+    var di = document.getElementById('meetingDocs'); if (di) di.value = '';
+    var dl = document.getElementById('docs-list');   if (dl) dl.innerHTML = '';
   }
 
   // ── Success Modal ────────────────────────────────────────────
