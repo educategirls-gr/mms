@@ -42,7 +42,7 @@ function invalidateUser(email) {
        'rep_' + email,
        'mymt_' + email, 'allmymt_' + email,
        'mymtg_' + email,
-       'stateMtg_all');
+       'stateMtg_all', 'docUrlMap');
 }
 
 // ------------------------------------------------------------
@@ -1005,6 +1005,17 @@ function createMoMDoc(d, photoFolderUrl) {
   sec('Agenda');
   body.appendParagraph(d.agenda || '-').editAsText().setItalic(true).setForegroundColor('#4B5563');
 
+  // Meeting Documents (attached at plan time) — look up by meeting ID
+  try {
+    var _docUrl = d.docUrl || (getDocUrlMap_()[d.meetingId] || '');
+    if (_docUrl) {
+      sec('Meeting Documents');
+      var docP = body.appendParagraph('');
+      docP.appendText('Documents Folder Link: ').setBold(true);
+      docP.appendText(_docUrl);
+    }
+  } catch(e) {}
+
   // Key Discussion Points
   sec('Key Discussion Points');
   var points = (d.keyPoints || '').split('\n').filter(function(p) { return p.trim(); });
@@ -1388,11 +1399,37 @@ function getAllMyMeetings(email) {
       }
     }
 
+    var _dm = getDocUrlMap_();
+    meetings.forEach(function(m){ m.docUrl = _dm[m.meetingId] || ''; });
     cPut(cacheKey, meetings, C_TTL_LIVE);
     return meetings;
   } catch(err) {
     return [];
   }
+}
+
+// ------------------------------------------------------------
+//  DOC URL MAP — meetingId → Documents folder URL (from Plan sheet
+//  col V). Plan rows are never deleted, so this resolves docs for a
+//  meeting in any later state (conducted/postponed/cancelled).
+// ------------------------------------------------------------
+function getDocUrlMap_() {
+  var cacheKey = 'docUrlMap';
+  var hit = cGet(cacheKey);
+  if (hit) return hit;
+  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(MEETINGS_SHEET);
+  var map   = {};
+  if (sheet) {
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      var id  = (data[i][0]  || '').toString();
+      var doc = (data[i][21] || '').toString(); // V
+      if (id && doc) map[id] = doc;
+    }
+  }
+  cPut(cacheKey, map, C_TTL_LIVE);
+  return map;
 }
 
 // ------------------------------------------------------------
@@ -1507,6 +1544,8 @@ function getDistrictAllMeetings(district) {
       }
     }
 
+    var _dm = getDocUrlMap_();
+    meetings.forEach(function(m){ m.docUrl = _dm[m.meetingId] || ''; });
     cPut(cacheKey, meetings, C_TTL_LIVE);
     return meetings;
   } catch(err) { return []; }
@@ -1627,6 +1666,8 @@ function getStateAllMeetings() {
       }
     }
 
+    var _dm = getDocUrlMap_();
+    meetings.forEach(function(m){ m.docUrl = _dm[m.meetingId] || ''; });
     cPut(cacheKey, meetings, C_TTL_LIVE);
     return meetings;
   } catch(err) { return []; }

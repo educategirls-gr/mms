@@ -1507,6 +1507,7 @@
         if (r.reason) details = '<span style="color:#991B1B;">Reason: ' + esc(r.reason) + '</span>';
       }
 
+      if (r.docUrl) details += '<div style="margin-top:3px;"><a href="' + esc(r.docUrl) + '" target="_blank" class="rep-link" style="background:#0F766E;color:#fff;">📎 Documents</a></div>';
       var rowBg = i % 2 === 0 ? '#ffffff' : '#F9FAFB';
       html +=
         '<tr style="background:' + rowBg + ';border-bottom:1px solid #F3F4F6;vertical-align:top;">' +
@@ -1689,6 +1690,7 @@
         details = '<span style="color:#92400E;font-size:11px;">' + esc(r.reason) + '</span>';
       }
 
+      if (r.docUrl) details += '<div style="margin-top:3px;"><a href="' + esc(r.docUrl) + '" target="_blank" class="rep-link" style="background:#0F766E;color:#fff;">📎 Documents</a></div>';
       var rowBg = i % 2 === 0 ? '#ffffff' : '#F9FAFB';
       html +=
         '<tr style="background:' + rowBg + ';border-bottom:1px solid #F3F4F6;vertical-align:top;">' +
@@ -1886,6 +1888,7 @@
         details = '<span style="color:#92400E;font-size:11px;">' + esc(r.reason) + '</span>';
       }
 
+      if (r.docUrl) details += '<div style="margin-top:3px;"><a href="' + esc(r.docUrl) + '" target="_blank" class="rep-link" style="background:#0F766E;color:#fff;">📎 Documents</a></div>';
       var rowBg = i % 2 === 0 ? '#ffffff' : '#F9FAFB';
       html +=
         '<tr style="background:' + rowBg + ';border-bottom:1px solid #F3F4F6;vertical-align:top;">' +
@@ -2084,6 +2087,7 @@
         details = '<span style="color:#92400E;font-size:11px;">' + esc(r.reason) + '</span>';
       }
 
+      if (r.docUrl) details += '<div style="margin-top:3px;"><a href="' + esc(r.docUrl) + '" target="_blank" class="rep-link" style="background:#0F766E;color:#fff;">📎 Documents</a></div>';
       var rowBg = i % 2 === 0 ? '#ffffff' : '#F9FAFB';
       html +=
         '<tr style="background:' + rowBg + ';border-bottom:1px solid #F3F4F6;vertical-align:top;">' +
