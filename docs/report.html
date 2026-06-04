@@ -393,6 +393,16 @@
   var GAS_URL = 'https://script.google.com/macros/s/AKfycbxMTGx7uCqZO34Ba4pA_Nze1skRX_6ptK1PF2g7mNvX8JBaVt2MdPrqJ_n1gTO0iWel/exec';
   var EG = '#8B1212';
 
+  // ── Auth: this analytics portal needs a logged-in session token ──
+  var TOKEN = '';
+  try { TOKEN = sessionStorage.getItem('eg_grm_token') || ''; } catch(e) {}
+  if (!TOKEN) { window.location.href = 'index.html'; }
+  function withTok(url) { return url + (url.indexOf('?') === -1 ? '?' : '&') + 'token=' + encodeURIComponent(TOKEN); }
+  function checkAuth(res) {
+    if (res && res.message === 'AUTH_REQUIRED') { window.location.href = 'index.html'; return false; }
+    return true;
+  }
+
   document.getElementById('top-date').textContent =
     new Date().toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
 
@@ -401,9 +411,9 @@
 
   // ── API ───────────────────────────────────────────────────────
   function loadData(onDone) {
-    fetch(GAS_URL + '?action=getDashboardStats&all=1')
+    fetch(withTok(GAS_URL + '?action=getDashboardStats&all=1'))
       .then(function(r) { return r.json(); })
-      .then(function(res) { _data = res; onDone(res); })
+      .then(function(res) { if (!checkAuth(res)) return; _data = res; onDone(res); })
       .catch(function(e) { onDone({ success: false, message: e.message }); });
   }
 
@@ -622,10 +632,11 @@
     document.getElementById('rp-sel-loading').style.display = 'flex';
     document.getElementById('rp-detail').style.display = 'none';
     document.getElementById('rp-placeholder').style.display = 'none';
-    fetch(GAS_URL + '?action=getDistrictReport&district=' + encodeURIComponent(district))
+    fetch(withTok(GAS_URL + '?action=getDistrictReport&district=' + encodeURIComponent(district)))
       .then(function(r) { return r.json(); })
       .then(function(res) {
         document.getElementById('rp-sel-loading').style.display = 'none';
+        if (!checkAuth(res)) return;
         if (!res.success) { alert('Error: ' + (res.message || 'Unknown error')); return; }
         _districtData = res;
         populateMonthDropdown(res.conducted || []);
