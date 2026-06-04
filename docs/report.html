@@ -198,15 +198,16 @@
 
     /* ── District select card ────────────────────────────────── */
     .district-select-wrap { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-    select#rp-district-sel {
+    select#rp-district-sel, select.rp-sel {
       padding: 10px 16px; border: 2px solid #E8EAF0; border-radius: 10px;
       font-size: 14px; font-weight: 600; color: var(--eg-dark); background: #fff;
-      cursor: pointer; min-width: 250px; outline: none; transition: border-color .15s;
+      cursor: pointer; min-width: 200px; outline: none; transition: border-color .15s;
       appearance: none;
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23C05510' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
       background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px;
     }
-    select#rp-district-sel:focus { border-color: var(--eg-orange); }
+    select#rp-district-sel { min-width: 220px; }
+    select#rp-district-sel:focus, select.rp-sel:focus { border-color: var(--eg-orange); }
 
     /* ── Mobile bottom nav ───────────────────────────────────── */
     .mob-nav {
@@ -337,17 +338,15 @@
 
       <!-- District + Month selector -->
       <div class="card" style="margin-bottom:18px;">
-        <div class="card-title">Select District &amp; Month<span class="card-title-line"></span></div>
+        <div class="card-title">Select District, Block &amp; Month<span class="card-title-line"></span></div>
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-          <select id="rp-district-sel" onchange="onDistrictChange(this.value)">
-            <option value="">— Select a District —</option>
+          <select id="rp-district-sel" onchange="onReportDistrictChange()">
+            <option value="">All Districts</option>
           </select>
-          <select id="rp-month-sel" onchange="onMonthChange(this.value)"
-            style="display:none;padding:10px 16px;border:2px solid #E8EAF0;border-radius:10px;
-                   font-size:14px;font-weight:600;color:#6B0D0D;background:#fff;cursor:pointer;
-                   min-width:180px;outline:none;appearance:none;
-                   background-image:url('data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%2712%27 viewBox=%270 0 12 12%27%3E%3Cpath fill=%27%236B0D0D%27 d=%27M6 8L1 3h10z%27/%3E%3C/svg%3E');
-                   background-repeat:no-repeat;background-position:right 14px center;padding-right:36px;">
+          <select id="rp-block-sel" class="rp-sel" onchange="onReportBlockChange()">
+            <option value="">All Blocks</option>
+          </select>
+          <select id="rp-month-sel" class="rp-sel" onchange="applyReportFilters()">
             <option value="">All Months</option>
           </select>
           <div id="rp-sel-loading" style="display:none;color:#9CA3AF;font-size:13px;font-weight:600;">
@@ -581,23 +580,67 @@
   }
 
   // ── District Reports ──────────────────────────────────────────
+  var _allMeetings = null;
+
   function loadReports() {
-    if (_data) { populateDistrictDropdown(_data.districts || []); return; }
-    loadData(function(res) {
-      if (res.success) populateDistrictDropdown(res.districts || []);
-    });
+    if (_allMeetings) { applyReportFilters(); return; }
+    document.getElementById('rp-sel-loading').style.display = 'flex';
+    fetch(withTok(GAS_URL + '?action=getReportData'))
+      .then(function(r){ return r.json(); })
+      .then(function(res){
+        document.getElementById('rp-sel-loading').style.display = 'none';
+        if (!checkAuth(res)) return;
+        _allMeetings = (res && res.meetings) ? res.meetings : [];
+        populateReportDistricts();
+        populateReportBlocks();
+        populateReportMonths();
+        applyReportFilters();
+      })
+      .catch(function(e){ document.getElementById('rp-sel-loading').style.display='none'; alert('Network error: '+e.message); });
   }
 
-  function populateDistrictDropdown(dists) {
-    var sel = document.getElementById('rp-district-sel');
+  function curDist()  { return document.getElementById('rp-district-sel').value; }
+  function curBlock() { return document.getElementById('rp-block-sel').value; }
+  function curMonth() { return document.getElementById('rp-month-sel').value; }
+
+  function fillSelect(sel, values, keepCur) {
+    var cur = keepCur ? sel.value : '';
     while (sel.options.length > 1) sel.remove(1);
-    dists.slice().sort(function(a,b){ return a.name.localeCompare(b.name); }).forEach(function(d) {
-      var o = document.createElement('option');
-      o.value = d.name;
-      o.textContent = d.name;
+    values.forEach(function(v){
+      var o = document.createElement('option'); o.value = v; o.textContent = v;
+      if (v === cur) o.selected = true;
       sel.appendChild(o);
     });
   }
+
+  function populateReportDistricts() {
+    var set = {};
+    _allMeetings.forEach(function(m){ if (m.district) set[m.district] = true; });
+    fillSelect(document.getElementById('rp-district-sel'), Object.keys(set).sort(), true);
+  }
+
+  function populateReportBlocks() {
+    var dist = curDist(), set = {};
+    _allMeetings.forEach(function(m){
+      if (dist && m.district !== dist) return;
+      if (m.block) set[m.block] = true;
+    });
+    fillSelect(document.getElementById('rp-block-sel'), Object.keys(set).sort(), true);
+  }
+
+  function populateReportMonths() {
+    var dist = curDist(), block = curBlock(), set = {};
+    _allMeetings.forEach(function(m){
+      if (dist && m.district !== dist) return;
+      if (block && m.block !== block) return;
+      var mk = monthKey(m.date); if (mk) set[mk] = true;
+    });
+    var months = Object.keys(set).sort(function(a,b){ return monthSortVal(a)-monthSortVal(b); });
+    fillSelect(document.getElementById('rp-month-sel'), months, true);
+  }
+
+  function onReportDistrictChange() { document.getElementById('rp-block-sel').value=''; populateReportBlocks(); populateReportMonths(); applyReportFilters(); }
+  function onReportBlockChange()    { populateReportMonths(); applyReportFilters(); }
 
   // Extract "Apr 2026" from "15 Apr 2026"
   function monthKey(dateStr) {
@@ -613,100 +656,50 @@
     return parseInt(p[1] || 0) * 12 + _MONTHS.indexOf(p[0] || '');
   }
 
-  function onDistrictChange(district) {
-    // Reset month dropdown
-    var mSel = document.getElementById('rp-month-sel');
-    mSel.style.display = 'none';
-    while (mSel.options.length > 1) mSel.remove(1);
-    document.getElementById('rp-month-count').style.display = 'none';
-    _districtData = null;
+  function applyReportFilters() {
+    if (!_allMeetings) return;
+    var dist = curDist(), block = curBlock(), month = curMonth();
+    var filtered = _allMeetings.filter(function(m){
+      if (dist  && m.district !== dist)  return false;
+      if (block && m.block    !== block) return false;
+      if (month && monthKey(m.date) !== month) return false;
+      return true;
+    });
+    renderReport(filtered, dist, block, month);
+  }
 
-    if (!district) {
-      document.getElementById('rp-detail').style.display = 'none';
-      document.getElementById('rp-placeholder').style.display = 'block';
-      return;
-    }
-    document.getElementById('rp-sel-loading').style.display = 'flex';
-    document.getElementById('rp-detail').style.display = 'none';
+  function renderReport(meetings, dist, block, month) {
     document.getElementById('rp-placeholder').style.display = 'none';
-    fetch(withTok(GAS_URL + '?action=getDistrictReport&district=' + encodeURIComponent(district)))
-      .then(function(r) { return r.json(); })
-      .then(function(res) {
-        document.getElementById('rp-sel-loading').style.display = 'none';
-        if (!checkAuth(res)) return;
-        if (!res.success) { alert('Error: ' + (res.message || 'Unknown error')); return; }
-        _districtData = res;
-        populateMonthDropdown(res.conducted || []);
-        renderDistrictReport(res, '');
-      })
-      .catch(function(e) {
-        document.getElementById('rp-sel-loading').style.display = 'none';
-        alert('Network error: ' + e.message);
-      });
-  }
-
-  function populateMonthDropdown(conducted) {
-    var monthSet = {};
-    conducted.forEach(function(r) {
-      var mk = monthKey(r.conductDate);
-      if (mk) monthSet[mk] = true;
-    });
-    var months = Object.keys(monthSet).sort(function(a,b){ return monthSortVal(a) - monthSortVal(b); });
-    var mSel = document.getElementById('rp-month-sel');
-    while (mSel.options.length > 1) mSel.remove(1);
-    months.forEach(function(m) {
-      var o = document.createElement('option'); o.value = m; o.textContent = m;
-      mSel.appendChild(o);
-    });
-    if (months.length > 0) mSel.style.display = '';
-  }
-
-  function onMonthChange(month) {
-    if (!_districtData) return;
-    renderDistrictReport(_districtData, month);
-  }
-
-  function renderDistrictReport(d, filterMonth) {
     document.getElementById('rp-detail').style.display = 'block';
-    var label = d.district.toUpperCase() + ' DISTRICT' + (filterMonth ? ' · ' + filterMonth : ' · All Months');
-    document.getElementById('rp-dist-label').textContent = label;
 
-    var allConducted = d.conducted || [];
-    var conducted = filterMonth
-      ? allConducted.filter(function(r){ return monthKey(r.conductDate) === filterMonth; })
-      : allConducted;
+    var parts = [ dist ? dist.toUpperCase() : 'ALL DISTRICTS' ];
+    if (block) parts.push(block.toUpperCase());
+    parts.push(month ? month : 'All Months');
+    document.getElementById('rp-dist-label').textContent = parts.join('  ·  ');
 
-    // Month count chip
+    var t = { total:meetings.length, conducted:0, planned:0, cancelled:0, postponed:0, followup:0 };
+    meetings.forEach(function(m){
+      var s = (m.status||'').toLowerCase();
+      if (s==='conducted') t.conducted++;
+      else if (s==='planned') t.planned++;
+      else if (s==='follow-up') t.followup++;
+      else if (s==='cancelled') t.cancelled++;
+      else if (s==='postponed') t.postponed++;
+    });
+    var pending = t.planned + t.postponed + t.followup;
+    var pct = t.total>0 ? Math.round((t.conducted/t.total)*100) : 0;
+
     var countEl = document.getElementById('rp-month-count');
-    var chipText = filterMonth
-      ? conducted.length + ' meeting' + (conducted.length !== 1 ? 's' : '') + ' in ' + filterMonth
-      : allConducted.length + ' total conducted meeting' + (allConducted.length !== 1 ? 's' : '');
-    countEl.textContent = chipText;
+    countEl.textContent = meetings.length + ' meeting' + (meetings.length!==1?'s':'');
     countEl.style.display = 'block';
 
-    // KPI row — changes with month filter
-    var t = d.totals || {};
-    var kpis;
-    if (filterMonth) {
-      var mTotal = conducted.length;
-      var mPct   = allConducted.length > 0 ? Math.round((mTotal / allConducted.length) * 100) : 0;
-      kpis = [
-        { n: allConducted.length, l:'Total Conducted',            c:'#065F46', chip:'All months combined'    },
-        { n: mTotal,              l:'Conducted in '+filterMonth,  c:'#8B1212', chip: mPct+'% of district total' },
-        { n: (t.planned||0)+(t.postponed||0), l:'Pending',        c:'#92400E', chip:'District total'         },
-        { n: t.cancelled||0,      l:'Cancelled',                  c:'#991B1B', chip:'District total'         }
-      ];
-    } else {
-      var pending = (t.planned||0) + (t.postponed||0) + (t.followup||0);
-      var pct     = t.total > 0 ? Math.round((t.conducted / t.total) * 100) : 0;
-      kpis = [
-        { n: t.total||0,     l:'Total Planned',  c:'#1D4ED8', chip:'All Districts'   },
-        { n: t.conducted||0, l:'Conducted',       c:'#065F46', chip: pct+'% success' },
-        { n: pending,        l:'Pending',         c:'#92400E', chip:'Planned + Delayed' },
-        { n: t.cancelled||0, l:'Cancelled',       c:'#991B1B', chip:'Need Follow-up'  }
-      ];
-    }
-    document.getElementById('rp-kpi').innerHTML = kpis.map(function(k) {
+    var kpis = [
+      { n:t.total,     l:'Total Meetings', c:'#1D4ED8', chip:(dist||'All Districts') },
+      { n:t.conducted, l:'Conducted',      c:'#065F46', chip:pct+'% success' },
+      { n:pending,     l:'Pending',        c:'#92400E', chip:'Planned + Delayed' },
+      { n:t.cancelled, l:'Cancelled',      c:'#991B1B', chip:'Need Follow-up' }
+    ];
+    document.getElementById('rp-kpi').innerHTML = kpis.map(function(k){
       return '<div class="kpi-card" style="border-top:4px solid '+k.c+';">' +
              '<div class="kpi-num" style="color:'+k.c+';">'+k.n+'</div>' +
              '<div class="kpi-lbl">'+k.l+'</div>' +
@@ -714,53 +707,48 @@
              '</div>';
     }).join('');
 
-    // Post-wise — rebuild from filtered conducted list
+    var conducted = meetings.filter(function(m){ return (m.status||'')==='Conducted'; });
+    conducted.sort(function(a,b){ return (b.conductDate||'').localeCompare(a.conductDate||''); });
+
     var postMap = {};
-    conducted.forEach(function(r) {
-      var post = r.post || 'Unknown';
-      var emp  = r.employeeName || '';
+    conducted.forEach(function(r){
+      var post = r.post || 'Unknown', emp = r.employeeName || '';
       if (!postMap[post]) postMap[post] = { count:0, empMap:{} };
       postMap[post].count++;
-      postMap[post].empMap[emp] = (postMap[post].empMap[emp] || 0) + 1;
+      postMap[post].empMap[emp] = (postMap[post].empMap[emp]||0)+1;
     });
     var byPost = [];
     for (var p in postMap) {
       var emps = [];
       for (var en in postMap[p].empMap) emps.push({ name:en, count:postMap[p].empMap[en] });
-      emps.sort(function(a,b){ return b.count - a.count; });
+      emps.sort(function(a,b){ return b.count-a.count; });
       byPost.push({ post:p, count:postMap[p].count, employees:emps });
     }
-    byPost.sort(function(a,b){ return b.count - a.count; });
+    byPost.sort(function(a,b){ return b.count-a.count; });
 
-    document.getElementById('rp-bypost').innerHTML = byPost.length === 0
-      ? '<div style="color:#9CA3AF;font-size:13px;padding:12px 0;">No conducted meetings' + (filterMonth ? ' in ' + filterMonth : '') + '</div>'
-      : byPost.map(function(bp) {
-          var empRows = bp.employees.map(function(em) {
-            return '<div class="post-emp-row">' +
-                   '<span class="post-emp-name">'+em.name+'</span>' +
-                   '<span class="post-emp-n">'+em.count+'</span></div>';
+    document.getElementById('rp-bypost').innerHTML = byPost.length===0
+      ? '<div style="color:#9CA3AF;font-size:13px;padding:12px 0;">No conducted meetings</div>'
+      : byPost.map(function(bp){
+          var empRows = bp.employees.map(function(em){
+            return '<div class="post-emp-row"><span class="post-emp-name">'+em.name+'</span><span class="post-emp-n">'+em.count+'</span></div>';
           }).join('');
-          return '<div class="post-card">' +
-                 '<div class="post-card-head">' +
-                 '<div class="post-card-name">'+bp.post+'</div>' +
-                 '<div class="post-card-count">'+bp.count+'</div>' +
-                 '</div>' + empRows + '</div>';
+          return '<div class="post-card"><div class="post-card-head"><div class="post-card-name">'+bp.post+'</div><div class="post-card-count">'+bp.count+'</div></div>'+empRows+'</div>';
         }).join('');
 
-    // Conducted table — filtered
-    document.getElementById('rp-table').innerHTML = conducted.length === 0
-      ? '<div style="color:#9CA3AF;font-size:13px;padding:20px 0;text-align:center;">No conducted meetings' + (filterMonth ? ' in ' + filterMonth : ' in this district') + '</div>'
+    document.getElementById('rp-table').innerHTML = conducted.length===0
+      ? '<div style="color:#9CA3AF;font-size:13px;padding:20px 0;text-align:center;">No conducted meetings for this selection</div>'
       : '<table class="rep-table"><thead><tr>' +
-        '<th>#</th><th>Meeting ID</th><th>Date</th><th>By</th><th>Designation</th>' +
+        '<th>#</th><th>Meeting ID</th><th>Date</th><th>District</th><th>By</th><th>Designation</th>' +
         '<th>Met With</th><th>Post</th><th>Purpose</th><th>Type</th><th>MoM</th><th>Photos</th>' +
         '</tr></thead><tbody>' +
-        conducted.map(function(r, i) {
-          var momLink   = r.momUrl   ? '<a href="'+r.momUrl  +'" target="_blank" style="color:'+EG+';font-weight:700;text-decoration:none;white-space:nowrap;">&#128196; View</a>'  : '<span style="color:#D1D5DB;">&#8212;</span>';
+        conducted.map(function(r,i){
+          var momLink   = r.momUrl   ? '<a href="'+r.momUrl  +'" target="_blank" style="color:'+EG+';font-weight:700;text-decoration:none;white-space:nowrap;">&#128196; View</a>' : '<span style="color:#D1D5DB;">&#8212;</span>';
           var photoLink = r.photoUrl ? '<a href="'+r.photoUrl+'" target="_blank" style="color:'+EG+';font-weight:700;text-decoration:none;white-space:nowrap;">&#128247; View</a>' : '<span style="color:#D1D5DB;">&#8212;</span>';
           return '<tr>' +
                  '<td style="color:#9CA3AF;font-weight:600;">'+(i+1)+'</td>' +
                  '<td><span style="font-size:10.5px;font-weight:800;color:'+EG+';">'+r.meetingId+'</span></td>' +
                  '<td style="white-space:nowrap;font-size:11.5px;">'+r.conductDate+'</td>' +
+                 '<td style="font-size:11px;color:#6B7280;">'+r.district+'</td>' +
                  '<td style="font-weight:600;">'+r.employeeName+'</td>' +
                  '<td style="font-size:11px;color:#6B7280;">'+r.post+'</td>' +
                  '<td><strong>'+r.stakeholderName+'</strong></td>' +

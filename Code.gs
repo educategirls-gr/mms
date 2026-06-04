@@ -42,7 +42,7 @@ function invalidateUser(email) {
        'rep_' + email,
        'mymt_' + email, 'allmymt_' + email,
        'mymtg_' + email,
-       'stateMtg_all', 'docUrlMap', 'meetingZoneMap');
+       'stateMtg_all', 'docUrlMap', 'meetingZoneMap', 'reportData');
 }
 
 // ------------------------------------------------------------
@@ -261,7 +261,7 @@ function apiResponse(e, method) {
     var token  = (e && e.parameter && e.parameter.token) ? e.parameter.token : '';
     // getDashboardStats / getDistrictReport are public — power the open
     // State Analytics Portal (report.html), which needs no login.
-    var PUBLIC = { sendOTP: 1, verifyOTP: 1, getDashboardStats: 1, getDistrictReport: 1 };
+    var PUBLIC = { sendOTP: 1, verifyOTP: 1, getDashboardStats: 1, getDistrictReport: 1, getReportData: 1 };
     var ADMIN  = { bulkUpdateEmployeeDB: 1, importFromSource: 1, peekSourceSheet: 1 };
 
     if (PUBLIC[action]) {
@@ -270,6 +270,7 @@ function apiResponse(e, method) {
       else if (action === 'verifyOTP')         result = verifyOTP(e.parameter.email || '', e.parameter.otp || '');
       else if (action === 'getDashboardStats') result = getDashboardStats(e.parameter.email || '', e.parameter.all === '1');
       else if (action === 'getDistrictReport') result = getDistrictReport(e.parameter.district || '');
+      else if (action === 'getReportData')     result = getReportData();
     } else {
       // ── Auth required: identity comes from the session token, ──
       //    NOT from client-supplied params (prevents spoofing)
@@ -2045,6 +2046,111 @@ function getEmployeeByName(name) {
 // ------------------------------------------------------------
 //  DISTRICT REPORT — detailed breakdown for one district
 // ------------------------------------------------------------
+// ------------------------------------------------------------
+//  REPORT DATA (public) — every meeting with district + block +
+//  status + date, for the open Analytics Portal. Block is resolved
+//  from the creator's email via Employee_DB. Client filters by
+//  District × Block × Month (any combination, incl. "All").
+// ------------------------------------------------------------
+function getReportData() {
+  try {
+    var cacheKey = 'reportData';
+    var hit = cGet(cacheKey);
+    if (hit) return hit;
+
+    var ss  = SpreadsheetApp.openById(SPREADSHEET_ID);
+
+    // email → block map
+    var emp = ss.getSheetByName(EMPLOYEE_SHEET);
+    var blockMap = {};
+    if (emp) {
+      var ed = emp.getDataRange().getValues();
+      for (var i = 1; i < ed.length; i++) {
+        var em = (ed[i][4] || '').toString().trim().toLowerCase();
+        if (em) blockMap[em] = (ed[i][1] || '').toString().trim(); // B = Block
+      }
+    }
+    function blk(email) { return blockMap[(email || '').toString().trim().toLowerCase()] || ''; }
+
+    var meetings = [];
+
+    // 1. Plan Meetings — Planned / Follow-up only
+    var plan = ss.getSheetByName(MEETINGS_SHEET);
+    if (plan) {
+      var pd = plan.getDataRange().getValues();
+      for (var a = 1; a < pd.length; a++) {
+        if (!pd[a][0]) continue;
+        var st = (pd[a][13] || 'Planned').toString();
+        if (st !== 'Planned' && st !== 'Follow-up') continue;
+        meetings.push({
+          meetingId:(pd[a][0]||'').toString(), district:(pd[a][1]||'').toString(),
+          block: blk(pd[a][4]), employeeName:(pd[a][2]||'').toString(), post:(pd[a][3]||'').toString(),
+          status: st, date: fmtDateVal(pd[a][5]), conductDate:'',
+          meetingType:(pd[a][8]||'').toString(), stakeholderName:(pd[a][9]||'').toString(),
+          stakeholderPost:(pd[a][10]||'').toString(), purpose:(pd[a][11]||'').toString(),
+          momUrl:'', photoUrl:'', colleagueName:(pd[a][17]||'').toString()
+        });
+      }
+    }
+
+    // 2. Conducted
+    var cS = ss.getSheetByName(CONDUCTED_SHEET);
+    if (cS) {
+      var cd = cS.getDataRange().getValues();
+      for (var b = 1; b < cd.length; b++) {
+        if (!cd[b][0]) continue;
+        meetings.push({
+          meetingId:(cd[b][0]||'').toString(), district:(cd[b][1]||'').toString(),
+          block: blk(cd[b][4]), employeeName:(cd[b][2]||'').toString(), post:(cd[b][3]||'').toString(),
+          status:'Conducted', date: fmtDateVal(cd[b][13]), conductDate: fmtDateVal(cd[b][13]),
+          meetingType:(cd[b][8]||'').toString(), stakeholderName:(cd[b][9]||'').toString(),
+          stakeholderPost:(cd[b][10]||'').toString(), purpose:(cd[b][11]||'').toString(),
+          momUrl:(cd[b][17]||'').toString(), photoUrl:(cd[b][16]||'').toString(),
+          colleagueName:(cd[b][18]||'').toString()
+        });
+      }
+    }
+
+    // 3. Postponed
+    var xS = ss.getSheetByName(POSTPONED_SHEET);
+    if (xS) {
+      var xd = xS.getDataRange().getValues();
+      for (var c = 1; c < xd.length; c++) {
+        if (!xd[c][0]) continue;
+        meetings.push({
+          meetingId:(xd[c][0]||'').toString(), district:(xd[c][1]||'').toString(),
+          block: blk(xd[c][3]), employeeName:(xd[c][2]||'').toString(), post:'',
+          status:'Postponed', date: fmtDateVal(xd[c][8] || xd[c][7]), conductDate:'',
+          meetingType:'', stakeholderName:(xd[c][4]||'').toString(),
+          stakeholderPost:(xd[c][5]||'').toString(), purpose:(xd[c][6]||'').toString(),
+          momUrl:'', photoUrl:'', colleagueName:''
+        });
+      }
+    }
+
+    // 4. Cancelled
+    var zS = ss.getSheetByName(CANCELLED_SHEET);
+    if (zS) {
+      var zd = zS.getDataRange().getValues();
+      for (var d = 1; d < zd.length; d++) {
+        if (!zd[d][0]) continue;
+        meetings.push({
+          meetingId:(zd[d][0]||'').toString(), district:(zd[d][1]||'').toString(),
+          block: blk(zd[d][4]), employeeName:(zd[d][2]||'').toString(), post:(zd[d][3]||'').toString(),
+          status:'Cancelled', date: fmtDateVal(zd[d][5]), conductDate:'',
+          meetingType:(zd[d][8]||'').toString(), stakeholderName:(zd[d][9]||'').toString(),
+          stakeholderPost:(zd[d][10]||'').toString(), purpose:(zd[d][11]||'').toString(),
+          momUrl:'', photoUrl:'', colleagueName:(zd[d][13]||'').toString()
+        });
+      }
+    }
+
+    var out = { success: true, meetings: meetings };
+    cPut(cacheKey, out, C_TTL_LIVE);
+    return out;
+  } catch(err) { return { success:false, message: err.message }; }
+}
+
 function getDistrictReport(district) {
   try {
     if (!district) return { success: false, message: 'District required.' };
