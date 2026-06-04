@@ -393,15 +393,12 @@
   var GAS_URL = 'https://script.google.com/macros/s/AKfycbxMTGx7uCqZO34Ba4pA_Nze1skRX_6ptK1PF2g7mNvX8JBaVt2MdPrqJ_n1gTO0iWel/exec';
   var EG = '#8B1212';
 
-  // ── Auth: this analytics portal needs a logged-in session token ──
+  // Open analytics portal — no login required. Send the session token if
+  // one happens to exist (harmless; these endpoints are public).
   var TOKEN = '';
   try { TOKEN = sessionStorage.getItem('eg_grm_token') || ''; } catch(e) {}
-  if (!TOKEN) { window.location.href = 'index.html'; }
-  function withTok(url) { return url + (url.indexOf('?') === -1 ? '?' : '&') + 'token=' + encodeURIComponent(TOKEN); }
-  function checkAuth(res) {
-    if (res && res.message === 'AUTH_REQUIRED') { window.location.href = 'index.html'; return false; }
-    return true;
-  }
+  function withTok(url) { return TOKEN ? url + (url.indexOf('?') === -1 ? '?' : '&') + 'token=' + encodeURIComponent(TOKEN) : url; }
+  function checkAuth(res) { return true; }
 
   document.getElementById('top-date').textContent =
     new Date().toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });

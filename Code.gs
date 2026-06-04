@@ -259,13 +259,17 @@ function apiResponse(e, method) {
       try { body = JSON.parse(e.postData.contents); } catch(pe) { body = {}; }
     }
     var token  = (e && e.parameter && e.parameter.token) ? e.parameter.token : '';
-    var PUBLIC = { sendOTP: 1, verifyOTP: 1 };
+    // getDashboardStats / getDistrictReport are public — power the open
+    // State Analytics Portal (report.html), which needs no login.
+    var PUBLIC = { sendOTP: 1, verifyOTP: 1, getDashboardStats: 1, getDistrictReport: 1 };
     var ADMIN  = { bulkUpdateEmployeeDB: 1, importFromSource: 1, peekSourceSheet: 1 };
 
     if (PUBLIC[action]) {
       // ── No auth required ──────────────────────────────────────
-      if (action === 'sendOTP') result = sendOTP(e.parameter.email || '');
-      else                      result = verifyOTP(e.parameter.email || '', e.parameter.otp || '');
+      if      (action === 'sendOTP')           result = sendOTP(e.parameter.email || '');
+      else if (action === 'verifyOTP')         result = verifyOTP(e.parameter.email || '', e.parameter.otp || '');
+      else if (action === 'getDashboardStats') result = getDashboardStats(e.parameter.email || '', e.parameter.all === '1');
+      else if (action === 'getDistrictReport') result = getDistrictReport(e.parameter.district || '');
     } else {
       // ── Auth required: identity comes from the session token, ──
       //    NOT from client-supplied params (prevents spoofing)
