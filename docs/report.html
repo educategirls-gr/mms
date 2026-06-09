@@ -192,6 +192,19 @@
     .post-emp-name { font-size: 12px; color: #374151; }
     .post-emp-n { font-size: 12px; font-weight: 700; background: #FEF2F2; color: var(--eg-dark); padding: 1px 8px; border-radius: 10px; }
 
+    /* ── Block cards (clickable drill-down) ──────────────────── */
+    .block-card {
+      background: #fff; border: 1.5px solid #E8EAF0; border-radius: 12px;
+      padding: 14px 16px; box-shadow: 0 1px 5px rgba(0,0,0,0.05);
+      cursor: pointer; transition: transform .12s, box-shadow .12s, border-color .12s;
+    }
+    .block-card:hover { transform: translateY(-2px); box-shadow: 0 5px 16px rgba(0,0,0,0.10); border-color: var(--eg-orange); }
+    .block-card .bc-name  { font-size: 13px; font-weight: 800; color: #1F2937; margin-bottom: 8px; display:flex; align-items:center; gap:6px; }
+    .block-card .bc-stats { display: flex; gap: 14px; }
+    .block-card .bc-stat  { text-align: left; }
+    .block-card .bc-num   { font-size: 22px; font-weight: 900; line-height: 1; }
+    .block-card .bc-lbl   { font-size: 9.5px; text-transform: uppercase; letter-spacing: .5px; color: #9CA3AF; font-weight: 700; margin-top: 3px; }
+
     /* ── Two-col layout ──────────────────────────────────────── */
     .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 18px; }
     .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 18px; }
@@ -362,6 +375,12 @@
         <!-- District KPI row -->
         <div class="section-label" id="rp-dist-label"></div>
         <div id="rp-kpi" class="kpi-grid" style="margin-bottom:18px;"></div>
+
+        <!-- Block-wise breakdown (shown when a district is selected, all blocks) -->
+        <div class="card" id="rp-byblock-card" style="margin-bottom:18px;display:none;">
+          <div class="card-title">Block-wise Meeting Breakdown <span style="font-weight:400;color:#9CA3AF;text-transform:none;letter-spacing:0;font-size:11px;">(click a block to drill down)</span><span class="card-title-line"></span></div>
+          <div id="rp-byblock" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;"></div>
+        </div>
 
         <!-- Post-wise breakdown -->
         <div class="card" style="margin-bottom:18px;">
@@ -641,6 +660,16 @@
 
   function onReportDistrictChange() { document.getElementById('rp-block-sel').value=''; populateReportBlocks(); populateReportMonths(); applyReportFilters(); }
   function onReportBlockChange()    { populateReportMonths(); applyReportFilters(); }
+  function selectBlock(b) {
+    var sel = document.getElementById('rp-block-sel');
+    sel.value = b;
+    if (sel.value !== b) {  // option not present (shouldn't happen) → add it
+      var o = document.createElement('option'); o.value = b; o.textContent = b; sel.appendChild(o); sel.value = b;
+    }
+    populateReportMonths();
+    applyReportFilters();
+    document.getElementById('rp-detail').scrollIntoView({ behavior:'smooth', block:'start' });
+  }
 
   // Extract "Apr 2026" from "15 Apr 2026"
   function monthKey(dateStr) {
@@ -706,6 +735,35 @@
              '<span class="kpi-chip" style="background:#FEF2F2;color:'+EG+';">'+k.chip+'</span>' +
              '</div>';
     }).join('');
+
+    // Block-wise breakdown — show when a district is chosen and no block is fixed
+    var blockCard = document.getElementById('rp-byblock-card');
+    if (dist && !block) {
+      var bMap = {};
+      meetings.forEach(function(m){
+        var bn = m.block || '— No Block (District-level) —';
+        if (!bMap[bn]) bMap[bn] = { total:0, conducted:0 };
+        bMap[bn].total++;
+        if ((m.status||'') === 'Conducted') bMap[bn].conducted++;
+      });
+      var blocks = Object.keys(bMap).sort(function(a,b){ return bMap[b].total - bMap[a].total; });
+      if (blocks.length) {
+        document.getElementById('rp-byblock').innerHTML = blocks.map(function(bn){
+          var s = bMap[bn];
+          var clickable = (bn.indexOf('No Block') === -1);
+          return '<div class="block-card"' + (clickable ? ' onclick="selectBlock(\'' + bn.replace(/'/g,"\\'") + '\')"' : ' style="cursor:default;"') + '>' +
+                 '<div class="bc-name">📍 ' + bn + '</div>' +
+                 '<div class="bc-stats">' +
+                   '<div class="bc-stat"><div class="bc-num" style="color:#1D4ED8;">' + s.total + '</div><div class="bc-lbl">Total</div></div>' +
+                   '<div class="bc-stat"><div class="bc-num" style="color:#065F46;">' + s.conducted + '</div><div class="bc-lbl">Conducted</div></div>' +
+                   '<div class="bc-stat"><div class="bc-num" style="color:#92400E;">' + (s.total - s.conducted) + '</div><div class="bc-lbl">Pending</div></div>' +
+                 '</div></div>';
+        }).join('');
+        blockCard.style.display = 'block';
+      } else { blockCard.style.display = 'none'; }
+    } else {
+      blockCard.style.display = 'none';
+    }
 
     var conducted = meetings.filter(function(m){ return (m.status||'')==='Conducted'; });
     conducted.sort(function(a,b){ return (b.conductDate||'').localeCompare(a.conductDate||''); });
