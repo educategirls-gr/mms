@@ -525,9 +525,9 @@
             <textarea id="meetingAgenda" placeholder="Briefly describe what will be discussed in this meeting..."></textarea>
             <div style="margin-top:10px;">
               <label style="display:block;margin-bottom:6px;">Meeting Documents <span style="color:#9CA3AF;font-weight:400">(optional)</span>
-                <span style="color:#9CA3AF;font-weight:400;font-size:11px;">PDF / Word / images — up to 5 files, 5MB each</span>
+                <span style="color:#9CA3AF;font-weight:400;font-size:11px;">PDF / Word / Excel / PPT only — up to 5 files, 5MB each. (Photos go in the Conduct step.)</span>
               </label>
-              <input type="file" id="meetingDocs" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,image/*"
+              <input type="file" id="meetingDocs" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
                      onchange="onDocsSelect(this)"
                      style="font-size:13px;border:1.5px dashed #D1D5DB;border-radius:8px;padding:8px;width:100%;background:#F9FAFB;cursor:pointer;">
               <div id="docs-list" style="margin-top:6px;font-size:12px;color:#374151;"></div>
@@ -2300,7 +2300,11 @@
     var docInput = document.getElementById('meetingDocs');
     var docFiles = (docInput && docInput.files) ? Array.prototype.slice.call(docInput.files) : [];
     if (docFiles.length > 5) { err('You can attach up to 5 documents.'); return; }
+    var _docOk = /\.(pdf|docx?|xlsx?|pptx?)$/i;
     for (var di = 0; di < docFiles.length; di++) {
+      if ((docFiles[di].type || '').indexOf('image/') === 0 || !_docOk.test(docFiles[di].name)) {
+        err('Only PDF / Word / Excel / PPT allowed in Documents. Photos go in the Conduct step — "' + docFiles[di].name + '" is not a document.'); return;
+      }
       if (docFiles[di].size > 5 * 1024 * 1024) { err('"' + docFiles[di].name + '" exceeds the 5MB limit.'); return; }
     }
     loading(true);
