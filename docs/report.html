@@ -684,6 +684,15 @@
     var p = mk.split(' '); // ["Apr","2026"]
     return parseInt(p[1] || 0) * 12 + _MONTHS.indexOf(p[0] || '');
   }
+  // "15 Jun 2026" → sortable number (year*10000 + month*100 + day)
+  function dateVal(dateStr) {
+    if (!dateStr) return 0;
+    var p = dateStr.trim().split(' ');
+    if (p.length < 3) return 0;
+    var day = parseInt(p[0]) || 0, mon = _MONTHS.indexOf(p[1]), yr = parseInt(p[2]) || 0;
+    if (mon < 0) return 0;
+    return yr * 10000 + (mon + 1) * 100 + day;
+  }
 
   function applyReportFilters() {
     if (!_allMeetings) return;
@@ -766,7 +775,7 @@
     }
 
     var conducted = meetings.filter(function(m){ return (m.status||'')==='Conducted'; });
-    conducted.sort(function(a,b){ return (b.conductDate||'').localeCompare(a.conductDate||''); });
+    conducted.sort(function(a,b){ return dateVal(b.conductDate) - dateVal(a.conductDate); });
 
     var postMap = {};
     conducted.forEach(function(r){
