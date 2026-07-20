@@ -101,8 +101,13 @@ function setDemoRole_(role) {
 //  To reuse for someone else, just edit the two lines below and re-run.
 // ------------------------------------------------------------
 function setupDualCharge() {
-  var TARGET_EMAIL    = 'vikash.tiwari@educategirls.ngo';
-  var EXTRA_DISTRICTS = 'LAKHIMPUR KHERI';   // MUST match the exact district name used in Employee_DB / meeting sheets
+  // Each entry: [email, extra district(s)] — extra MUST match the exact district
+  // name used in Employee_DB / meeting sheets (e.g. "LAKHIMPUR KHERI", not "LAKHIMPUR").
+  var GRANTS = [
+    ['vikash.tiwari@educategirls.ngo',  'LAKHIMPUR KHERI'],
+    ['ankit.dixit@educategirls.ngo',    'LAKHIMPUR KHERI'],
+    ['indradev.tiwari@educategirls.ngo','LAKHIMPUR KHERI']
+  ];
 
   var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName(EMPLOYEE_SHEET);
@@ -114,17 +119,21 @@ function setupDualCharge() {
   }
 
   var data  = sheet.getDataRange().getValues();
-  var email = TARGET_EMAIL.trim().toLowerCase();
-  for (var i = 1; i < data.length; i++) {
-    if ((data[i][4] || '').toString().trim().toLowerCase() === email) {
-      sheet.getRange(i + 1, COL_H).setValue(EXTRA_DISTRICTS);
-      try { CacheService.getScriptCache().remove('emp_' + email); } catch(e) {}
-      Logger.log('✅ ' + (data[i][2] || '') + ' (' + (data[i][0] || '') + ') → Additional Districts = "' +
-                 EXTRA_DISTRICTS + '"\n🔄 Cache cleared. Ask them to LOGOUT and LOGIN again.');
-      return;
+  var cache = CacheService.getScriptCache();
+  GRANTS.forEach(function(g) {
+    var email = (g[0] || '').trim().toLowerCase();
+    var extra = g[1] || '';
+    for (var i = 1; i < data.length; i++) {
+      if ((data[i][4] || '').toString().trim().toLowerCase() === email) {
+        sheet.getRange(i + 1, COL_H).setValue(extra);
+        try { cache.remove('emp_' + email); } catch(e) {}
+        Logger.log('✅ ' + (data[i][2] || '') + ' (' + (data[i][0] || '') + ') → "' + extra + '"  [cache cleared]');
+        return;
+      }
     }
-  }
-  Logger.log('❌ Email not found in Employee sheet: ' + TARGET_EMAIL);
+    Logger.log('❌ Email not found in Employee sheet: ' + g[0]);
+  });
+  Logger.log('🔄 Done. Ask these users to LOGOUT and LOGIN again.');
 }
 
 // ------------------------------------------------------------
