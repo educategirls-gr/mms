@@ -102,7 +102,7 @@ function setDemoRole_(role) {
 // ------------------------------------------------------------
 function setupDualCharge() {
   var TARGET_EMAIL    = 'vikash.tiwari@educategirls.ngo';
-  var EXTRA_DISTRICTS = 'LAKHIMPUR';   // comma-separated for multiple, e.g. 'LAKHIMPUR, KHERI'
+  var EXTRA_DISTRICTS = 'LAKHIMPUR KHERI';   // MUST match the exact district name used in Employee_DB / meeting sheets
 
   var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName(EMPLOYEE_SHEET);
