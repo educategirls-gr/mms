@@ -94,6 +94,40 @@ function setDemoRole_(role) {
 }
 
 // ------------------------------------------------------------
+//  GRANT ADDITIONAL DISTRICT CHARGE — Run ONCE from GAS editor
+//  Gives a user charge of one or more extra districts (beyond their
+//  primary). Writes to the "Additional Districts" column (col H) in
+//  Employee_DB and clears their cache so it applies on next login.
+//  To reuse for someone else, just edit the two lines below and re-run.
+// ------------------------------------------------------------
+function setupDualCharge() {
+  var TARGET_EMAIL    = 'vikash.tiwari@educategirls.ngo';
+  var EXTRA_DISTRICTS = 'LAKHIMPUR';   // comma-separated for multiple, e.g. 'LAKHIMPUR, KHERI'
+
+  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(EMPLOYEE_SHEET);
+  if (!sheet) { Logger.log('❌ Employee sheet not found: ' + EMPLOYEE_SHEET); return; }
+
+  var COL_H = 8;   // H = Additional Districts (A=1 … G=7 Zone, H=8)
+  if (!sheet.getRange(1, COL_H).getValue()) {
+    sheet.getRange(1, COL_H).setValue('Additional Districts');
+  }
+
+  var data  = sheet.getDataRange().getValues();
+  var email = TARGET_EMAIL.trim().toLowerCase();
+  for (var i = 1; i < data.length; i++) {
+    if ((data[i][4] || '').toString().trim().toLowerCase() === email) {
+      sheet.getRange(i + 1, COL_H).setValue(EXTRA_DISTRICTS);
+      try { CacheService.getScriptCache().remove('emp_' + email); } catch(e) {}
+      Logger.log('✅ ' + (data[i][2] || '') + ' (' + (data[i][0] || '') + ') → Additional Districts = "' +
+                 EXTRA_DISTRICTS + '"\n🔄 Cache cleared. Ask them to LOGOUT and LOGIN again.');
+      return;
+    }
+  }
+  Logger.log('❌ Email not found in Employee sheet: ' + TARGET_EMAIL);
+}
+
+// ------------------------------------------------------------
 //  NORMALIZE DISTRICTS — Run ONCE from GAS editor
 //  Trims + UPPERCASEs the district column in Employee_DB and all
 //  4 meeting sheets so spelling/casing is consistent everywhere.
@@ -287,13 +321,12 @@ function apiResponse(e, method) {
         if      (action === 'getDropdownData')      result = getDropdownData(session.email);
         else if (action === 'getMyMeetings')        result = getMyMeetings(session.email);
         else if (action === 'getAllMyMeetings')     result = getAllMyMeetings(session.email);
-        else if (action === 'getDistrictEmployees') result = getDistrictEmployees(session.district, session.email);
+        else if (action === 'getDistrictEmployees') result = getDistrictEmployees(resolveActiveDistrict_(session, e.parameter.district), session.email);
         else if (action === 'getAllEmployees')      result = getAllEmployees(session.email);
         else if (action === 'getZoneTeamEmployees') result = getZoneTeamEmployees(session.zone, session.email);
         else if (action === 'getDistrictAllMeetings') {
-          // District role locked to own district; State may query any
-          var dist = (role === 'State') ? (e.parameter.district || session.district) : session.district;
-          result = getDistrictAllMeetings(dist);
+          // Active district: own/charge districts for District role; any for State
+          result = getDistrictAllMeetings(resolveActiveDistrict_(session, e.parameter.district));
         }
         else if (action === 'getStateAllMeetings')  result = (role === 'State')
                                                        ? getStateAllMeetings()
@@ -305,17 +338,18 @@ function apiResponse(e, method) {
                      ? getZoneAllMeetings(zn)
                      : { success: false, message: 'FORBIDDEN' };
         }
-        else if (action === 'getDashboardStats')    result = getDashboardStats(session.email, e.parameter.all === '1');
+        else if (action === 'getDashboardStats')    result = getDashboardStats(session.email, e.parameter.all === '1', resolveActiveDistrict_(session, e.parameter.district));
         else if (action === 'getDistrictReport') {
-          var dr = (role === 'State') ? (e.parameter.district || session.district) : session.district;
-          result = getDistrictReport(dr);
+          result = getDistrictReport(resolveActiveDistrict_(session, e.parameter.district));
         }
         else if (action === 'getAllReports')        result = getAllReports(session.email);
         else if (action === 'deleteMeeting')        result = deleteMeeting(e.parameter.meetingId || '', session.email);
         else if (action === 'saveMeeting') {
-          // Stamp identity from session — fixes attribution + blank district
+          // Stamp identity from session — fixes attribution + blank district.
+          // District = the active/charge district requested by the client, validated against
+          // the user's authorized list (so a dual-charge lead files under the right district).
           body.email = session.email; body.employeeName = session.name;
-          body.district = session.district; body.designation = session.designation; body.block = session.block;
+          body.district = resolveActiveDistrict_(session, body.district); body.designation = session.designation; body.block = session.block;
           result = saveMeeting(body);
         }
         else if (action === 'conductMeeting')   { body.email = session.email; result = conductMeeting(body); }
@@ -379,6 +413,7 @@ function doGet(e) {
       email:       userData.email,
       name:        userData.name,
       district:    userData.district,
+      districts:   userData.districts || [userData.district],
       block:       userData.block,
       designation: userData.designation,
       role:        userData.role
@@ -491,6 +526,7 @@ function verifyOTP(email, otp) {
     email:       emp.email,
     name:        emp.name,
     district:    emp.district,
+    districts:   emp.districts || [emp.district],   // all districts under this user's charge
     block:       emp.block,
     designation: emp.designation,
     role:        emp.role,
@@ -505,6 +541,7 @@ function verifyOTP(email, otp) {
     role:        emp.role,
     name:        emp.name,
     district:    emp.district,
+    districts:   emp.districts || [emp.district],   // client uses this to show the district switcher
     block:       emp.block,
     designation: emp.designation,
     zone:        emp.zone || '',
@@ -519,6 +556,34 @@ function getSession(token) {
   var data = CacheService.getScriptCache().get('SESSION_' + token);
   if (!data) return null;
   return JSON.parse(data);
+}
+
+// ------------------------------------------------------------
+//  ACTIVE DISTRICT RESOLVER
+//  Given a session and a client-requested district, return the
+//  district to actually operate on. Prevents a user from querying
+//  a district they have no charge over.
+//   • State role  → any district (whole-state visibility, unchanged)
+//   • Other roles → the requested district only if it is in the
+//     user's authorized list (primary + additional charge);
+//     otherwise falls back to their primary district.
+// ------------------------------------------------------------
+function resolveActiveDistrict_(session, requested) {
+  var req  = (requested || '').toString().trim();
+  var role = (session && session.role || '').toString();
+  if (role === 'State') return req || (session && session.district) || '';
+
+  var allowed = (session && session.districts && session.districts.length)
+                  ? session.districts
+                  : [session && session.district];
+  if (req) {
+    for (var i = 0; i < allowed.length; i++) {
+      if ((allowed[i] || '').toString().trim().toLowerCase() === req.toLowerCase()) {
+        return allowed[i];   // authorized → honour the request
+      }
+    }
+  }
+  return (session && session.district) || '';   // default to primary
 }
 
 // ------------------------------------------------------------
@@ -2289,16 +2354,17 @@ function getAllReports(email) {
 // ------------------------------------------------------------
 //  DASHBOARD STATS — cards & reports data
 // ------------------------------------------------------------
-function getDashboardStats(email, allDistricts) {
+function getDashboardStats(email, allDistricts, activeDistrict) {
   try {
-    var statKey = 'stats_' + email.trim().toLowerCase() + '_' + (allDistricts ? '1' : '0');
+    var statKey = 'stats_' + email.trim().toLowerCase() + '_' + (allDistricts ? '1' : '0') + '_' + (activeDistrict || '').toString().trim().toLowerCase();
     var statHit = cGet(statKey);
     if (statHit) return statHit;
 
     var ss  = SpreadsheetApp.openById(SPREADSHEET_ID);
     var emp = getEmployeeByEmail(email);
     var userRole     = emp ? (emp.role     || 'Field') : 'Field';
-    var userDistrict = emp ? (emp.district || '')      : '';
+    // activeDistrict (from the switcher) overrides the user's primary when filtering
+    var userDistrict = (activeDistrict || (emp ? emp.district : '') || '').toString();
     var isState      = allDistricts || (userRole === 'State');
 
     // ── Plan Meetings ──────────────────────────────────────────
@@ -2577,8 +2643,19 @@ function getEmployeeByEmail(email) {
   for (var i = 1; i < data.length; i++) {
     var rowEmail = data[i][4] ? data[i][4].toString().trim().toLowerCase() : '';
     if (rowEmail === email) {
+      var primaryDist = (data[i][0] || '').toString().trim();
+      // Col H (index 7) = "Additional Districts" — extra charge, comma/semicolon separated.
+      // districts[] = primary + any extras (deduped, case-insensitive). Empty col H → single district.
+      var districts = [primaryDist];
+      (data[i][7] || '').toString().split(/[,;]/).forEach(function(x) {
+        var d = x.toString().trim();
+        if (d && districts.map(function(z){ return z.toLowerCase(); }).indexOf(d.toLowerCase()) === -1) {
+          districts.push(d);
+        }
+      });
       result = {
-        district:    (data[i][0] || '').toString().trim(),
+        district:    primaryDist,
+        districts:   districts,               // all districts this user has charge of
         block:       (data[i][1] || '').toString().trim(),
         name:        (data[i][2] || '').toString().trim(),
         designation: (data[i][3] || '').toString().trim(),

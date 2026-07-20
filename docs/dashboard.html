@@ -393,6 +393,13 @@
     <div class="profile-row" id="p-block-row" style="display:none">
       <span class="pi">🏘</span><span id="p-block"></span>
     </div>
+    <!-- District switcher — shown only for users with charge of more than one district -->
+    <div class="profile-row" id="p-district-switch-row" style="display:none;margin-top:6px;">
+      <span class="pi">🔀</span>
+      <select id="district-switcher" onchange="onDistrictSwitch()"
+        style="flex:1;padding:6px 8px;font-size:12px;font-weight:700;border:1.5px solid var(--eg-orange,#F26522);border-radius:8px;background:#fff;color:#B44409;cursor:pointer;">
+      </select>
+    </div>
   </div>
   <div class="sidebar-nav">
     <div class="nav-label">Menu</div>
@@ -779,7 +786,7 @@
     <!-- View: District Meetings (District role only) -->
     <div id="view-district" class="view">
       <div class="card">
-        <div class="card-title" style="background:#1D4ED8;">🏢 District Meetings</div>
+        <div class="card-title" style="background:#1D4ED8;" id="dm-title">🏢 District Meetings</div>
 
         <!-- Month Navigation -->
         <div style="display:flex;align-items:center;justify-content:center;gap:12px;padding:10px 0 14px;">
@@ -893,6 +900,24 @@
   })();
   if (!SESSION) { window.location.href = 'index.html'; }
 
+  // Districts this user has charge of (primary + any additional charge). Falls back to
+  // the single primary district for older sessions that predate the switcher.
+  var MY_DISTRICTS = (SESSION && SESSION.districts && SESSION.districts.length)
+                       ? SESSION.districts : (SESSION ? [SESSION.district] : []);
+
+  // Active district context — which district all district-scoped views operate on.
+  // Persisted in sessionStorage so report.html stays in sync with the switcher here.
+  var ACTIVE_DISTRICT = (function() {
+    var d = '';
+    try { d = sessionStorage.getItem('eg_grm_active_district') || ''; } catch(e) {}
+    if (d && MY_DISTRICTS.map(function(x){ return (x||'').toLowerCase(); }).indexOf(d.toLowerCase()) === -1) d = '';
+    return d || (SESSION ? SESSION.district : '');
+  })();
+  function setActiveDistrict(d) {
+    ACTIVE_DISTRICT = d;
+    try { sessionStorage.setItem('eg_grm_active_district', d); } catch(e) {}
+  }
+
   // ── API helpers ──────────────────────────────────────────────
   function gasFetch(action, params, onSuccess, onFail) {
     var url = GAS_URL + '?action=' + encodeURIComponent(action);
@@ -962,7 +987,17 @@
 
     document.getElementById('p-name').textContent     = SESSION.name;
     document.getElementById('p-post').textContent     = SESSION.designation || SESSION.role;
-    document.getElementById('p-district').textContent = SESSION.district;
+    document.getElementById('p-district').textContent = ACTIVE_DISTRICT;
+
+    // District switcher — only for users who hold charge of more than one district
+    if (MY_DISTRICTS.length > 1) {
+      var _sw = document.getElementById('district-switcher');
+      _sw.innerHTML = MY_DISTRICTS.map(function(d) {
+        var sel = (d.toLowerCase() === ACTIVE_DISTRICT.toLowerCase()) ? ' selected' : '';
+        return '<option value="' + esc(d) + '"' + sel + '>' + esc(d) + '</option>';
+      }).join('');
+      document.getElementById('p-district-switch-row').style.display = 'flex';
+    }
 
     // Role badge
     var _roleColors = { 'State': '#10B981', 'District': '#3B82F6', 'Field': '#F59E0B', 'Zone': '#7C3AED' };
@@ -1051,6 +1086,26 @@
     // Close sidebar on mobile after navigation
     document.getElementById('sidebar').classList.remove('mob-open');
     document.getElementById('mob-overlay').classList.remove('mob-open');
+  }
+
+  // ── District switcher (dual-charge leads) ─────────────────────
+  function onDistrictSwitch() {
+    var val = document.getElementById('district-switcher').value;
+    if (!val || val.toLowerCase() === ACTIVE_DISTRICT.toLowerCase()) return;
+    setActiveDistrict(val);
+    document.getElementById('p-district').textContent = val;
+
+    // Everything district-scoped must reload for the newly selected district
+    invalidateFrontCache();
+    colleaguesLoaded = false;
+    var _cl = document.getElementById('colleague-list');
+    if (_cl) _cl.innerHTML = '<div style="padding:12px;color:#9CA3AF;font-size:13px;">Loading...</div>';
+
+    // If the District Meetings view is open, refresh it right away
+    var dv = document.getElementById('view-district');
+    if (dv && dv.classList.contains('active')) loadDistrictMeetings(true);
+
+    showToast('Ab dikha rahe hain: ' + val + ' district');
   }
 
   // ── Frontend cache (2-min TTL, invalidated on action) ───────
@@ -1276,7 +1331,7 @@
     btn.innerHTML = '<span class="spinner"></span>Generating MoM...';
     var time = getPickerTime('ct-h', 'ct-m', 'ct-ap');
     gasPost('conductMeeting', {
-      meetingId: m.meetingId, district: SESSION.district,
+      meetingId: m.meetingId, district: m.district || ACTIVE_DISTRICT,
       employeeName: SESSION.name, designation: SESSION.designation || SESSION.role, email: SESSION.email,
       originalDate: m.date, originalTime: m.meetingTime, duration: m.duration, meetingType: m.type,
       adhikariName: m.adhikariName, adhikariPost: m.adhikariPost,
@@ -1331,7 +1386,7 @@
     var btn = document.getElementById('postpone-submit-btn');
     btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Saving...';
     gasPost('postponeMeeting', {
-      meetingId: m.meetingId, district: SESSION.district,
+      meetingId: m.meetingId, district: m.district || ACTIVE_DISTRICT,
       employeeName: SESSION.name, email: SESSION.email,
       adhikariName: m.adhikariName, adhikariPost: m.adhikariPost, purpose: m.purpose,
       originalDate: m.date, newDate: newDate, reason: document.getElementById('p-reason').value.trim()
@@ -1578,6 +1633,8 @@
     _dmMonth = new Date().getMonth();
     _dmYear  = new Date().getFullYear();
     dmUpdateLabel();
+    var _dmt = document.getElementById('dm-title');
+    if (_dmt) _dmt.textContent = '🏢 District Meetings — ' + ACTIVE_DISTRICT;
     var now = Date.now();
     if (!force && _distCache.data && (now - _distCache.ts) < _CACHE_TTL) {
       _dmAll = _distCache.data;
@@ -1587,7 +1644,7 @@
     document.getElementById('dm-content').innerHTML =
       '<div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>';
     document.getElementById('dm-count').textContent = '';
-    gasFetch('getDistrictAllMeetings', { district: SESSION.district }, function(list) {
+    gasFetch('getDistrictAllMeetings', { district: ACTIVE_DISTRICT }, function(list) {
       _distCache = { data: list || [], ts: Date.now() };
       _dmAll = _distCache.data;
       dmRender();
@@ -2201,8 +2258,8 @@
           colAction = 'getAllEmployees';      colParams = { email: SESSION.email };
         } else if (_r === 'zone') {      // Zone → own zone employees + State team
           colAction = 'getZoneTeamEmployees'; colParams = { email: SESSION.email };
-        } else {                          // District / Field → own district
-          colAction = 'getDistrictEmployees'; colParams = { district: SESSION.district, email: SESSION.email };
+        } else {                          // District / Field → active (charge) district
+          colAction = 'getDistrictEmployees'; colParams = { district: ACTIVE_DISTRICT, email: SESSION.email };
         }
         gasFetch(colAction, colParams, renderColleagues, function() {
           document.getElementById('colleague-list').innerHTML =
@@ -2289,7 +2346,7 @@
     if (!selectedMeetingType) { err('Please select a meeting type.'); return; }
     if (!date || !aname || !apost || !purpose2 || !agenda) { err('Please fill all required fields.'); return; }
     var data = {
-      email: SESSION.email, employeeName: SESSION.name, district: SESSION.district,
+      email: SESSION.email, employeeName: SESSION.name, district: ACTIVE_DISTRICT,
       block: SESSION.block, designation: SESSION.designation || SESSION.role,
       meetingDate: date, meetingTime: time, duration: selectedDuration,
       meetingType: selectedMeetingType, adhikariName: aname, adhikariPost: apost,
