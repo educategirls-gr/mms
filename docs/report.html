@@ -349,6 +349,12 @@
     <!-- ══════════ VIEW: DISTRICT REPORTS ══════════ -->
     <div id="view-reports" class="view">
 
+      <!-- Zero-activity / attention alert (auto-computed) -->
+      <div id="rp-alert-card" class="card" style="margin-bottom:18px;display:none;border-left:5px solid #B45309;background:#FFFBEB;">
+        <div class="card-title" style="color:#92400E;">⚠️ Districts Needing Attention<span style="font-weight:400;color:#B45309;text-transform:none;letter-spacing:0;font-size:11px;">(no conducted meetings yet)</span><span class="card-title-line" style="background:#FDE68A;"></span></div>
+        <div id="rp-alert-body"></div>
+      </div>
+
       <!-- District + Month selector -->
       <div class="card" style="margin-bottom:18px;">
         <div class="card-title">Select District, Block &amp; Month<span class="card-title-line"></span></div>
@@ -605,6 +611,10 @@
   var _allMeetings = null;
   var _reportFiltered = [];   // currently filtered meetings (for download)
 
+  // Org's core/home districts (staff posted here). Keep in sync with the
+  // Employee_DB master — mirrors the district cache keys in Code.gs.
+  var CORE_DISTRICTS = ['BAHRAICH','FATEHPUR','GONDA','HARDOI','PRAYAGRAJ','SHAHJAHANPUR','SITAPUR'];
+
   function loadReports() {
     if (_allMeetings) { applyReportFilters(); return; }
     document.getElementById('rp-sel-loading').style.display = 'flex';
@@ -617,6 +627,7 @@
         populateReportDistricts();
         populateReportBlocks();
         populateReportMonths();
+        renderAttentionAlert();
         applyReportFilters();
       })
       .catch(function(e){ document.getElementById('rp-sel-loading').style.display='none'; alert('Network error: '+e.message); });
@@ -709,6 +720,71 @@
     });
     _reportFiltered = filtered;
     renderReport(filtered, dist, block, month);
+  }
+
+  // ── Auto "districts needing attention" (zero conducted) ───────
+  function renderAttentionAlert() {
+    if (!_allMeetings) return;
+    var card = document.getElementById('rp-alert-card');
+    var body = document.getElementById('rp-alert-body');
+
+    // Tally per district from all meetings
+    var stat = {};   // DIST(upper) → {name, total, conducted}
+    _allMeetings.forEach(function(m){
+      var raw = (m.district || '').toString().trim();
+      if (!raw) return;
+      var key = raw.toUpperCase();
+      if (!stat[key]) stat[key] = { name: raw, total: 0, conducted: 0 };
+      stat[key].total++;
+      if ((m.status || '') === 'Conducted') stat[key].conducted++;
+    });
+
+    // Districts to check = core (home) districts ∪ any district that has meetings
+    var keys = {};
+    CORE_DISTRICTS.forEach(function(d){ keys[d.toUpperCase()] = true; });
+    Object.keys(stat).forEach(function(k){ keys[k] = true; });
+
+    var noneAtAll = [];   // 0 meetings at all
+    var plannedOnly = []; // has meetings but 0 conducted
+    Object.keys(keys).forEach(function(k){
+      var s = stat[k];
+      var isCore = CORE_DISTRICTS.indexOf(k) !== -1;
+      var name = s ? s.name : (k.charAt(0) + k.slice(1).toLowerCase());
+      if (!s || s.total === 0)      noneAtAll.push({ name: name, core: isCore });
+      else if (s.conducted === 0)   plannedOnly.push({ name: name, core: isCore, total: s.total });
+    });
+    noneAtAll.sort(function(a,b){ return a.name.localeCompare(b.name); });
+    plannedOnly.sort(function(a,b){ return a.name.localeCompare(b.name); });
+
+    if (!noneAtAll.length && !plannedOnly.length) { card.style.display = 'none'; return; }
+
+    function chip(txt, bg, col, bd) {
+      return '<span style="display:inline-block;background:'+bg+';color:'+col+';border:1px solid '+bd+
+             ';padding:5px 12px;border-radius:20px;font-size:12.5px;font-weight:700;margin:4px 6px 4px 0;white-space:nowrap;">'+txt+'</span>';
+    }
+
+    var coreTag = ' <span style="font-size:9px;font-weight:800;background:rgba(0,0,0,0.12);padding:1px 5px;border-radius:8px;vertical-align:middle;">CORE</span>';
+
+    var html = '';
+    if (noneAtAll.length) {
+      html += '<div style="margin-bottom:'+(plannedOnly.length?'12px':'0')+';">' +
+              '<div style="font-size:11.5px;font-weight:800;color:#991B1B;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">🔴 No meeting at all ('+noneAtAll.length+')</div>' +
+              noneAtAll.map(function(x){ return chip('📍 '+x.name+(x.core?coreTag:''), '#FEE2E2', '#991B1B', '#FCA5A5'); }).join('') +
+              '</div>';
+    }
+    if (plannedOnly.length) {
+      html += '<div>' +
+              '<div style="font-size:11.5px;font-weight:800;color:#92400E;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">🟠 Planned but none conducted ('+plannedOnly.length+')</div>' +
+              plannedOnly.map(function(x){ return chip('📍 '+x.name+' ('+x.total+' planned)'+(x.core?coreTag:''), '#FEF3C7', '#92400E', '#FCD34D'); }).join('') +
+              '</div>';
+    }
+    var totalConcern = noneAtAll.length + plannedOnly.length;
+    html += '<div style="margin-top:12px;font-size:12px;color:#78716C;border-top:1px dashed #FDE68A;padding-top:9px;">' +
+            'कुल <strong>'+totalConcern+'</strong> जिलों में अभी तक कोई meeting conduct नहीं हुई। ' +
+            '<span style="color:#A8A29E;">“CORE” = home district jahan staff posted hai; baaki additional-charge.</span></div>';
+
+    body.innerHTML = html;
+    card.style.display = 'block';
   }
 
   // ── Download filtered report as CSV (Excel-friendly) ──────────
