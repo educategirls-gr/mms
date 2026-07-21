@@ -453,17 +453,6 @@
     <div id="view-create" class="view active">
       <div class="card">
         <div class="card-title">📋 Plan Your Meeting</div>
-        <!-- District selector — shown only for State / Zone users (choose which district this meeting is for) -->
-        <div class="form-row" id="plan-district-row" style="display:none;">
-          <div class="field full">
-            <label>Meeting District <span class="req">*</span>
-              <span style="color:#9CA3AF;font-weight:400;font-size:11px;">Kis district mein meeting hai?</span>
-            </label>
-            <select id="plan-district">
-              <option value="">— Select District —</option>
-            </select>
-          </div>
-        </div>
         <div class="form-section-label">Meeting Type <span class="req">*</span></div>
         <div class="mtg-type-grid">
           <div class="mtg-type-card" onclick="setMeetingType('One-on-One', this)">
@@ -480,6 +469,17 @@
           </div>
           <div class="mtg-type-card" onclick="setMeetingType('Field Visit', this)">
             <div class="mtc-icon">🌾</div><div class="mtc-name">Field Visit</div>
+          </div>
+        </div>
+        <!-- District selector — shown only for State / Zone users (choose which district this meeting is for) -->
+        <div class="form-row" id="plan-district-row" style="display:none;margin-top:14px;">
+          <div class="field full">
+            <label>Meeting District <span class="req">*</span>
+              <span style="color:#9CA3AF;font-weight:400;font-size:11px;">Kis district mein meeting hai?</span>
+            </label>
+            <select id="plan-district">
+              <option value="">— Select District —</option>
+            </select>
           </div>
         </div>
         <div class="form-row" style="margin-top:14px;">
