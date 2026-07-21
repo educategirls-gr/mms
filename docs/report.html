@@ -366,6 +366,9 @@
             <span class="spinner" style="width:18px;height:18px;border-width:2px;vertical-align:middle;margin-right:6px;"></span>Loading…
           </div>
           <div id="rp-month-count" style="display:none;font-size:12px;color:#6B7280;background:#F3F4F6;padding:6px 12px;border-radius:8px;font-weight:600;"></div>
+          <button id="rp-download-btn" onclick="downloadReport()" style="margin-left:auto;background:var(--eg-orange);color:#fff;border:none;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;display:none;align-items:center;gap:7px;transition:background .15s;white-space:nowrap;" onmouseover="this.style.background='var(--eg-dark)'" onmouseout="this.style.background='var(--eg-orange)'">
+            &#11015;&#65039; Download Report
+          </button>
         </div>
       </div>
 
@@ -600,6 +603,7 @@
 
   // ── District Reports ──────────────────────────────────────────
   var _allMeetings = null;
+  var _reportFiltered = [];   // currently filtered meetings (for download)
 
   function loadReports() {
     if (_allMeetings) { applyReportFilters(); return; }
@@ -703,12 +707,61 @@
       if (month && monthKey(m.date) !== month) return false;
       return true;
     });
+    _reportFiltered = filtered;
     renderReport(filtered, dist, block, month);
+  }
+
+  // ── Download filtered report as CSV (Excel-friendly) ──────────
+  function csvCell(v) {
+    v = (v == null ? '' : String(v));
+    if (/[",\r\n]/.test(v)) v = '"' + v.replace(/"/g, '""') + '"';
+    return v;
+  }
+
+  function downloadReport() {
+    var rows = _reportFiltered || [];
+    if (!rows.length) { alert('No meetings to download for this selection.'); return; }
+
+    // Sort conducted first (by date desc), then the rest
+    rows = rows.slice().sort(function(a, b){
+      return dateVal(b.conductDate || b.date) - dateVal(a.conductDate || a.date);
+    });
+
+    var headers = ['S.No','Meeting ID','District','Block','Planned Date','Conducted Date',
+                   'Status','Employee','Designation','Met With','Stakeholder Post',
+                   'Purpose','Meeting Type','MoM Link','Photos Link'];
+    var lines = [headers.map(csvCell).join(',')];
+    rows.forEach(function(m, i){
+      lines.push([
+        i + 1, m.meetingId, m.district, m.block, m.date, m.conductDate,
+        m.status, m.employeeName, m.post, m.stakeholderName, m.stakeholderPost,
+        m.purpose, m.meetingType, m.momUrl, m.photoUrl
+      ].map(csvCell).join(','));
+    });
+
+    var csv = '﻿' + lines.join('\r\n');   // BOM so Excel reads UTF-8
+
+    // Filename from current selection
+    var parts = ['District_Report'];
+    var d = curDist(), b = curBlock(), mo = curMonth();
+    if (d)  parts.push(d);
+    if (b)  parts.push(b);
+    parts.push(mo ? mo : 'AllMonths');
+    var fname = parts.join('_').replace(/[^A-Za-z0-9_\-]+/g, '_') + '.csv';
+
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    var url  = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = fname;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
   }
 
   function renderReport(meetings, dist, block, month) {
     document.getElementById('rp-placeholder').style.display = 'none';
     document.getElementById('rp-detail').style.display = 'block';
+    document.getElementById('rp-download-btn').style.display = meetings.length ? 'inline-flex' : 'none';
 
     var parts = [ dist ? dist.toUpperCase() : 'ALL DISTRICTS' ];
     if (block) parts.push(block.toUpperCase());
