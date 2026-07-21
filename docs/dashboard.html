@@ -453,6 +453,17 @@
     <div id="view-create" class="view active">
       <div class="card">
         <div class="card-title">📋 Plan Your Meeting</div>
+        <!-- District selector — shown only for State / Zone users (choose which district this meeting is for) -->
+        <div class="form-row" id="plan-district-row" style="display:none;">
+          <div class="field full">
+            <label>Meeting District <span class="req">*</span>
+              <span style="color:#9CA3AF;font-weight:400;font-size:11px;">Kis district mein meeting hai?</span>
+            </label>
+            <select id="plan-district">
+              <option value="">— Select District —</option>
+            </select>
+          </div>
+        </div>
         <div class="form-section-label">Meeting Type <span class="req">*</span></div>
         <div class="mtg-type-grid">
           <div class="mtg-type-card" onclick="setMeetingType('One-on-One', this)">
@@ -1016,6 +1027,18 @@
     }
     if (_role === 'State') {
       document.getElementById('nav-state').style.display = '';
+    }
+
+    // State / Zone: they aren't tied to one district → let them pick the meeting's district
+    if (_role === 'State' || _role === 'Zone') {
+      gasFetch('getPlanDistricts', {}, function(list) {
+        if (!list || !list.length) return;
+        var sel = document.getElementById('plan-district');
+        list.forEach(function(d) {
+          var o = document.createElement('option'); o.value = d; o.textContent = d; sel.appendChild(o);
+        });
+        document.getElementById('plan-district-row').style.display = 'flex';
+      });
     }
 
     // Field role: hide "Delete Meeting" — prevents fake-meeting create-then-delete (keeps full audit trail)
@@ -2345,8 +2368,15 @@
     var agenda   = v('meetingAgenda');
     if (!selectedMeetingType) { err('Please select a meeting type.'); return; }
     if (!date || !aname || !apost || !purpose2 || !agenda) { err('Please fill all required fields.'); return; }
+    // State/Zone pick the meeting's district; District/Field use their active/charge district
+    var mtgDistrict = ACTIVE_DISTRICT;
+    var _pdRow = document.getElementById('plan-district-row');
+    if (_pdRow && _pdRow.style.display !== 'none') {
+      mtgDistrict = v('plan-district');
+      if (!mtgDistrict) { err('Please select the district for this meeting.'); return; }
+    }
     var data = {
-      email: SESSION.email, employeeName: SESSION.name, district: ACTIVE_DISTRICT,
+      email: SESSION.email, employeeName: SESSION.name, district: mtgDistrict,
       block: SESSION.block, designation: SESSION.designation || SESSION.role,
       meetingDate: date, meetingTime: time, duration: selectedDuration,
       meetingType: selectedMeetingType, adhikariName: aname, adhikariPost: apost,
@@ -2462,6 +2492,7 @@
     colleaguesLoaded = false;
     var di = document.getElementById('meetingDocs'); if (di) di.value = '';
     var dl = document.getElementById('docs-list');   if (dl) dl.innerHTML = '';
+    var pd = document.getElementById('plan-district'); if (pd) pd.value = '';
   }
 
   // ── Success Modal ────────────────────────────────────────────

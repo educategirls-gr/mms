@@ -333,6 +333,7 @@ function apiResponse(e, method) {
         else if (action === 'getDistrictEmployees') result = getDistrictEmployees(resolveActiveDistrict_(session, e.parameter.district), session.email);
         else if (action === 'getAllEmployees')      result = getAllEmployees(session.email);
         else if (action === 'getZoneTeamEmployees') result = getZoneTeamEmployees(session.zone, session.email);
+        else if (action === 'getPlanDistricts')     result = getPlanDistricts(session.role, session.zone);
         else if (action === 'getDistrictAllMeetings') {
           // Active district: own/charge districts for District role; any for State
           result = getDistrictAllMeetings(resolveActiveDistrict_(session, e.parameter.district));
@@ -581,6 +582,11 @@ function resolveActiveDistrict_(session, requested) {
   var req  = (requested || '').toString().trim();
   var role = (session && session.role || '').toString();
   if (role === 'State') return req || (session && session.district) || '';
+  if (role === 'Zone') {
+    // Zone leads may file a meeting under any district within their zone
+    if (req && getDistrictsInZone_(session && session.zone)[req.toUpperCase()]) return req;
+    return (session && session.district) || '';
+  }
 
   var allowed = (session && session.districts && session.districts.length)
                   ? session.districts
@@ -593,6 +599,33 @@ function resolveActiveDistrict_(session, requested) {
     }
   }
   return (session && session.district) || '';   // default to primary
+}
+
+// ------------------------------------------------------------
+//  PLAN DISTRICTS — districts a State/Zone user may file a meeting
+//  under. State → all districts; Zone → districts in their zone.
+// ------------------------------------------------------------
+function getPlanDistricts(role, zone) {
+  role = (role || '').toString().trim();
+  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(EMPLOYEE_SHEET);
+  if (!sheet) return [];
+  var data = sheet.getDataRange().getValues();
+  var set  = {};
+  if (role === 'State') {
+    for (var i = 1; i < data.length; i++) {
+      var d = (data[i][0] || '').toString().trim();
+      if (d) set[d] = true;
+    }
+  } else if (role === 'Zone') {
+    var z = (zone || '').toString().trim().toUpperCase();
+    for (var j = 1; j < data.length; j++) {
+      var dd = (data[j][0] || '').toString().trim();
+      var dz = (data[j][6] || '').toString().trim().toUpperCase();
+      if (dd && dz === z) set[dd] = true;
+    }
+  }
+  return Object.keys(set).sort();
 }
 
 // ------------------------------------------------------------
