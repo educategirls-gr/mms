@@ -905,6 +905,7 @@
 
 <script>
   var GAS_URL = 'https://script.google.com/macros/s/AKfycbw2JJ5xmZ-zLUolbZJb7eApczsZjsXwzVY6uXpAYO-7h8j9CyNF9y5Upgxji8rD2oJb/exec';
+  var _myDistricts = [];   // full district list for this role's scope (State→all, Zone→zone's) from getPlanDistricts
 
   var SESSION = (function() {
     try { return JSON.parse(sessionStorage.getItem('eg_grm_session') || 'null'); } catch(e) { return null; }
@@ -1033,6 +1034,7 @@
     if (_role === 'State' || _role === 'Zone') {
       gasFetch('getPlanDistricts', {}, function(list) {
         if (!list || !list.length) return;
+        _myDistricts = list.slice();   // full district list for this role's scope (used by Zone/State filters)
         var sel = document.getElementById('plan-district');
         list.forEach(function(d) {
           var o = document.createElement('option'); o.value = d; o.textContent = d; sel.appendChild(o);
@@ -2065,7 +2067,10 @@
     var sel = document.getElementById('zm-district');
     var cur = sel.value;
     var districts = {};
-    _zmAll.forEach(function(r) { if (r.district) districts[r.district] = 1; });
+    // Show ALL districts of the zone (from _myDistricts), even those with no meetings yet,
+    // plus any extra district that appears in the data.
+    _myDistricts.forEach(function(d) { if (d) districts[d.toUpperCase()] = 1; });
+    _zmAll.forEach(function(r) { if (r.district) districts[r.district.toUpperCase()] = 1; });
     sel.innerHTML = '<option value="">All Districts</option>';
     Object.keys(districts).sort().forEach(function(d) {
       var o = document.createElement('option');
@@ -2121,9 +2126,10 @@
       : '';
 
     if (!filtered.length) {
+      var _where = dst ? esc(dst) : 'this zone';
       document.getElementById('zm-content').innerHTML =
         '<div class="empty-state"><div class="empty-icon">🧭</div>' +
-        '<p>No meetings in ' + _MONTHS[_zmMonth] + ' ' + _zmYear + '</p></div>';
+        '<p>No meetings in ' + _where + ' for ' + _MONTHS[_zmMonth] + ' ' + _zmYear + '</p></div>';
       return;
     }
 
