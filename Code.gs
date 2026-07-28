@@ -584,7 +584,7 @@ function resolveActiveDistrict_(session, requested) {
   if (role === 'State') return req || (session && session.district) || '';
   if (role === 'Zone') {
     // Zone leads may file a meeting under any district within their zone
-    if (req && getDistrictsInZone_(session && session.zone)[req.toUpperCase()]) return req;
+    if (req && districtToZone_(req) === findZoneKey_(session && session.zone)) return req;
     return (session && session.district) || '';
   }
 
@@ -607,25 +607,18 @@ function resolveActiveDistrict_(session, requested) {
 // ------------------------------------------------------------
 function getPlanDistricts(role, zone) {
   role = (role || '').toString().trim();
-  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var sheet = ss.getSheetByName(EMPLOYEE_SHEET);
-  if (!sheet) return [];
-  var data = sheet.getDataRange().getValues();
-  var set  = {};
-  if (role === 'State') {
-    for (var i = 1; i < data.length; i++) {
-      var d = (data[i][0] || '').toString().trim();
-      if (d) set[d] = true;
-    }
-  } else if (role === 'Zone') {
-    var z = (zone || '').toString().trim().toUpperCase();
-    for (var j = 1; j < data.length; j++) {
-      var dd = (data[j][0] || '').toString().trim();
-      var dz = (data[j][6] || '').toString().trim().toUpperCase();
-      if (dd && dz === z) set[dd] = true;
-    }
+  if (role === 'Zone') {
+    // Only the admin districts in this lead's zone (from the fixed mapping)
+    var zkey = findZoneKey_(zone);
+    return zkey ? ZONE_DISTRICTS[zkey].slice().sort() : [];
   }
-  return Object.keys(set).sort();
+  if (role === 'State') {
+    // All admin districts across every zone
+    var all = [];
+    for (var z in ZONE_DISTRICTS) all = all.concat(ZONE_DISTRICTS[z]);
+    return all.sort();
+  }
+  return [];
 }
 
 // ------------------------------------------------------------
@@ -866,9 +859,9 @@ function getAllEmployees(currentEmail) {
 //  All employees in the user's zone + all State-team members
 // ------------------------------------------------------------
 function getZoneTeamEmployees(zone, currentEmail) {
-  zone       = (zone || '').toString().trim().toUpperCase();
+  var zkey   = findZoneKey_(zone);
   var cur    = (currentEmail || '').trim().toLowerCase();
-  var cacheKey = 'zoneEmp_' + zone;
+  var cacheKey = 'zoneEmp_' + zkey;
   var cached = cGet(cacheKey);
   if (cached) return cached.filter(function(r){ return r._email !== cur; });
 
@@ -881,9 +874,11 @@ function getZoneTeamEmployees(zone, currentEmail) {
   for (var i = 1; i < data.length; i++) {
     var emp = data[i][4] ? data[i][4].toString().trim().toLowerCase() : '';
     if (!emp) continue;
-    var z    = (data[i][6] || '').toString().trim().toUpperCase();
-    var role = (data[i][5] || '').toString().trim().toLowerCase();
-    if ((zone && z === zone) || role === 'state') {
+    // Zone membership = the employee's (admin) district's zone, or their own
+    // Zone-column value (covers the zone lead whose district is blank).
+    var empZone = districtToZone_(data[i][0]) || findZoneKey_(data[i][6]);
+    var role    = (data[i][5] || '').toString().trim().toLowerCase();
+    if ((zkey && empZone === zkey) || role === 'state') {
       all.push({
         name:        (data[i][2] || '').toString().trim(),
         designation: (data[i][3] || '').toString().trim(),
@@ -1831,31 +1826,43 @@ function getStateAllMeetings() {
 //  A zone spans multiple districts; show every meeting whose
 //  district belongs to this zone (mapping comes from Employee_DB).
 // ------------------------------------------------------------
-function getDistrictsInZone_(zone) {
-  zone = (zone || '').toString().trim().toUpperCase();
-  if (!zone) return {};
-  var cacheKey = 'zoneDist_' + zone;
-  var hit = cGet(cacheKey);
-  if (hit) return hit;
-  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var sheet = ss.getSheetByName(EMPLOYEE_SHEET);
-  var set   = {};
-  if (sheet) {
-    var data = sheet.getDataRange().getValues();
-    // Columns: District(0) ... Role(5), Zone(6)
-    for (var i = 1; i < data.length; i++) {
-      var z = (data[i][6] || '').toString().trim().toUpperCase();
-      var d = (data[i][0] || '').toString().trim().toUpperCase();
-      if (z && z === zone && d) set[d] = true;
+// ------------------------------------------------------------
+//  ZONE STRUCTURE — fixed org mapping: Zone → Admin Districts.
+//  A meeting/employee's zone is derived from its (admin) district;
+//  space/case differences are normalised (e.g. "BARA BANKI" == "BARABANKI").
+// ------------------------------------------------------------
+var ZONE_DISTRICTS = {
+  'UP ZONE-1': ['BANDA','CHITRAKOOT','FATEHPUR','RAE BARELI','UNNAO','BHADOHI','KAUSHAMBI','MIRZAPUR','PRAYAGRAJ','SONBHADRA'],
+  'UP ZONE-2': ['BAHRAICH','SHRAVASTI','BALRAMPUR','GONDA','KUSHINAGAR','MAHARAJGANJ'],
+  'UP ZONE-3': ['BUDAUN','FARRUKHABAD','HARDOI','LAKHIMPUR KHERI','SHAHJAHANPUR','BARA BANKI','SITAPUR']
+};
+function normDist_(d) { return (d || '').toString().trim().toUpperCase().replace(/\s+/g, ''); }
+function findZoneKey_(zone) {
+  var zn = normDist_(zone);
+  for (var z in ZONE_DISTRICTS) { if (normDist_(z) === zn) return z; }
+  return '';
+}
+function districtToZone_(district) {
+  var nd = normDist_(district);
+  if (!nd) return '';
+  for (var z in ZONE_DISTRICTS) {
+    for (var i = 0; i < ZONE_DISTRICTS[z].length; i++) {
+      if (normDist_(ZONE_DISTRICTS[z][i]) === nd) return z;
     }
   }
-  cPut(cacheKey, set, C_TTL_DROP);
+  return '';
+}
+
+// districts of a zone as { NORMDIST: true } — for membership checks
+function getDistrictsInZone_(zone) {
+  var zkey = findZoneKey_(zone);
+  var set  = {};
+  if (zkey) ZONE_DISTRICTS[zkey].forEach(function(d){ set[normDist_(d)] = true; });
   return set;
 }
 
-// meetingId → ZONE, resolved from the Plan sheet (rows never deleted).
-// Zone = district's zone, else the creator's zone (covers zone/state
-// heads whose meetings carry a blank district).
+// meetingId → ZONE, from the meeting's (admin) district. Falls back to
+// the creator's district/zone for legacy blank-district meetings.
 function getMeetingZoneMap_() {
   var cacheKey = 'meetingZoneMap';
   var hit = cGet(cacheKey);
@@ -1863,16 +1870,15 @@ function getMeetingZoneMap_() {
   var ss   = SpreadsheetApp.openById(SPREADSHEET_ID);
   var emp  = ss.getSheetByName(EMPLOYEE_SHEET);
   var plan = ss.getSheetByName(MEETINGS_SHEET);
-  var emailZone = {}, distZone = {};
+  var emailDist = {}, emailZone = {};
   if (emp) {
     var ed = emp.getDataRange().getValues();
     // Employee_DB: District(0) Block(1) Name(2) Desig(3) Email(4) Role(5) Zone(6)
     for (var i = 1; i < ed.length; i++) {
       var em = (ed[i][4] || '').toString().trim().toLowerCase();
-      var z  = (ed[i][6] || '').toString().trim().toUpperCase();
-      var d  = (ed[i][0] || '').toString().trim().toUpperCase();
-      if (em && z) emailZone[em] = z;
-      if (d && z && !distZone[d]) distZone[d] = z;
+      if (!em) continue;
+      emailDist[em] = (ed[i][0] || '').toString();
+      emailZone[em] = findZoneKey_(ed[i][6]);   // lead's Zone column (UP ZONE-X)
     }
   }
   var map = {};
@@ -1882,9 +1888,12 @@ function getMeetingZoneMap_() {
     for (var j = 1; j < pd.length; j++) {
       var id = (pd[j][0] || '').toString();
       if (!id) continue;
-      var pdist = (pd[j][1] || '').toString().trim().toUpperCase();
-      var pem   = (pd[j][4] || '').toString().trim().toLowerCase();
-      map[id] = distZone[pdist] || emailZone[pem] || '';
+      var z = districtToZone_(pd[j][1]);
+      if (!z) {
+        var em2 = (pd[j][4] || '').toString().trim().toLowerCase();
+        z = districtToZone_(emailDist[em2]) || emailZone[em2] || '';
+      }
+      map[id] = z;
     }
   }
   cPut(cacheKey, map, C_TTL_LIVE);
@@ -1893,16 +1902,16 @@ function getMeetingZoneMap_() {
 
 function getZoneAllMeetings(zone) {
   try {
-    zone = (zone || '').toString().trim().toUpperCase();
-    if (!zone) return [];
-    var cacheKey = 'zoneMtg_' + zone;
+    var zkey = findZoneKey_(zone);
+    if (!zkey) return [];
+    var cacheKey = 'zoneMtg_' + zkey;
     var hit = cGet(cacheKey);
     if (hit) return hit;
 
     var zmap = getMeetingZoneMap_();          // meetingId → ZONE
     var all  = getStateAllMeetings();         // reuse (cached, all meetings)
     var filtered = all.filter(function(m) {
-      return (zmap[m.meetingId] || '') === zone;
+      return (zmap[m.meetingId] || '') === zkey;
     });
     cPut(cacheKey, filtered, C_TTL_LIVE);
     return filtered;
