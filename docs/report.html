@@ -437,10 +437,11 @@
 
       <div class="section-label" id="pf-label"></div>
 
-      <!-- By person (who did how many) -->
+      <!-- Post-wise summary (stakeholder post → meetings) — click a row for details -->
       <div class="card" style="margin-bottom:18px;">
-        <div class="card-title">By Person<span class="card-title-line"></span></div>
-        <div id="pf-byperson" style="overflow-x:auto;"></div>
+        <div class="card-title">Post-wise Summary <span style="font-weight:400;color:#9CA3AF;text-transform:none;letter-spacing:0;font-size:11px;">(meetings by stakeholder post — click a row to see details)</span><span class="card-title-line"></span></div>
+        <div id="pf-postsummary" style="overflow-x:auto;"></div>
+        <div id="pf-postdetail" style="margin-top:14px;"></div>
       </div>
 
       <!-- By designation -->
@@ -449,10 +450,10 @@
         <div id="pf-bydesig" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;"></div>
       </div>
 
-      <!-- By stakeholder post (whom they met) -->
+      <!-- By person (who did how many) -->
       <div class="card">
-        <div class="card-title">By Stakeholder Post<span class="card-title-line"></span></div>
-        <div id="pf-bypost" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;"></div>
+        <div class="card-title">By Person<span class="card-title-line"></span></div>
+        <div id="pf-byperson" style="overflow-x:auto;"></div>
       </div>
     </div>
 
@@ -1066,7 +1067,46 @@
         }).join('') + '</tbody></table>';
 
     document.getElementById('pf-bydesig').innerHTML = perfCards_(f, 'post');
-    document.getElementById('pf-bypost').innerHTML  = perfCards_(f, 'stakeholderPost');
+
+    // ── Post-wise Summary (stakeholder post → count), clickable for details ──
+    _perfFiltered = f;
+    var smap = {};
+    f.forEach(function(m){ var k = (m.stakeholderPost || '—').toString().trim() || '—'; smap[k] = (smap[k]||0) + 1; });
+    _perfPosts = Object.keys(smap).map(function(k){ return { k:k, n:smap[k] }; }).sort(function(a,b){ return b.n - a.n; });
+    document.getElementById('pf-postdetail').innerHTML = '';
+    document.getElementById('pf-postsummary').innerHTML = _perfPosts.length === 0
+      ? '<div style="color:#9CA3AF;font-size:13px;padding:16px 0;">No meetings for this selection</div>'
+      : '<table class="rep-table"><thead><tr><th>#</th><th>Stakeholder Post</th><th style="text-align:right;">Meetings</th><th></th></tr></thead><tbody>' +
+        _perfPosts.map(function(p, i){
+          return '<tr style="cursor:pointer;" onclick="showPostDetail('+i+')">' +
+            '<td style="color:#9CA3AF;font-weight:600;">'+(i+1)+'</td>' +
+            '<td style="font-weight:700;">'+esc(p.k)+'</td>' +
+            '<td style="text-align:right;font-weight:800;color:'+EG+';">'+p.n+'</td>' +
+            '<td style="text-align:right;color:'+EG+';font-size:11px;font-weight:700;">View &#9656;</td>' +
+          '</tr>';
+        }).join('') + '</tbody></table>';
+  }
+
+  var _perfFiltered = [], _perfPosts = [];
+  function showPostDetail(idx) {
+    var post = (_perfPosts[idx] || {}).k;
+    if (post == null) return;
+    var rows = _perfFiltered.filter(function(m){ return ((m.stakeholderPost || '—').toString().trim() || '—') === post; });
+    rows.sort(function(a,b){ return dateVal(b.conductDate||b.date) - dateVal(a.conductDate||a.date); });
+    document.getElementById('pf-postdetail').innerHTML =
+      '<div style="font-weight:800;color:'+EG+';font-size:13px;margin:4px 0 8px;">'+esc(post)+' &mdash; '+rows.length+' meeting'+(rows.length!==1?'s':'')+'</div>' +
+      '<table class="rep-table"><thead><tr><th>#</th><th>Date</th><th>District</th><th>By</th><th>Designation</th><th>Stakeholder</th><th>Purpose</th></tr></thead><tbody>' +
+      rows.map(function(r, i){
+        return '<tr>' +
+          '<td style="color:#9CA3AF;">'+(i+1)+'</td>' +
+          '<td style="white-space:nowrap;font-size:11.5px;">'+esc(r.conductDate||r.date)+'</td>' +
+          '<td style="font-size:11px;color:#6B7280;">'+esc(r.district)+'</td>' +
+          '<td style="font-weight:600;">'+esc(r.employeeName)+'</td>' +
+          '<td style="font-size:11px;color:#6B7280;">'+esc(r.post)+'</td>' +
+          '<td><strong>'+esc(r.stakeholderName)+'</strong></td>' +
+          '<td style="font-size:11px;color:#6B7280;">'+esc(r.purpose)+'</td>' +
+        '</tr>';
+      }).join('') + '</tbody></table>';
   }
 
   // group filtered meetings by a field → count cards (desc)
