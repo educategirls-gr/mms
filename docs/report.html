@@ -437,17 +437,11 @@
 
       <div class="section-label" id="pf-label"></div>
 
-      <!-- Post-wise summary (stakeholder post → meetings) — click a row for details -->
+      <!-- By Designation summary (designation → meetings) — click a row for details -->
       <div class="card" style="margin-bottom:18px;">
-        <div class="card-title">Post-wise Summary <span style="font-weight:400;color:#9CA3AF;text-transform:none;letter-spacing:0;font-size:11px;">(meetings by stakeholder post — click a row to see details)</span><span class="card-title-line"></span></div>
-        <div id="pf-postsummary" style="overflow-x:auto;"></div>
-        <div id="pf-postdetail" style="margin-top:14px;"></div>
-      </div>
-
-      <!-- By designation -->
-      <div class="card" style="margin-bottom:18px;">
-        <div class="card-title">By Designation<span class="card-title-line"></span></div>
-        <div id="pf-bydesig" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;"></div>
+        <div class="card-title">By Designation <span style="font-weight:400;color:#9CA3AF;text-transform:none;letter-spacing:0;font-size:11px;">(meetings by designation — click a row to see details)</span><span class="card-title-line"></span></div>
+        <div id="pf-desigsummary" style="overflow-x:auto;"></div>
+        <div id="pf-desigdetail" style="margin-top:14px;"></div>
       </div>
 
       <!-- By person (who did how many) -->
@@ -465,6 +459,23 @@
   var EG = '#8B1212';
   function esc(s) { return s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
+  // Robust JSON fetch — GAS occasionally returns an HTML error page; retry once, then fail gracefully.
+  function fetchJSON(url, onOk, onErr, _tries) {
+    _tries = _tries || 0;
+    fetch(url).then(function(r){ return r.text(); }).then(function(txt){
+      var data;
+      try { data = JSON.parse(txt); }
+      catch(e) {
+        if (_tries < 2) { setTimeout(function(){ fetchJSON(url, onOk, onErr, _tries + 1); }, 900); return; }
+        (onErr || function(){})(new Error('Server busy — please tap Refresh in a moment.')); return;
+      }
+      onOk(data);
+    }).catch(function(e){
+      if (_tries < 2) { setTimeout(function(){ fetchJSON(url, onOk, onErr, _tries + 1); }, 900); return; }
+      (onErr || function(){})(e);
+    });
+  }
+
   // Open analytics portal — no login required. Send the session token if
   // one happens to exist (harmless; these endpoints are public).
   var TOKEN = '';
@@ -480,10 +491,9 @@
 
   // ── API ───────────────────────────────────────────────────────
   function loadData(onDone) {
-    fetch(withTok(GAS_URL + '?action=getDashboardStats&all=1'))
-      .then(function(r) { return r.json(); })
-      .then(function(res) { if (!checkAuth(res)) return; _data = res; onDone(res); })
-      .catch(function(e) { onDone({ success: false, message: e.message }); });
+    fetchJSON(withTok(GAS_URL + '?action=getDashboardStats&all=1'),
+      function(res) { if (!checkAuth(res)) return; _data = res; onDone(res); },
+      function(e) { onDone({ success: false, message: e.message }); });
   }
 
   function refreshData() {
@@ -665,9 +675,8 @@
   function loadReports() {
     if (_allMeetings) { applyReportFilters(); return; }
     document.getElementById('rp-sel-loading').style.display = 'flex';
-    fetch(withTok(GAS_URL + '?action=getReportData'))
-      .then(function(r){ return r.json(); })
-      .then(function(res){
+    fetchJSON(withTok(GAS_URL + '?action=getReportData'),
+      function(res){
         document.getElementById('rp-sel-loading').style.display = 'none';
         if (!checkAuth(res)) return;
         _allMeetings = (res && res.meetings) ? res.meetings : [];
@@ -676,8 +685,8 @@
         populateReportMonths();
         renderAttentionAlert();
         applyReportFilters();
-      })
-      .catch(function(e){ document.getElementById('rp-sel-loading').style.display='none'; alert('Network error: '+e.message); });
+      },
+      function(e){ document.getElementById('rp-sel-loading').style.display='none'; alert('Network error: '+e.message); });
   }
 
   function curDist()  { return document.getElementById('rp-district-sel').value; }
@@ -1007,14 +1016,13 @@
   // ── Team Performance (post-wise / designation-wise) ──────────
   function loadPerf() {
     if (_allMeetings) { buildPerfFilters(); renderPerf(); return; }
-    fetch(withTok(GAS_URL + '?action=getReportData'))
-      .then(function(r){ return r.json(); })
-      .then(function(res){
+    fetchJSON(withTok(GAS_URL + '?action=getReportData'),
+      function(res){
         if (!checkAuth(res)) return;
         _allMeetings = (res && res.meetings) ? res.meetings : [];
         buildPerfFilters(); renderPerf();
-      })
-      .catch(function(e){ alert('Network error: ' + e.message); });
+      },
+      function(e){ alert('Network error: ' + e.message); });
   }
 
   function buildPerfFilters() {
@@ -1066,19 +1074,17 @@
           '</tr>';
         }).join('') + '</tbody></table>';
 
-    document.getElementById('pf-bydesig').innerHTML = perfCards_(f, 'post');
-
-    // ── Post-wise Summary (stakeholder post → count), clickable for details ──
+    // ── By Designation summary (designation → count), clickable for details ──
     _perfFiltered = f;
-    var smap = {};
-    f.forEach(function(m){ var k = (m.stakeholderPost || '—').toString().trim() || '—'; smap[k] = (smap[k]||0) + 1; });
-    _perfPosts = Object.keys(smap).map(function(k){ return { k:k, n:smap[k] }; }).sort(function(a,b){ return b.n - a.n; });
-    document.getElementById('pf-postdetail').innerHTML = '';
-    document.getElementById('pf-postsummary').innerHTML = _perfPosts.length === 0
+    var dmap = {};
+    f.forEach(function(m){ var k = (m.post || '—').toString().trim() || '—'; dmap[k] = (dmap[k]||0) + 1; });
+    _perfDesigs = Object.keys(dmap).map(function(k){ return { k:k, n:dmap[k] }; }).sort(function(a,b){ return b.n - a.n; });
+    document.getElementById('pf-desigdetail').innerHTML = '';
+    document.getElementById('pf-desigsummary').innerHTML = _perfDesigs.length === 0
       ? '<div style="color:#9CA3AF;font-size:13px;padding:16px 0;">No meetings for this selection</div>'
-      : '<table class="rep-table"><thead><tr><th>#</th><th>Stakeholder Post</th><th style="text-align:right;">Meetings</th><th></th></tr></thead><tbody>' +
-        _perfPosts.map(function(p, i){
-          return '<tr style="cursor:pointer;" onclick="showPostDetail('+i+')">' +
+      : '<table class="rep-table"><thead><tr><th>#</th><th>Designation</th><th style="text-align:right;">Meetings</th><th></th></tr></thead><tbody>' +
+        _perfDesigs.map(function(p, i){
+          return '<tr style="cursor:pointer;" onclick="showDesigDetail('+i+')">' +
             '<td style="color:#9CA3AF;font-weight:600;">'+(i+1)+'</td>' +
             '<td style="font-weight:700;">'+esc(p.k)+'</td>' +
             '<td style="text-align:right;font-weight:800;color:'+EG+';">'+p.n+'</td>' +
@@ -1087,39 +1093,26 @@
         }).join('') + '</tbody></table>';
   }
 
-  var _perfFiltered = [], _perfPosts = [];
-  function showPostDetail(idx) {
-    var post = (_perfPosts[idx] || {}).k;
-    if (post == null) return;
-    var rows = _perfFiltered.filter(function(m){ return ((m.stakeholderPost || '—').toString().trim() || '—') === post; });
+  var _perfFiltered = [], _perfDesigs = [];
+  function showDesigDetail(idx) {
+    var desig = (_perfDesigs[idx] || {}).k;
+    if (desig == null) return;
+    var rows = _perfFiltered.filter(function(m){ return ((m.post || '—').toString().trim() || '—') === desig; });
     rows.sort(function(a,b){ return dateVal(b.conductDate||b.date) - dateVal(a.conductDate||a.date); });
-    document.getElementById('pf-postdetail').innerHTML =
-      '<div style="font-weight:800;color:'+EG+';font-size:13px;margin:4px 0 8px;">'+esc(post)+' &mdash; '+rows.length+' meeting'+(rows.length!==1?'s':'')+'</div>' +
-      '<table class="rep-table"><thead><tr><th>#</th><th>Date</th><th>District</th><th>By</th><th>Designation</th><th>Stakeholder</th><th>Purpose</th></tr></thead><tbody>' +
+    document.getElementById('pf-desigdetail').innerHTML =
+      '<div style="font-weight:800;color:'+EG+';font-size:13px;margin:4px 0 8px;">'+esc(desig)+' &mdash; '+rows.length+' meeting'+(rows.length!==1?'s':'')+'</div>' +
+      '<table class="rep-table"><thead><tr><th>#</th><th>Date</th><th>District</th><th>By</th><th>Stakeholder</th><th>Post</th><th>Purpose</th></tr></thead><tbody>' +
       rows.map(function(r, i){
         return '<tr>' +
           '<td style="color:#9CA3AF;">'+(i+1)+'</td>' +
           '<td style="white-space:nowrap;font-size:11.5px;">'+esc(r.conductDate||r.date)+'</td>' +
           '<td style="font-size:11px;color:#6B7280;">'+esc(r.district)+'</td>' +
           '<td style="font-weight:600;">'+esc(r.employeeName)+'</td>' +
-          '<td style="font-size:11px;color:#6B7280;">'+esc(r.post)+'</td>' +
           '<td><strong>'+esc(r.stakeholderName)+'</strong></td>' +
+          '<td style="font-size:11px;color:#6B7280;">'+esc(r.stakeholderPost)+'</td>' +
           '<td style="font-size:11px;color:#6B7280;">'+esc(r.purpose)+'</td>' +
         '</tr>';
       }).join('') + '</tbody></table>';
-  }
-
-  // group filtered meetings by a field → count cards (desc)
-  function perfCards_(list, field) {
-    var map = {};
-    list.forEach(function(m){ var k = (m[field] || '—').toString().trim() || '—'; map[k] = (map[k]||0) + 1; });
-    var arr = Object.keys(map).map(function(k){ return { k:k, n:map[k] }; }).sort(function(a,b){ return b.n - a.n; });
-    if (!arr.length) return '<div style="color:#9CA3AF;font-size:13px;padding:12px 0;">No data</div>';
-    return arr.map(function(x){
-      return '<div class="post-card"><div class="post-card-head">' +
-             '<div class="post-card-name">'+esc(x.k)+'</div>' +
-             '<div class="post-card-count">'+x.n+'</div></div></div>';
-    }).join('');
   }
 
   // ── Init ──────────────────────────────────────────────────────
