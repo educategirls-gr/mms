@@ -323,22 +323,22 @@
         <div class="section-label">Key Insights</div>
         <div class="insight-grid" id="ov-insights" style="margin-bottom:20px;"></div>
 
-        <!-- District Performance + Type breakdown -->
-        <div class="two-col">
-          <div class="card">
-            <div class="card-title">District Performance<span class="card-title-line"></span></div>
-            <div id="ov-dist-rank"></div>
-          </div>
-          <div class="card">
-            <div class="card-title">Meetings by Purpose<span class="card-title-line"></span></div>
-            <div id="ov-purposes"></div>
-          </div>
-        </div>
-
-        <!-- Type chips + Recent table -->
+        <!-- Meeting Types (moved above District Performance) -->
         <div class="card" style="margin-bottom:18px;">
           <div class="card-title">Meeting Types<span class="card-title-line"></span></div>
           <div id="ov-types" style="display:flex;flex-wrap:wrap;gap:10px;"></div>
+        </div>
+
+        <!-- District Performance + Meetings by Purpose (top 5 each) -->
+        <div class="two-col">
+          <div class="card">
+            <div class="card-title">District Performance <span style="font-weight:400;color:#9CA3AF;text-transform:none;letter-spacing:0;font-size:11px;">(Top 5)</span><span class="card-title-line"></span></div>
+            <div id="ov-dist-rank"></div>
+          </div>
+          <div class="card">
+            <div class="card-title">Meetings by Purpose <span style="font-weight:400;color:#9CA3AF;text-transform:none;letter-spacing:0;font-size:11px;">(Top 5)</span><span class="card-title-line"></span></div>
+            <div id="ov-purposes"></div>
+          </div>
         </div>
 
         <div class="card">
@@ -595,7 +595,7 @@
     }).join('');
 
     // ─ District Rank Board ─
-    var sortedDists = dists.slice().sort(function(a,b){ return b.conducted - a.conducted; });
+    var sortedDists = dists.slice().sort(function(a,b){ return b.conducted - a.conducted; }).slice(0, 5);
     var maxC = sortedDists.length > 0 ? (sortedDists[0].conducted || 1) : 1;
     var medals = ['🥇','🥈','🥉'];
     var rankHtml = sortedDists.map(function(di, i) {
@@ -616,7 +616,7 @@
     document.getElementById('ov-dist-rank').innerHTML = rankHtml;
 
     // ─ Purpose bars ─
-    var purps = d.byPurpose || [];
+    var purps = (d.byPurpose || []).slice(0, 5);
     var maxP  = purps.reduce(function(m,x){ return Math.max(m,x.count||0); },1);
     var purpColors = ['#8B1212','#B91C1C','#10B981','#3B82F6','#8B5CF6','#EC4899','#14B8A6','#F97316'];
     document.getElementById('ov-purposes').innerHTML = purps.map(function(pu,i) {
