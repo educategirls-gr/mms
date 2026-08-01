@@ -605,11 +605,9 @@
       return '<div class="rank-row">' +
              '<div class="rank-num" style="background:' + (i<3?['#FEF9C3','#F3F4F6','#FFEDD5'][i]:'#F3F4F6') +
              ';color:#374151;">' + (i<3 ? medals[i] : (i+1)) + '</div>' +
-             '<div style="flex:1;">' +
-             '<div class="rank-name">'+di.name+'</div>' +
-             '<div style="margin-top:5px;background:#F3F4F6;border-radius:20px;height:6px;overflow:hidden;">' +
-             '<div style="height:100%;border-radius:20px;background:#8B1212;width:'+Math.round((di.conducted/maxC)*100)+'%;transition:width .7s;"></div>' +
-             '</div></div>' +
+             '<div style="flex:1;min-width:0;">' +
+             '<div class="rank-name">'+esc(di.name)+'</div>' +
+             '</div>' +
              '<div class="rank-right">' +
              '<div class="rank-count">'+di.conducted+'</div>' +
              '<div class="rank-pct" style="color:'+col+';">'+p+'% rate</div>' +
@@ -622,11 +620,9 @@
     var maxP  = purps.reduce(function(m,x){ return Math.max(m,x.count||0); },1);
     var purpColors = ['#8B1212','#B91C1C','#10B981','#3B82F6','#8B5CF6','#EC4899','#14B8A6','#F97316'];
     document.getElementById('ov-purposes').innerHTML = purps.map(function(pu,i) {
-      var p = Math.round((pu.count/maxP)*100);
-      return '<div class="bar-row">' +
-             '<div class="bar-label" title="'+pu.name+'">'+pu.name+'</div>' +
-             '<div class="bar-track"><div class="bar-fill" style="width:'+p+'%;background:'+purpColors[i%purpColors.length]+';"></div></div>' +
-             '<div class="bar-val">'+pu.count+'</div></div>';
+      return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid #F3F4F6;">' +
+             '<div style="font-size:13px;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+esc(pu.name)+'">'+esc(pu.name)+'</div>' +
+             '<div style="font-size:15px;font-weight:800;color:'+EG+';flex-shrink:0;">'+pu.count+'</div></div>';
     }).join('') || '<div style="color:#9CA3AF;font-size:13px;">No data</div>';
 
     // ─ Types as chips with bars ─
