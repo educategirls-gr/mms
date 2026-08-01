@@ -1013,16 +1013,27 @@
         }).join('') + '</tbody></table>';
   }
 
-  // ── Team Performance (post-wise / designation-wise) ──────────
+  // ── Team Performance (designation-wise) ──────────────────────
+  var _perfSpinner = '<div style="text-align:center;padding:48px 0;color:#9CA3AF;">' +
+    '<div class="spinner"></div>' +
+    '<div style="font-size:13px;font-weight:600;">Loading team performance…</div>' +
+    '<div style="font-size:11px;margin-top:4px;color:#C4C4C4;">This can take a few seconds</div></div>';
   function loadPerf() {
     if (_allMeetings) { buildPerfFilters(); renderPerf(); return; }
+    document.getElementById('pf-desigsummary').innerHTML = _perfSpinner;
+    document.getElementById('pf-desigdetail').innerHTML = '';
+    document.getElementById('pf-byperson').innerHTML = '';
+    document.getElementById('pf-count').textContent = '';
     fetchJSON(withTok(GAS_URL + '?action=getReportData'),
       function(res){
         if (!checkAuth(res)) return;
         _allMeetings = (res && res.meetings) ? res.meetings : [];
         buildPerfFilters(); renderPerf();
       },
-      function(e){ alert('Network error: ' + e.message); });
+      function(e){
+        document.getElementById('pf-desigsummary').innerHTML =
+          '<div style="text-align:center;padding:32px 0;color:#DC2626;font-size:13px;">' + esc(e.message || 'Failed to load') + '</div>';
+      });
   }
 
   function buildPerfFilters() {
