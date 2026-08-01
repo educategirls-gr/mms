@@ -269,13 +269,13 @@
   <div class="sidebar-nav">
     <div class="nav-section">Analytics</div>
     <a class="nav-item" id="nav-overview" href="report.html" style="text-decoration:none;">
-      <span>Overview</span>
+      <span style="font-size:17px;">📊</span><span>Overview</span>
     </a>
     <a class="nav-item" id="nav-reports" href="districtreports.html" style="text-decoration:none;">
-      <span>District Reports</span>
+      <span style="font-size:17px;">🏢</span><span>District Reports</span>
     </a>
     <a class="nav-item" id="nav-perf" href="teamperformance.html" style="text-decoration:none;">
-      <span>Team Performance</span>
+      <span style="font-size:17px;">👥</span><span>Team Performance</span>
     </a>
   </div>
   <div class="sidebar-footer">
@@ -434,6 +434,8 @@
           <div id="pf-count" style="font-size:12px;color:#6B7280;background:#F3F4F6;padding:6px 12px;border-radius:8px;font-weight:600;"></div>
         </div>
       </div>
+
+      <div id="pf-kpi" class="kpi-grid" style="margin-bottom:18px;"></div>
 
       <div class="section-label" id="pf-label"></div>
 
@@ -1062,6 +1064,26 @@
     document.getElementById('pf-count').textContent = f.length + ' meeting' + (f.length !== 1 ? 's' : '');
     document.getElementById('pf-label').textContent =
       (dist ? dist.toUpperCase() : 'ALL DISTRICTS') + '  ·  ' + (month || 'All Months') + '  ·  ' + (st || 'All Statuses');
+
+    // ── KPI stat cards ──
+    var uPeople = {}, uDesig = {}, uDist = {};
+    f.forEach(function(m){
+      if (m.employeeName) uPeople[m.employeeName] = 1;
+      if (m.post) uDesig[m.post] = 1;
+      if (m.district) uDist[m.district] = 1;
+    });
+    var kpis = [
+      { n:f.length,                   l:'Meetings',     ic:'📊', c:'#8B1212' },
+      { n:Object.keys(uPeople).length, l:'Team Members', ic:'👥', c:'#1D4ED8' },
+      { n:Object.keys(uDesig).length,  l:'Designations', ic:'🏷️', c:'#065F46' },
+      { n:Object.keys(uDist).length,   l:'Districts',    ic:'📍', c:'#92400E' }
+    ];
+    document.getElementById('pf-kpi').innerHTML = kpis.map(function(k){
+      return '<div class="kpi-card" style="--kpi-c:'+k.c+';--kpi-bg:'+k.c+'14;">' +
+             '<div class="kpi-icon">'+k.ic+'</div>' +
+             '<div class="kpi-num">'+k.n+'</div>' +
+             '<div class="kpi-lbl">'+k.l+'</div></div>';
+    }).join('');
 
     // ── By Person (who did how many) ──
     var pmap = {};
