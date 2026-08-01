@@ -1090,6 +1090,7 @@
     var dmap = {};
     f.forEach(function(m){ var k = (m.post || '—').toString().trim() || '—'; dmap[k] = (dmap[k]||0) + 1; });
     _perfDesigs = Object.keys(dmap).map(function(k){ return { k:k, n:dmap[k] }; }).sort(function(a,b){ return b.n - a.n; });
+    _openDesig = -1;
     document.getElementById('pf-desigdetail').innerHTML = '';
     document.getElementById('pf-desigsummary').innerHTML = _perfDesigs.length === 0
       ? '<div style="color:#9CA3AF;font-size:13px;padding:16px 0;">No meetings for this selection</div>'
@@ -1104,14 +1105,21 @@
         }).join('') + '</tbody></table>';
   }
 
-  var _perfFiltered = [], _perfDesigs = [];
+  var _perfFiltered = [], _perfDesigs = [], _openDesig = -1;
+  function closeDesigDetail() { _openDesig = -1; document.getElementById('pf-desigdetail').innerHTML = ''; }
   function showDesigDetail(idx) {
+    // Click the same row again → close (toggle)
+    if (idx === _openDesig) { closeDesigDetail(); return; }
+    _openDesig = idx;
     var desig = (_perfDesigs[idx] || {}).k;
     if (desig == null) return;
     var rows = _perfFiltered.filter(function(m){ return ((m.post || '—').toString().trim() || '—') === desig; });
     rows.sort(function(a,b){ return dateVal(b.conductDate||b.date) - dateVal(a.conductDate||a.date); });
     document.getElementById('pf-desigdetail').innerHTML =
-      '<div style="font-weight:800;color:'+EG+';font-size:13px;margin:4px 0 8px;">'+esc(desig)+' &mdash; '+rows.length+' meeting'+(rows.length!==1?'s':'')+'</div>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin:4px 0 8px;">' +
+        '<div style="font-weight:800;color:'+EG+';font-size:13px;">'+esc(desig)+' &mdash; '+rows.length+' meeting'+(rows.length!==1?'s':'')+'</div>' +
+        '<button onclick="closeDesigDetail()" style="background:#F3F4F6;border:1px solid #E5E7EB;border-radius:8px;padding:5px 12px;font-size:12px;font-weight:700;color:#374151;cursor:pointer;">&#10005; Close</button>' +
+      '</div>' +
       '<table class="rep-table"><thead><tr><th>#</th><th>Date</th><th>District</th><th>By</th><th>Stakeholder</th><th>Post</th><th>Purpose</th></tr></thead><tbody>' +
       rows.map(function(r, i){
         return '<tr>' +
