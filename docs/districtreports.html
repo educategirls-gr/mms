@@ -206,8 +206,8 @@
     .block-card .bc-lbl   { font-size: 9.5px; text-transform: uppercase; letter-spacing: .5px; color: #9CA3AF; font-weight: 700; margin-top: 3px; }
 
     /* ── Two-col layout ──────────────────────────────────────── */
-    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 18px; }
-    .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 18px; }
+    .two-col { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 16px; margin-bottom: 18px; }
+    .three-col { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) minmax(0,1fr); gap: 16px; margin-bottom: 18px; }
 
     /* ── District select card ────────────────────────────────── */
     .district-select-wrap { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
