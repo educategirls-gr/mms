@@ -435,7 +435,7 @@
 
       <!-- By Designation summary (designation → meetings) — click a row for details -->
       <div class="card" style="margin-bottom:18px;">
-        <div class="card-title">By Designation <span style="font-weight:400;color:#9CA3AF;text-transform:none;letter-spacing:0;font-size:11px;">(meetings by designation — click a row to see details)</span><span class="card-title-line"></span></div>
+        <div class="card-title">By Designation<span class="card-title-line"></span></div>
         <div id="pf-desigsummary" style="overflow-x:auto;"></div>
         <div id="pf-desigdetail" style="margin-top:14px;"></div>
       </div>
@@ -506,7 +506,7 @@
   var TOPBAR = {
     overview: { title: 'Overview',        sub: 'Organisation-wide meeting summary'       },
     reports:  { title: 'District Reports',sub: 'District-wise analytics and meeting details' },
-    perf:     { title: 'Team Performance',sub: 'Post-wise / designation-wise — who did how many meetings' }
+    perf:     { title: 'Team Performance',sub: '' }
   };
   function showView(v) {
     ['overview','reports','perf'].forEach(function(x) {
