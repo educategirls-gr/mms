@@ -626,7 +626,9 @@
     // ─ District Rank Board — ALL districts (incl. those with no meeting) ─
     var dstat = {};
     dists.forEach(function(x){
-      dstat[String(x.name).trim().toUpperCase()] = { name:x.name, total:x.total||0, conducted:x.conducted||0 };
+      var nm = String(x.name || '').trim();
+      if (!nm) return;   // skip meetings with no district assigned
+      dstat[nm.toUpperCase()] = { name:x.name, total:x.total||0, conducted:x.conducted||0 };
     });
     (_allEmployees || []).forEach(function(e){
       if (!e.district) return;
