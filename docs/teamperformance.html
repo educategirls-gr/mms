@@ -440,13 +440,6 @@
         <div id="pf-coverage" style="overflow-x:auto;"></div>
       </div>
 
-      <!-- Active vs Inactive team members -->
-      <div class="card" style="margin-bottom:18px;">
-        <div class="card-title">Inactive Team Members<span class="card-title-line"></span></div>
-        <div style="font-size:12px;color:#6B7280;margin:-6px 0 12px;">Team members with <b>no meeting</b> in the selected filters.</div>
-        <div id="pf-inactive" style="overflow-x:auto;"></div>
-      </div>
-
       <!-- By Designation summary (designation → meetings) — click a row for details -->
       <div class="card" style="margin-bottom:18px;">
         <div class="card-title">By Designation<span class="card-title-line"></span></div>
@@ -1141,21 +1134,22 @@
         }).join('') + '</tbody></table>';
   }
 
-  // ── Profile Coverage + Inactive team members ──
+  // Designations excluded from Profile Coverage (non-field / internal roles)
+  var _covExclude = { 'testing head': 1 };
+  // ── Profile Coverage ──
   function renderCoverage(f, dist) {
-    var covEl  = document.getElementById('pf-coverage');
-    var inacEl = document.getElementById('pf-inactive');
-    if (!covEl || !inacEl) return;
+    var covEl = document.getElementById('pf-coverage');
+    if (!covEl) return;
     if (!_allEmployees) {
       covEl.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:16px 0;">Loading team master…</div>';
-      inacEl.innerHTML = '';
       return;
     }
     // People who did at least one meeting in the current filters
     var active = {};
     f.forEach(function(m){ if (m.employeeName) active[_normNm(m.employeeName)] = 1; });
-    // Team members in scope (respect the district filter)
+    // Team members in scope (respect the district filter; drop excluded profiles)
     var emps = _allEmployees.filter(function(e){
+      if (_covExclude[_normDg(e.designation).toLowerCase()]) return false;
       return !dist || (e.district || '').toUpperCase() === dist.toUpperCase();
     });
     // name → designation (from master) so meeting counts group by the master's profile
@@ -1172,6 +1166,7 @@
     });
     f.forEach(function(m){
       var d = nameDesig[_normNm(m.employeeName)] || _normDg(m.post);
+      if (_covExclude[d.toLowerCase()]) return;   // skip excluded profiles' meetings
       bucket(d).meetings++;
     });
     var arr = Object.keys(cov).map(function(k){
@@ -1181,6 +1176,7 @@
     var totPeople = emps.length;
     var totActive = emps.filter(function(e){ return active[_normNm(e.name)]; }).length;
     var totPct = totPeople ? Math.round(totActive / totPeople * 100) : 0;
+    var totMeet = arr.reduce(function(s,c){ return s + c.meetings; }, 0);
 
     // ── Coverage table ──
     if (arr.length === 0) {
@@ -1206,33 +1202,10 @@
           '<td></td><td style="font-weight:800;">TOTAL</td>' +
           '<td style="text-align:right;font-weight:800;">'+totPeople+'</td>' +
           '<td style="text-align:right;font-weight:800;color:#1D4ED8;">'+totActive+'</td>' +
-          '<td style="text-align:right;font-weight:800;color:'+EG+';">'+f.length+'</td>' +
+          '<td style="text-align:right;font-weight:800;color:'+EG+';">'+totMeet+'</td>' +
           '<td style="text-align:right;font-weight:800;">'+totPct+'%</td>' +
         '</tr>' +
         '</tbody></table>';
-    }
-
-    // ── Inactive team members ──
-    var inactive = emps.filter(function(e){ return !active[_normNm(e.name)]; })
-      .sort(function(a,b){ return _normDg(a.designation).localeCompare(_normDg(b.designation)) || (a.name||'').localeCompare(b.name||''); });
-    var head = '<div style="font-size:12px;font-weight:700;margin-bottom:10px;">' +
-      '<span style="color:#065F46;">'+totActive+' active</span> · ' +
-      '<span style="color:#B91C1C;">'+inactive.length+' inactive</span> · ' +
-      '<span style="color:#6B7280;">of '+totPeople+' team members ('+totPct+'% participation)</span></div>';
-    if (inactive.length === 0) {
-      inacEl.innerHTML = head + '<div style="color:#065F46;font-size:13px;padding:8px 0;font-weight:600;">🎉 Everyone did at least one meeting in this selection.</div>';
-    } else {
-      inacEl.innerHTML = head +
-        '<table class="rep-table"><thead><tr><th>#</th><th>Employee</th><th>Designation</th><th>District</th><th>Block</th></tr></thead><tbody>' +
-        inactive.map(function(e, i){
-          return '<tr>' +
-            '<td style="color:#9CA3AF;font-weight:600;">'+(i+1)+'</td>' +
-            '<td style="font-weight:700;">'+esc(e.name)+'</td>' +
-            '<td style="font-size:11px;color:#6B7280;">'+esc(e.designation||'')+'</td>' +
-            '<td style="font-size:11px;color:#6B7280;">'+esc(e.district||'')+'</td>' +
-            '<td style="font-size:11px;color:#6B7280;">'+esc(e.block||'')+'</td>' +
-          '</tr>';
-        }).join('') + '</tbody></table>';
     }
   }
 
