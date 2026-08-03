@@ -433,13 +433,6 @@
 
       <div class="section-label" id="pf-label"></div>
 
-      <!-- Profile Coverage — people in a profile vs entries done -->
-      <div class="card" style="margin-bottom:18px;">
-        <div class="card-title">Profile Coverage<span class="card-title-line"></span></div>
-        <div style="font-size:12px;color:#6B7280;margin:-6px 0 12px;">Team size vs activity per profile — how many people did at least one meeting.</div>
-        <div id="pf-coverage" style="overflow-x:auto;"></div>
-      </div>
-
       <!-- By Designation summary (designation → meetings) — click a row for details -->
       <div class="card" style="margin-bottom:18px;">
         <div class="card-title">By Designation<span class="card-title-line"></span></div>
@@ -447,10 +440,23 @@
         <div id="pf-desigdetail" style="margin-top:14px;"></div>
       </div>
 
-      <!-- By person (who did how many) -->
-      <div class="card">
+      <!-- Profile Coverage — people in a profile vs entries done -->
+      <div class="card" style="margin-bottom:18px;">
+        <div class="card-title">Profile Coverage<span class="card-title-line"></span></div>
+        <div id="pf-coverage" style="overflow-x:auto;"></div>
+      </div>
+
+      <!-- By person (who did how many) — shown only when a district is selected -->
+      <div class="card" id="pf-byperson-card" style="margin-bottom:18px;display:none;">
         <div class="card-title">By Person<span class="card-title-line"></span></div>
         <div id="pf-byperson" style="overflow-x:auto;"></div>
+      </div>
+
+      <!-- Inactive team members — shown only when a district is selected -->
+      <div class="card" id="pf-inactive-card" style="display:none;">
+        <div class="card-title">Inactive Team Members<span class="card-title-line"></span></div>
+        <div style="font-size:12px;color:#6B7280;margin:-6px 0 12px;">Team members in this district with <b>no meeting</b> in the selected filters.</div>
+        <div id="pf-inactive" style="overflow-x:auto;"></div>
       </div>
     </div>
 
@@ -509,6 +515,26 @@
     showView(PORTAL_VIEW);
   }
 
+  // ── Full district list (all operating districts, incl. 0-meeting) ──
+  // Union of the Employee master districts + any district seen in meetings.
+  function allDistrictList() {
+    var set = {};
+    (_allEmployees || []).forEach(function(e){ if (e.district) set[String(e.district).trim()] = 1; });
+    (_allMeetings  || []).forEach(function(m){ if (m.district) set[String(m.district).trim()] = 1; });
+    return Object.keys(set).sort();
+  }
+  // Fetch the employee master once (cached backend); cb runs when ready.
+  function ensureEmployees(cb) {
+    if (_allEmployees) { if (cb) cb(); return; }
+    fetchJSON(withTok(GAS_URL + '?action=getEmployeeMaster'),
+      function(res){ _allEmployees = (res && res.employees) ? res.employees : []; if (cb) cb(); },
+      function(){ if (!_allEmployees) _allEmployees = []; if (cb) cb(); });
+  }
+  function noMeetingMsg(month) {
+    return '<div style="text-align:center;color:#9CA3AF;font-size:13px;padding:22px 0;">' +
+           'No meeting was conducted ' + (month ? ('in ' + esc(month)) : 'in this period') + '.</div>';
+  }
+
   // ── Navigation ────────────────────────────────────────────────
   var TOPBAR = {
     overview: { title: 'Overview',        sub: 'Organisation-wide meeting summary'       },
@@ -533,6 +559,8 @@
 
   // ── Dashboard (Overview) ──────────────────────────────────────
   function loadOverview() {
+    // Load the employee master in parallel → re-render with the full district list
+    ensureEmployees(function(){ if (_data) renderOverview(_data); });
     if (_data) { renderOverview(_data); return; }
     document.getElementById('ov-loading').style.display = 'block';
     document.getElementById('ov-content').style.display = 'none';
@@ -595,24 +623,32 @@
              '</div></div>';
     }).join('');
 
-    // ─ District Rank Board ─
-    var sortedDists = dists.slice().sort(function(a,b){ return b.conducted - a.conducted; }).slice(0, 5);
-    var maxC = sortedDists.length > 0 ? (sortedDists[0].conducted || 1) : 1;
+    // ─ District Rank Board — ALL districts (incl. those with no meeting) ─
+    var dstat = {};
+    dists.forEach(function(x){
+      dstat[String(x.name).trim().toUpperCase()] = { name:x.name, total:x.total||0, conducted:x.conducted||0 };
+    });
+    (_allEmployees || []).forEach(function(e){
+      if (!e.district) return;
+      var k = String(e.district).trim().toUpperCase();
+      if (!dstat[k]) dstat[k] = { name:e.district, total:0, conducted:0 };
+    });
+    var sortedDists = Object.keys(dstat).map(function(k){ return dstat[k]; })
+      .sort(function(a,b){ return b.conducted - a.conducted || String(a.name).localeCompare(String(b.name)); });
     var medals = ['🥇','🥈','🥉'];
     var rankHtml = sortedDists.map(function(di, i) {
       var p   = di.total > 0 ? Math.round((di.conducted/di.total)*100) : 0;
       var col = p>=80?'#065F46':p>=60?'#92400E':'#991B1B';
-      var bg  = p>=80?'#D1FAE5':p>=60?'#FEF3C7':'#FEE2E2';
+      var right = di.total === 0
+        ? '<div class="rank-pct" style="color:#9CA3AF;font-style:italic;">No meeting</div>'
+        : '<div class="rank-count">'+di.conducted+'</div><div class="rank-pct" style="color:'+col+';">'+p+'% rate</div>';
       return '<div class="rank-row">' +
              '<div class="rank-num" style="background:' + (i<3?['#FEF9C3','#F3F4F6','#FFEDD5'][i]:'#F3F4F6') +
              ';color:#374151;">' + (i<3 ? medals[i] : (i+1)) + '</div>' +
              '<div style="flex:1;min-width:0;">' +
              '<div class="rank-name">'+esc(di.name)+'</div>' +
              '</div>' +
-             '<div class="rank-right">' +
-             '<div class="rank-count">'+di.conducted+'</div>' +
-             '<div class="rank-pct" style="color:'+col+';">'+p+'% rate</div>' +
-             '</div></div>';
+             '<div class="rank-right">' + right + '</div></div>';
     }).join('') || '<div style="color:#9CA3AF;font-size:13px;">No data</div>';
     document.getElementById('ov-dist-rank').innerHTML = rankHtml;
 
@@ -671,6 +707,8 @@
   var CORE_DISTRICTS = ['BAHRAICH','FATEHPUR','GONDA','HARDOI','PRAYAGRAJ','SHAHJAHANPUR','SITAPUR'];
 
   function loadReports() {
+    // Fetch the employee master in parallel → full district list (incl. 0-meeting districts)
+    ensureEmployees(function(){ populateReportDistricts(); });
     if (_allMeetings) { applyReportFilters(); return; }
     document.getElementById('rp-sel-loading').style.display = 'flex';
     fetchJSON(withTok(GAS_URL + '?action=getReportData'),
@@ -702,9 +740,7 @@
   }
 
   function populateReportDistricts() {
-    var set = {};
-    _allMeetings.forEach(function(m){ if (m.district) set[m.district] = true; });
-    fillSelect(document.getElementById('rp-district-sel'), Object.keys(set).sort(), true);
+    fillSelect(document.getElementById('rp-district-sel'), allDistrictList(), true);
   }
 
   function populateReportBlocks() {
@@ -976,8 +1012,9 @@
     }
     byPost.sort(function(a,b){ return b.count-a.count; });
 
+    var rpEmpty = (dist && meetings.length === 0) ? noMeetingMsg(month) : null;
     document.getElementById('rp-bypost').innerHTML = byPost.length===0
-      ? '<div style="color:#9CA3AF;font-size:13px;padding:12px 0;">No conducted meetings</div>'
+      ? (rpEmpty || '<div style="color:#9CA3AF;font-size:13px;padding:12px 0;">No conducted meetings</div>')
       : byPost.map(function(bp){
           var empRows = bp.employees.map(function(em){
             return '<div class="post-emp-row"><span class="post-emp-name">'+em.name+'</span><span class="post-emp-n">'+em.count+'</span></div>';
@@ -985,30 +1022,55 @@
           return '<div class="post-card"><div class="post-card-head"><div class="post-card-name">'+bp.post+'</div><div class="post-card-count">'+bp.count+'</div></div>'+empRows+'</div>';
         }).join('');
 
-    document.getElementById('rp-table').innerHTML = conducted.length===0
-      ? '<div style="color:#9CA3AF;font-size:13px;padding:20px 0;text-align:center;">No conducted meetings for this selection</div>'
-      : '<table class="rep-table"><thead><tr>' +
-        '<th>#</th><th>Meeting ID</th><th>Date</th><th>District</th><th>By</th><th>Designation</th>' +
-        '<th>Met With</th><th>Post</th><th>Purpose</th><th>Type</th><th>MoM</th><th>Photos</th>' +
-        '</tr></thead><tbody>' +
-        conducted.map(function(r,i){
-          var momLink   = r.momUrl   ? '<a href="'+r.momUrl  +'" target="_blank" style="color:'+EG+';font-weight:700;text-decoration:none;white-space:nowrap;">&#128196; View</a>' : '<span style="color:#D1D5DB;">&#8212;</span>';
-          var photoLink = r.photoUrl ? '<a href="'+r.photoUrl+'" target="_blank" style="color:'+EG+';font-weight:700;text-decoration:none;white-space:nowrap;">&#128247; View</a>' : '<span style="color:#D1D5DB;">&#8212;</span>';
-          return '<tr>' +
-                 '<td style="color:#9CA3AF;font-weight:600;">'+(i+1)+'</td>' +
-                 '<td><span style="font-size:10.5px;font-weight:800;color:'+EG+';">'+r.meetingId+'</span></td>' +
-                 '<td style="white-space:nowrap;font-size:11.5px;">'+r.conductDate+'</td>' +
-                 '<td style="font-size:11px;color:#6B7280;">'+r.district+'</td>' +
-                 '<td style="font-weight:600;">'+r.employeeName+'</td>' +
-                 '<td style="font-size:11px;color:#6B7280;">'+r.post+'</td>' +
-                 '<td><strong>'+r.stakeholderName+'</strong></td>' +
-                 '<td style="font-size:11px;color:#6B7280;">'+r.stakeholderPost+'</td>' +
-                 '<td>'+r.purpose+'</td>' +
-                 '<td><span class="badge-type">'+r.meetingType+'</span></td>' +
-                 '<td>'+momLink+'</td>' +
-                 '<td>'+photoLink+'</td>' +
-                 '</tr>';
-        }).join('') + '</tbody></table>';
+    // All Conducted Meetings — paginated (20/page, newest first)
+    _rpConducted = conducted;               // already sorted newest-first
+    _rpEmptyMsg  = rpEmpty || '<div style="color:#9CA3AF;font-size:13px;padding:20px 0;text-align:center;">No conducted meetings for this selection</div>';
+    _rpPage = 0;
+    renderRpTable();
+  }
+
+  // ── Conducted-meetings pagination ─────────────────────────────
+  var _rpConducted = [], _rpPage = 0, _rpEmptyMsg = '';
+  var RP_PAGE = 20;
+  function rpPage(delta){ _rpPage += delta; renderRpTable(); document.getElementById('rp-table').scrollIntoView({ behavior:'smooth', block:'start' }); }
+  function renderRpTable(){
+    var host = document.getElementById('rp-table');
+    var total = _rpConducted.length;
+    if (total === 0){ host.innerHTML = _rpEmptyMsg; return; }
+    var pages = Math.ceil(total / RP_PAGE);
+    if (_rpPage > pages - 1) _rpPage = pages - 1;
+    if (_rpPage < 0) _rpPage = 0;
+    var start = _rpPage * RP_PAGE, end = Math.min(start + RP_PAGE, total);
+    var body = _rpConducted.slice(start, end).map(function(r, idx){
+      var i = start + idx;
+      var momLink   = r.momUrl   ? '<a href="'+r.momUrl  +'" target="_blank" style="color:'+EG+';font-weight:700;text-decoration:none;white-space:nowrap;">&#128196; View</a>' : '<span style="color:#D1D5DB;">&#8212;</span>';
+      var photoLink = r.photoUrl ? '<a href="'+r.photoUrl+'" target="_blank" style="color:'+EG+';font-weight:700;text-decoration:none;white-space:nowrap;">&#128247; View</a>' : '<span style="color:#D1D5DB;">&#8212;</span>';
+      return '<tr>' +
+             '<td style="color:#9CA3AF;font-weight:600;">'+(i+1)+'</td>' +
+             '<td><span style="font-size:10.5px;font-weight:800;color:'+EG+';">'+r.meetingId+'</span></td>' +
+             '<td style="white-space:nowrap;font-size:11.5px;">'+r.conductDate+'</td>' +
+             '<td style="font-size:11px;color:#6B7280;">'+r.district+'</td>' +
+             '<td style="font-weight:600;">'+r.employeeName+'</td>' +
+             '<td style="font-size:11px;color:#6B7280;">'+r.post+'</td>' +
+             '<td><strong>'+r.stakeholderName+'</strong></td>' +
+             '<td style="font-size:11px;color:#6B7280;">'+r.stakeholderPost+'</td>' +
+             '<td>'+r.purpose+'</td>' +
+             '<td><span class="badge-type">'+r.meetingType+'</span></td>' +
+             '<td>'+momLink+'</td>' +
+             '<td>'+photoLink+'</td>' +
+             '</tr>';
+    }).join('');
+    var table = '<table class="rep-table"><thead><tr>' +
+      '<th>#</th><th>Meeting ID</th><th>Date</th><th>District</th><th>By</th><th>Designation</th>' +
+      '<th>Met With</th><th>Post</th><th>Purpose</th><th>Type</th><th>MoM</th><th>Photos</th>' +
+      '</tr></thead><tbody>' + body + '</tbody></table>';
+    var pager = pages <= 1 ? '' :
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;flex-wrap:wrap;">' +
+        '<button onclick="rpPage(-1)" '+(_rpPage===0?'disabled':'')+' style="background:'+(_rpPage===0?'#F3F4F6':'#fff')+';border:1px solid #E5E7EB;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:700;color:'+(_rpPage===0?'#9CA3AF':EG)+';cursor:'+(_rpPage===0?'default':'pointer')+';">&#8592; Prev</button>' +
+        '<span style="font-size:12px;color:#6B7280;font-weight:600;">Showing '+(start+1)+'–'+end+' of '+total+'  ·  Page '+(_rpPage+1)+' / '+pages+'</span>' +
+        '<button onclick="rpPage(1)" '+(_rpPage>=pages-1?'disabled':'')+' style="background:'+(_rpPage>=pages-1?'#F3F4F6':'#fff')+';border:1px solid #E5E7EB;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:700;color:'+(_rpPage>=pages-1?'#9CA3AF':EG)+';cursor:'+(_rpPage>=pages-1?'default':'pointer')+';">Next &#8594;</button>' +
+      '</div>';
+    host.innerHTML = table + pager;
   }
 
   // ── Team Performance (designation-wise) ──────────────────────
@@ -1032,24 +1094,18 @@
         document.getElementById('pf-desigsummary').innerHTML =
           '<div style="text-align:center;padding:32px 0;color:#DC2626;font-size:13px;">' + esc(e.message || 'Failed to load') + '</div>';
       });
-    // Employee master (headcount) — powers Profile Coverage & Inactive lists
-    if (!_allEmployees) {
-      fetchJSON(withTok(GAS_URL + '?action=getEmployeeMaster'),
-        function(res){ _allEmployees = (res && res.employees) ? res.employees : []; if (_allMeetings) renderPerf(); },
-        function(){ _allEmployees = []; if (_allMeetings) renderPerf(); });
-    }
+    // Employee master (headcount) — powers Profile Coverage, Inactive & the full district list
+    ensureEmployees(function(){ buildPerfFilters(); if (_allMeetings) renderPerf(); });
   }
   var _allEmployees = null;
   function _normNm(s){ return (s||'').toString().trim().toLowerCase(); }
   function _normDg(s){ return (s||'').toString().trim() || '—'; }
 
   function buildPerfFilters() {
-    var dset = {}, mset = {};
-    _allMeetings.forEach(function(m){
-      if (m.district) dset[m.district] = 1;
-      var mk = monthKey(m.date); if (mk) mset[mk] = 1;
-    });
-    fillSelect(document.getElementById('pf-district'), Object.keys(dset).sort(), true);
+    fillSelect(document.getElementById('pf-district'), allDistrictList(), true);
+    if (!_allMeetings) return;   // months come from meetings; may load after the master
+    var mset = {};
+    _allMeetings.forEach(function(m){ var mk = monthKey(m.date); if (mk) mset[mk] = 1; });
     var months = Object.keys(mset).sort(function(a,b){ return monthSortVal(a) - monthSortVal(b); });
     fillSelect(document.getElementById('pf-month'), months, true);
   }
@@ -1093,26 +1149,32 @@
              '<div class="kpi-lbl">'+k.l+'</div></div>';
     }).join('');
 
-    // ── By Person (who did how many) ──
-    var pmap = {};
-    f.forEach(function(m){
-      var k = (m.employeeName || '—');
-      if (!pmap[k]) pmap[k] = { name:k, desig:(m.post||''), district:(m.district||''), count:0 };
-      pmap[k].count++;
-    });
-    var people = Object.keys(pmap).map(function(k){ return pmap[k]; }).sort(function(a,b){ return b.count - a.count; });
-    document.getElementById('pf-byperson').innerHTML = people.length === 0
-      ? '<div style="color:#9CA3AF;font-size:13px;padding:16px 0;">No meetings for this selection</div>'
-      : '<table class="rep-table"><thead><tr><th>#</th><th>Employee</th><th>Designation</th><th>District</th><th style="text-align:right;">Meetings</th></tr></thead><tbody>' +
-        people.map(function(p, i){
-          return '<tr>' +
-            '<td style="color:#9CA3AF;font-weight:600;">'+(i+1)+'</td>' +
-            '<td style="font-weight:700;">'+esc(p.name)+'</td>' +
-            '<td style="font-size:11px;color:#6B7280;">'+esc(p.desig)+'</td>' +
-            '<td style="font-size:11px;color:#6B7280;">'+esc(p.district)+'</td>' +
-            '<td style="text-align:right;font-weight:800;color:'+EG+';">'+p.count+'</td>' +
-          '</tr>';
-        }).join('') + '</tbody></table>';
+    // ── By Person (who did how many) — only when a district is selected ──
+    var bpCard = document.getElementById('pf-byperson-card');
+    if (!dist) {
+      bpCard.style.display = 'none';
+    } else {
+      bpCard.style.display = 'block';
+      var pmap = {};
+      f.forEach(function(m){
+        var k = (m.employeeName || '—');
+        if (!pmap[k]) pmap[k] = { name:k, desig:(m.post||''), district:(m.district||''), count:0 };
+        pmap[k].count++;
+      });
+      var people = Object.keys(pmap).map(function(k){ return pmap[k]; }).sort(function(a,b){ return b.count - a.count; });
+      document.getElementById('pf-byperson').innerHTML = people.length === 0
+        ? noMeetingMsg(month)
+        : '<table class="rep-table"><thead><tr><th>#</th><th>Employee</th><th>Designation</th><th>District</th><th style="text-align:right;">Meetings</th></tr></thead><tbody>' +
+          people.map(function(p, i){
+            return '<tr>' +
+              '<td style="color:#9CA3AF;font-weight:600;">'+(i+1)+'</td>' +
+              '<td style="font-weight:700;">'+esc(p.name)+'</td>' +
+              '<td style="font-size:11px;color:#6B7280;">'+esc(p.desig)+'</td>' +
+              '<td style="font-size:11px;color:#6B7280;">'+esc(p.district)+'</td>' +
+              '<td style="text-align:right;font-weight:800;color:'+EG+';">'+p.count+'</td>' +
+            '</tr>';
+          }).join('') + '</tbody></table>';
+    }
 
     // ── By Designation summary (designation → count), clickable for details ──
     _perfFiltered = f;
@@ -1206,6 +1268,37 @@
           '<td style="text-align:right;font-weight:800;">'+totPct+'%</td>' +
         '</tr>' +
         '</tbody></table>';
+    }
+
+    // ── Inactive team members — only when a district is selected ──
+    var inCard = document.getElementById('pf-inactive-card');
+    if (!dist) {
+      inCard.style.display = 'none';
+    } else {
+      inCard.style.display = 'block';
+      var inEl = document.getElementById('pf-inactive');
+      var inactive = emps.filter(function(e){ return !active[_normNm(e.name)]; })
+        .sort(function(a,b){ return _normDg(a.designation).localeCompare(_normDg(b.designation)) || (a.name||'').localeCompare(b.name||''); });
+      var head = '<div style="font-size:12px;font-weight:700;margin-bottom:10px;">' +
+        '<span style="color:#065F46;">'+totActive+' active</span> · ' +
+        '<span style="color:#B91C1C;">'+inactive.length+' inactive</span> · ' +
+        '<span style="color:#6B7280;">of '+totPeople+' team members ('+totPct+'% participation)</span></div>';
+      var note = (f.length === 0) ? noMeetingMsg(document.getElementById('pf-month').value) : '';
+      if (inactive.length === 0) {
+        inEl.innerHTML = head + '<div style="color:#065F46;font-size:13px;padding:8px 0;font-weight:600;">🎉 Everyone did at least one meeting in this selection.</div>';
+      } else {
+        inEl.innerHTML = head + note +
+          '<table class="rep-table"><thead><tr><th>#</th><th>Employee</th><th>Designation</th><th>District</th><th>Block</th></tr></thead><tbody>' +
+          inactive.map(function(e, i){
+            return '<tr>' +
+              '<td style="color:#9CA3AF;font-weight:600;">'+(i+1)+'</td>' +
+              '<td style="font-weight:700;">'+esc(e.name)+'</td>' +
+              '<td style="font-size:11px;color:#6B7280;">'+esc(e.designation||'')+'</td>' +
+              '<td style="font-size:11px;color:#6B7280;">'+esc(e.district||'')+'</td>' +
+              '<td style="font-size:11px;color:#6B7280;">'+esc(e.block||'')+'</td>' +
+            '</tr>';
+          }).join('') + '</tbody></table>';
+      }
     }
   }
 
