@@ -352,12 +352,6 @@
     <!-- ══════════ VIEW: DISTRICT REPORTS ══════════ -->
     <div id="view-reports" class="view">
 
-      <!-- Zero-activity / attention alert (auto-computed) -->
-      <div id="rp-alert-card" class="card" style="margin-bottom:18px;display:none;border-left:5px solid #B45309;background:#FFFBEB;">
-        <div class="card-title" style="color:#92400E;">⚠️ Districts Needing Attention<span style="font-weight:400;color:#B45309;text-transform:none;letter-spacing:0;font-size:11px;">(no conducted meetings yet)</span><span class="card-title-line" style="background:#FDE68A;"></span></div>
-        <div id="rp-alert-body"></div>
-      </div>
-
       <!-- District + Month selector -->
       <div class="card" style="margin-bottom:18px;">
         <div class="card-title">Select District, Block &amp; Month<span class="card-title-line"></span></div>
@@ -777,8 +771,8 @@
 
   // ── Auto "districts needing attention" (zero conducted) ───────
   function renderAttentionAlert() {
-    if (!_allMeetings) return;
     var card = document.getElementById('rp-alert-card');
+    if (!card || !_allMeetings) return;   // alert card removed — no-op
     var body = document.getElementById('rp-alert-body');
 
     // Tally per district from all meetings
