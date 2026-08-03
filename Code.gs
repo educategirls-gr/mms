@@ -304,7 +304,7 @@ function apiResponse(e, method) {
     var token  = (e && e.parameter && e.parameter.token) ? e.parameter.token : '';
     // getDashboardStats / getDistrictReport are public — power the open
     // State Analytics Portal (report.html), which needs no login.
-    var PUBLIC = { sendOTP: 1, verifyOTP: 1, getDashboardStats: 1, getDistrictReport: 1, getReportData: 1 };
+    var PUBLIC = { sendOTP: 1, verifyOTP: 1, getDashboardStats: 1, getDistrictReport: 1, getReportData: 1, getEmployeeMaster: 1 };
     var ADMIN  = { bulkUpdateEmployeeDB: 1, importFromSource: 1, peekSourceSheet: 1 };
 
     if (PUBLIC[action]) {
@@ -314,6 +314,7 @@ function apiResponse(e, method) {
       else if (action === 'getDashboardStats') result = getDashboardStats(e.parameter.email || '', e.parameter.all === '1');
       else if (action === 'getDistrictReport') result = getDistrictReport(e.parameter.district || '');
       else if (action === 'getReportData')     result = getReportData();
+      else if (action === 'getEmployeeMaster') result = getEmployeeMaster();
     } else {
       // ── Auth required: identity comes from the session token, ──
       //    NOT from client-supplied params (prevents spoofing)
@@ -2168,6 +2169,37 @@ function getEmployeeByName(name) {
 //  from the creator's email via Employee_DB. Client filters by
 //  District × Block × Month (any combination, incl. "All").
 // ------------------------------------------------------------
+// ------------------------------------------------------------
+//  EMPLOYEE MASTER (public) — name/designation/district/block only
+//  (no email/role). Powers the coverage & active/inactive reports.
+// ------------------------------------------------------------
+function getEmployeeMaster() {
+  try {
+    var cacheKey = 'empMaster';
+    var hit = cGet(cacheKey);
+    if (hit) return hit;
+    var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var sheet = ss.getSheetByName(EMPLOYEE_SHEET);
+    var out   = { success: true, employees: [] };
+    if (sheet) {
+      var data = sheet.getDataRange().getValues();
+      // Cols: District(0) Block(1) Name(2) Designation(3) Email(4) Role(5) Zone(6)
+      for (var i = 1; i < data.length; i++) {
+        var name = (data[i][2] || '').toString().trim();
+        if (!name) continue;
+        out.employees.push({
+          name:        name,
+          designation: (data[i][3] || '').toString().trim(),
+          district:    (data[i][0] || '').toString().trim(),
+          block:       (data[i][1] || '').toString().trim()
+        });
+      }
+    }
+    cPut(cacheKey, out, C_TTL_DROP);
+    return out;
+  } catch(err) { return { success: false, message: err.message }; }
+}
+
 function getReportData() {
   try {
     var cacheKey = 'reportData';

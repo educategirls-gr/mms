@@ -433,6 +433,20 @@
 
       <div class="section-label" id="pf-label"></div>
 
+      <!-- Profile Coverage — people in a profile vs entries done -->
+      <div class="card" style="margin-bottom:18px;">
+        <div class="card-title">Profile Coverage<span class="card-title-line"></span></div>
+        <div style="font-size:12px;color:#6B7280;margin:-6px 0 12px;">Team size vs activity per profile — how many people did at least one meeting.</div>
+        <div id="pf-coverage" style="overflow-x:auto;"></div>
+      </div>
+
+      <!-- Active vs Inactive team members -->
+      <div class="card" style="margin-bottom:18px;">
+        <div class="card-title">Inactive Team Members<span class="card-title-line"></span></div>
+        <div style="font-size:12px;color:#6B7280;margin:-6px 0 12px;">Team members with <b>no meeting</b> in the selected filters.</div>
+        <div id="pf-inactive" style="overflow-x:auto;"></div>
+      </div>
+
       <!-- By Designation summary (designation → meetings) — click a row for details -->
       <div class="card" style="margin-bottom:18px;">
         <div class="card-title">By Designation<span class="card-title-line"></span></div>
@@ -1025,7 +1039,16 @@
         document.getElementById('pf-desigsummary').innerHTML =
           '<div style="text-align:center;padding:32px 0;color:#DC2626;font-size:13px;">' + esc(e.message || 'Failed to load') + '</div>';
       });
+    // Employee master (headcount) — powers Profile Coverage & Inactive lists
+    if (!_allEmployees) {
+      fetchJSON(withTok(GAS_URL + '?action=getEmployeeMaster'),
+        function(res){ _allEmployees = (res && res.employees) ? res.employees : []; if (_allMeetings) renderPerf(); },
+        function(){ _allEmployees = []; if (_allMeetings) renderPerf(); });
+    }
   }
+  var _allEmployees = null;
+  function _normNm(s){ return (s||'').toString().trim().toLowerCase(); }
+  function _normDg(s){ return (s||'').toString().trim() || '—'; }
 
   function buildPerfFilters() {
     var dset = {}, mset = {};
@@ -1054,6 +1077,8 @@
     document.getElementById('pf-count').textContent = f.length + ' meeting' + (f.length !== 1 ? 's' : '');
     document.getElementById('pf-label').textContent =
       (dist ? dist.toUpperCase() : 'ALL DISTRICTS') + '  ·  ' + (month || 'All Months') + '  ·  ' + (st || 'All Statuses');
+
+    renderCoverage(f, dist);
 
     // ── KPI stat cards ──
     var uPeople = {}, uDesig = {}, uDist = {};
@@ -1114,6 +1139,101 @@
             '<td style="text-align:right;color:'+EG+';font-size:11px;font-weight:700;">View &#9656;</td>' +
           '</tr>';
         }).join('') + '</tbody></table>';
+  }
+
+  // ── Profile Coverage + Inactive team members ──
+  function renderCoverage(f, dist) {
+    var covEl  = document.getElementById('pf-coverage');
+    var inacEl = document.getElementById('pf-inactive');
+    if (!covEl || !inacEl) return;
+    if (!_allEmployees) {
+      covEl.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:16px 0;">Loading team master…</div>';
+      inacEl.innerHTML = '';
+      return;
+    }
+    // People who did at least one meeting in the current filters
+    var active = {};
+    f.forEach(function(m){ if (m.employeeName) active[_normNm(m.employeeName)] = 1; });
+    // Team members in scope (respect the district filter)
+    var emps = _allEmployees.filter(function(e){
+      return !dist || (e.district || '').toUpperCase() === dist.toUpperCase();
+    });
+    // name → designation (from master) so meeting counts group by the master's profile
+    var nameDesig = {};
+    emps.forEach(function(e){ nameDesig[_normNm(e.name)] = _normDg(e.designation); });
+
+    // Build coverage buckets keyed by designation
+    var cov = {};
+    function bucket(d){ if (!cov[d]) cov[d] = { desig:d, total:0, active:0, meetings:0 }; return cov[d]; }
+    emps.forEach(function(e){
+      var b = bucket(_normDg(e.designation));
+      b.total++;
+      if (active[_normNm(e.name)]) b.active++;
+    });
+    f.forEach(function(m){
+      var d = nameDesig[_normNm(m.employeeName)] || _normDg(m.post);
+      bucket(d).meetings++;
+    });
+    var arr = Object.keys(cov).map(function(k){
+      var c = cov[k]; c.pct = c.total ? Math.round(c.active / c.total * 100) : 0; return c;
+    }).sort(function(a,b){ return b.total - a.total || b.meetings - a.meetings; });
+
+    var totPeople = emps.length;
+    var totActive = emps.filter(function(e){ return active[_normNm(e.name)]; }).length;
+    var totPct = totPeople ? Math.round(totActive / totPeople * 100) : 0;
+
+    // ── Coverage table ──
+    if (arr.length === 0) {
+      covEl.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:16px 0;">No team members'+(dist?' in this district':'')+'</div>';
+    } else {
+      covEl.innerHTML =
+        '<table class="rep-table"><thead><tr><th>#</th><th>Profile / Designation</th>' +
+        '<th style="text-align:right;">People</th><th style="text-align:right;">Active</th>' +
+        '<th style="text-align:right;">Meetings</th><th style="text-align:right;">Participation</th></tr></thead><tbody>' +
+        arr.map(function(c, i){
+          var col = c.pct >= 75 ? '#065F46' : (c.pct >= 40 ? '#92400E' : '#B91C1C');
+          var bg  = c.pct >= 75 ? '#ECFDF5' : (c.pct >= 40 ? '#FFFBEB' : '#FEF2F2');
+          return '<tr>' +
+            '<td style="color:#9CA3AF;font-weight:600;">'+(i+1)+'</td>' +
+            '<td style="font-weight:700;">'+esc(c.desig)+'</td>' +
+            '<td style="text-align:right;font-weight:700;">'+c.total+'</td>' +
+            '<td style="text-align:right;font-weight:700;color:#1D4ED8;">'+c.active+'</td>' +
+            '<td style="text-align:right;font-weight:800;color:'+EG+';">'+c.meetings+'</td>' +
+            '<td style="text-align:right;"><span style="display:inline-block;min-width:44px;padding:3px 8px;border-radius:20px;font-weight:800;font-size:12px;color:'+col+';background:'+bg+';">'+c.pct+'%</span></td>' +
+          '</tr>';
+        }).join('') +
+        '<tr style="border-top:2px solid #E5E7EB;background:#FAFAFA;">' +
+          '<td></td><td style="font-weight:800;">TOTAL</td>' +
+          '<td style="text-align:right;font-weight:800;">'+totPeople+'</td>' +
+          '<td style="text-align:right;font-weight:800;color:#1D4ED8;">'+totActive+'</td>' +
+          '<td style="text-align:right;font-weight:800;color:'+EG+';">'+f.length+'</td>' +
+          '<td style="text-align:right;font-weight:800;">'+totPct+'%</td>' +
+        '</tr>' +
+        '</tbody></table>';
+    }
+
+    // ── Inactive team members ──
+    var inactive = emps.filter(function(e){ return !active[_normNm(e.name)]; })
+      .sort(function(a,b){ return _normDg(a.designation).localeCompare(_normDg(b.designation)) || (a.name||'').localeCompare(b.name||''); });
+    var head = '<div style="font-size:12px;font-weight:700;margin-bottom:10px;">' +
+      '<span style="color:#065F46;">'+totActive+' active</span> · ' +
+      '<span style="color:#B91C1C;">'+inactive.length+' inactive</span> · ' +
+      '<span style="color:#6B7280;">of '+totPeople+' team members ('+totPct+'% participation)</span></div>';
+    if (inactive.length === 0) {
+      inacEl.innerHTML = head + '<div style="color:#065F46;font-size:13px;padding:8px 0;font-weight:600;">🎉 Everyone did at least one meeting in this selection.</div>';
+    } else {
+      inacEl.innerHTML = head +
+        '<table class="rep-table"><thead><tr><th>#</th><th>Employee</th><th>Designation</th><th>District</th><th>Block</th></tr></thead><tbody>' +
+        inactive.map(function(e, i){
+          return '<tr>' +
+            '<td style="color:#9CA3AF;font-weight:600;">'+(i+1)+'</td>' +
+            '<td style="font-weight:700;">'+esc(e.name)+'</td>' +
+            '<td style="font-size:11px;color:#6B7280;">'+esc(e.designation||'')+'</td>' +
+            '<td style="font-size:11px;color:#6B7280;">'+esc(e.district||'')+'</td>' +
+            '<td style="font-size:11px;color:#6B7280;">'+esc(e.block||'')+'</td>' +
+          '</tr>';
+        }).join('') + '</tbody></table>';
+    }
   }
 
   var _perfFiltered = [], _perfDesigs = [], _openDesig = -1;
