@@ -2,3 +2,4 @@ docs/**
 .git/**
 *.md
 .claspignore
+build-pages.js
