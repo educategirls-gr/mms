@@ -636,7 +636,8 @@
       if (!dstat[k]) dstat[k] = { name:e.district, total:0, conducted:0 };
     });
     var sortedDists = Object.keys(dstat).map(function(k){ return dstat[k]; })
-      .sort(function(a,b){ return b.conducted - a.conducted || String(a.name).localeCompare(String(b.name)); });
+      .sort(function(a,b){ return b.conducted - a.conducted || String(a.name).localeCompare(String(b.name)); })
+      .slice(0, 5);   // Overview board shows only the top 5 districts
     var medals = ['🥇','🥈','🥉'];
     var rankHtml = sortedDists.map(function(di, i) {
       var p   = di.total > 0 ? Math.round((di.conducted/di.total)*100) : 0;
