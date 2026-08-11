@@ -1030,18 +1030,25 @@
       document.getElementById('nav-state').style.display = '';
     }
 
-    // State / Zone: they aren't tied to one district → let them pick the meeting's district
-    if (_role === 'State' || _role === 'Zone') {
-      gasFetch('getPlanDistricts', {}, function(list) {
-        if (!list || !list.length) return;
-        _myDistricts = list.slice();   // full district list for this role's scope (used by Zone/State filters)
-        var sel = document.getElementById('plan-district');
-        list.forEach(function(d) {
-          var o = document.createElement('option'); o.value = d; o.textContent = d; sel.appendChild(o);
-        });
-        document.getElementById('plan-district-row').style.display = 'flex';
+    // Every role can pick the meeting's district (own scope + state-level extras like LUCKNOW),
+    // so anyone can file a meeting held in Lucknow even without a district team there.
+    gasFetch('getPlanDistricts', {}, function(list) {
+      if (!list || !list.length) return;
+      _myDistricts = list.slice();   // full district list for this role's scope (used by Zone/State filters)
+      var sel = document.getElementById('plan-district');
+      list.forEach(function(d) {
+        var o = document.createElement('option'); o.value = d; o.textContent = d; sel.appendChild(o);
       });
-    }
+      // Default to the user's active/home district when they have one
+      if (ACTIVE_DISTRICT) {
+        sel.value = ACTIVE_DISTRICT;
+        if (sel.value !== ACTIVE_DISTRICT) {   // not in list → add it and keep it selected
+          var o = document.createElement('option'); o.value = ACTIVE_DISTRICT; o.textContent = ACTIVE_DISTRICT;
+          sel.appendChild(o); sel.value = ACTIVE_DISTRICT;
+        }
+      }
+      document.getElementById('plan-district-row').style.display = 'flex';
+    });
 
     // Field role: hide "Delete Meeting" — prevents fake-meeting create-then-delete (keeps full audit trail)
     if (_role === 'Field') {

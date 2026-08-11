@@ -334,7 +334,7 @@ function apiResponse(e, method) {
         else if (action === 'getDistrictEmployees') result = getDistrictEmployees(resolveActiveDistrict_(session, e.parameter.district), session.email);
         else if (action === 'getAllEmployees')      result = getAllEmployees(session.email);
         else if (action === 'getZoneTeamEmployees') result = getZoneTeamEmployees(session.zone, session.email);
-        else if (action === 'getPlanDistricts')     result = getPlanDistricts(session.role, session.zone);
+        else if (action === 'getPlanDistricts')     result = getPlanDistricts(session.role, session.zone, (session.districts && session.districts.length) ? session.districts : [session.district]);
         else if (action === 'getDistrictAllMeetings') {
           // Active district: own/charge districts for District role; any for State
           result = getDistrictAllMeetings(resolveActiveDistrict_(session, e.parameter.district));
@@ -581,6 +581,8 @@ function getSession(token) {
 // ------------------------------------------------------------
 function resolveActiveDistrict_(session, requested) {
   var req  = (requested || '').toString().trim();
+  // State-level-only districts (e.g. LUCKNOW): ANY role may file a meeting here.
+  if (req && STATE_EXTRA_DISTRICTS.some(function(d){ return d.toLowerCase() === req.toLowerCase(); })) return req;
   var role = (session && session.role || '').toString();
   if (role === 'State') return req || (session && session.district) || '';
   if (role === 'Zone') {
@@ -606,21 +608,30 @@ function resolveActiveDistrict_(session, requested) {
 //  PLAN DISTRICTS — districts a State/Zone user may file a meeting
 //  under. State → all districts; Zone → districts in their zone.
 // ------------------------------------------------------------
-function getPlanDistricts(role, zone) {
+function getPlanDistricts(role, zone, ownDistricts) {
   role = (role || '').toString().trim();
+  var base;
   if (role === 'Zone') {
-    // Only the admin districts in this lead's zone (from the fixed mapping)
+    // The admin districts in this lead's zone (from the fixed mapping)
     var zkey = findZoneKey_(zone);
-    return zkey ? ZONE_DISTRICTS[zkey].slice().sort() : [];
+    base = zkey ? ZONE_DISTRICTS[zkey].slice() : [];
+  } else if (role === 'State') {
+    // All admin districts across every zone
+    base = [];
+    for (var z in ZONE_DISTRICTS) base = base.concat(ZONE_DISTRICTS[z]);
+  } else {
+    // District / Field → their own (primary + any charge) district(s)
+    base = (ownDistricts || []).slice();
   }
-  if (role === 'State') {
-    // All admin districts across every zone + state-level-only districts
-    var all = [];
-    for (var z in ZONE_DISTRICTS) all = all.concat(ZONE_DISTRICTS[z]);
-    all = all.concat(STATE_EXTRA_DISTRICTS);
-    return all.sort();
-  }
-  return [];
+  // Everyone also gets the state-level-only districts (e.g. LUCKNOW)
+  base = base.concat(STATE_EXTRA_DISTRICTS);
+  // De-dup (case-insensitive) + sort
+  var seen = {}, out = [];
+  base.forEach(function(d){
+    var k = (d || '').toString().trim();
+    if (k && !seen[k.toUpperCase()]) { seen[k.toUpperCase()] = 1; out.push(k); }
+  });
+  return out.sort();
 }
 
 // ------------------------------------------------------------
