@@ -1489,6 +1489,64 @@
     });
   }
 
+  // ── Govt MoM (official, PDF) — conductor uploads to their own conducted meeting ──
+  function govtMomHtml(r) {
+    var gm = (r.govtMom || '').split(/\s*,\s*/).filter(function(u){ return u; });
+    var links = gm.map(function(u, gi){
+      return '<a href="' + esc(u) + '" target="_blank" class="rep-link" style="background:#4338CA;color:#fff;margin-right:4px;">📄 Govt MoM' + (gm.length > 1 ? (' ' + (gi + 1)) : '') + '</a>';
+    }).join('');
+    var badge = gm.length ? '' :
+      '<span style="font-size:10px;color:#92400E;background:#FEF3C7;padding:2px 7px;border-radius:20px;font-weight:700;margin-right:4px;">Govt MoM pending</span>';
+    return '<div style="margin-top:5px;">' + badge + links +
+      '<button onclick="govtMomPick(\'' + esc(r.meetingId) + '\')" style="font-size:11px;font-weight:700;color:#4338CA;background:#EEF2FF;border:1px solid #C7D2FE;border-radius:7px;padding:3px 9px;cursor:pointer;">⬆ Upload Govt MoM (PDF)</button>' +
+      '</div>';
+  }
+  var _govtMomMeetingId = '';
+  function govtMomPick(meetingId) {
+    _govtMomMeetingId = meetingId;
+    var inp = document.getElementById('govtMomFileInput');
+    if (!inp) {
+      inp = document.createElement('input');
+      inp.type = 'file'; inp.id = 'govtMomFileInput';
+      inp.accept = 'application/pdf,.pdf'; inp.multiple = true;
+      inp.style.display = 'none';
+      inp.addEventListener('change', govtMomUpload);
+      document.body.appendChild(inp);
+    }
+    inp.value = '';
+    inp.click();
+  }
+  function govtMomUpload(ev) {
+    var files = Array.prototype.slice.call(ev.target.files || []);
+    if (!files.length) return;
+    for (var i = 0; i < files.length; i++) {
+      var f = files[i];
+      if ((f.type || '').indexOf('pdf') === -1 && !/\.pdf$/i.test(f.name)) {
+        err('Sirf PDF file allowed hai (Govt MoM).'); return;
+      }
+    }
+    showToast('Govt MoM upload ho raha hai…');
+    var payload = { meetingId: _govtMomMeetingId, files: [] };
+    var done = 0;
+    files.forEach(function(f) {
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        payload.files.push({ name: f.name, type: f.type || 'application/pdf', data: e.target.result.split(',')[1] });
+        if (++done === files.length) {
+          gasPost('uploadGovtMom', payload, function(res) {
+            if (res && res.success) {
+              showToast('✅ Govt MoM upload ho gaya (' + res.added + ' file)');
+              loadReports(true);   // refresh My Meetings
+            } else {
+              err((res && res.message) || 'Upload failed');
+            }
+          }, function(e2) { err('Server error: ' + e2.message); });
+        }
+      };
+      reader.readAsDataURL(f);
+    });
+  }
+
   function mymUpdateLabel() {
     var now = new Date();
     document.getElementById('mym-month-label').textContent = _MONTHS[_mymMonth] + ' ' + _mymYear;
@@ -1587,6 +1645,7 @@
         if (r.momLink)   links += '<a href="' + esc(r.momLink)   + '" target="_blank" class="rep-link rep-link-mom" style="margin-right:4px;">MoM</a>';
         if (r.photoLink) links += '<a href="' + esc(r.photoLink) + '" target="_blank" class="rep-link rep-link-photo">Photos</a>';
         if (links) details += '<div style="margin-top:3px;">' + links + '</div>';
+        details += govtMomHtml(r);
         if (r.colleagueName) details += '<div style="color:#9CA3AF;font-size:11px;margin-top:2px;">With: ' + esc(r.colleagueName) + (r.colleaguePost ? ' (' + esc(r.colleaguePost) + ')' : '') + '</div>';
       } else if (st === 'Postponed') {
         if (r.reason) details = '<span style="color:#92400E;">' + esc(r.reason) + '</span>';

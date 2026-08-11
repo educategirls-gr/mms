@@ -364,6 +364,7 @@ function apiResponse(e, method) {
           result = saveMeeting(body);
         }
         else if (action === 'conductMeeting')   { body.email = session.email; result = conductMeeting(body); }
+        else if (action === 'uploadGovtMom')    { result = uploadGovtMom(body, session); }
         else if (action === 'postponeMeeting')  { body.email = session.email; result = postponeMeeting(body); }
         else if (action === 'cancelMeeting')    { body.email = session.email; result = cancelMeeting(body); }
         else if (action === 'updateMeetingStatus') result = updateMeetingStatus(body.meetingId || '', body);
@@ -1068,7 +1069,7 @@ function conductMeeting(payload) {
                 'Original Date','Original Time','Duration','Meeting Type',
                 'Stakeholder Name','Stakeholder Post','Purpose','Agenda',
                 'Conduct Date','Conduct Time','Key Points',
-                'Photos Folder','MoM Doc','Colleague Name','Colleague Post','Conducted At'];
+                'Photos Folder','MoM Doc','Colleague Name','Colleague Post','Conducted At','Govt MoM'];
       cSheet.appendRow(ch);
       cSheet.getRange(1,1,1,ch.length).setBackground('#166534').setFontColor('#fff').setFontWeight('bold');
       cSheet.setFrozenRows(1);
@@ -1103,6 +1104,75 @@ function conductMeeting(payload) {
     return { success: true, momUrl: momUrl, photoFolderUrl: photoFolderUrl, followUpId: followUpId, photoError: photoError };
   } catch(err) {
     return { success: false, message: err.message };
+  }
+}
+
+// ------------------------------------------------------------
+//  UPLOAD GOVT MoM — the meeting's conductor attaches the official
+//  government-issued MoM (PDF only) to an already-conducted meeting.
+//  Stored in CONDUCTED_SHEET column V ("Govt MoM"), comma-separated URLs.
+// ------------------------------------------------------------
+var GOVT_MOM_COL = 22;   // Column V (1-based) in the Conducted Meetings sheet
+
+function uploadGovtMom(payload, session) {
+  try {
+    var meetingId = (payload && payload.meetingId || '').toString().trim();
+    var files     = (payload && payload.files) || [];
+    if (!meetingId)    return { success:false, message:'Missing meeting id' };
+    if (!files.length) return { success:false, message:'No file provided' };
+
+    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var cS = ss.getSheetByName(CONDUCTED_SHEET);
+    if (!cS) return { success:false, message:'No conducted meetings found' };
+
+    // Find the conducted row + verify the caller is the conductor
+    var data = cS.getDataRange().getValues();
+    var rowIdx = -1, rowEmail = '', district = '';
+    for (var i = 1; i < data.length; i++) {
+      if ((data[i][0] || '').toString() === meetingId) {
+        rowIdx   = i;
+        rowEmail = (data[i][4] || '').toString().trim().toLowerCase();  // E = conductor email
+        district = (data[i][1] || '').toString();                       // B = district
+        break;
+      }
+    }
+    if (rowIdx < 0) return { success:false, message:'Meeting not found or not yet conducted' };
+
+    var caller = (session && session.email || '').toString().trim().toLowerCase();
+    if (!caller || caller !== rowEmail) {
+      return { success:false, message:'Only the person who conducted this meeting can upload its Govt MoM.' };
+    }
+
+    // Validate (PDF only) + save to the meeting's Drive folder
+    var root  = getRootMeetingsFolder();
+    var distF = getOrCreateFolder(root, district || 'General');
+    var mtgF  = getOrCreateFolder(distF, meetingId);
+    try { mtgF.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch(e) {}
+
+    var newUrls = [];
+    for (var f = 0; f < files.length; f++) {
+      var file = files[f];
+      var type = (file.type || '').toString().toLowerCase();
+      var name = (file.name || '').toString();
+      var isPdf = type.indexOf('pdf') !== -1 || /\.pdf$/i.test(name);
+      if (!isPdf) return { success:false, message:'Only PDF files are allowed for the Govt MoM.' };
+      var decoded = Utilities.base64Decode(file.data);
+      var blob = Utilities.newBlob(decoded, 'application/pdf',
+                   meetingId + '_GovtMoM_' + (new Date().getTime()) + '_' + (f+1) + '.pdf');
+      var saved = mtgF.createFile(blob);
+      try { saved.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch(e) {}
+      newUrls.push(saved.getUrl());
+    }
+
+    // Append to column V (keep anything previously uploaded)
+    var existing = (data[rowIdx][GOVT_MOM_COL - 1] || '').toString().trim();
+    var all = (existing ? existing.split(/\s*,\s*/) : []).concat(newUrls).filter(function(u){ return u; });
+    cS.getRange(rowIdx + 1, GOVT_MOM_COL).setValue(all.join(', '));
+
+    invalidateUser(rowEmail);   // clears mymtg_<email> + reportData so it shows immediately
+    return { success:true, govtMom: all.join(', '), count: all.length, added: newUrls.length };
+  } catch(err) {
+    return { success:false, message: err.message };
   }
 }
 
@@ -1526,6 +1596,7 @@ function getAllMyMeetings(email) {
           keyPoints:    (cd[j][15] || '').toString(),
           photoLink:    (cd[j][16] || '').toString(),
           momLink:      (cd[j][17] || '').toString(),
+          govtMom:      (cd[j][21] || '').toString(),   // V = Govt MoM (comma-separated PDF urls)
           colleagueName:(cd[j][18] || '').toString(),
           colleaguePost:(cd[j][19] || '').toString(),
           reason: '', parentMeetingId: ''
@@ -2269,6 +2340,7 @@ function getReportData() {
           meetingType:(cd[b][8]||'').toString(), stakeholderName:(cd[b][9]||'').toString(),
           stakeholderPost:(cd[b][10]||'').toString(), purpose:(cd[b][11]||'').toString(),
           momUrl:(cd[b][17]||'').toString(), photoUrl:(cd[b][16]||'').toString(),
+          govtMom:(cd[b][21]||'').toString(),
           colleagueName:(cd[b][18]||'').toString()
         });
       }

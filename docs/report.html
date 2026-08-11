@@ -1048,6 +1048,8 @@
       var i = start + idx;
       var momLink   = r.momUrl   ? '<a href="'+r.momUrl  +'" target="_blank" style="color:'+EG+';font-weight:700;text-decoration:none;white-space:nowrap;">&#128196; View</a>' : '<span style="color:#D1D5DB;">&#8212;</span>';
       var photoLink = r.photoUrl ? '<a href="'+r.photoUrl+'" target="_blank" style="color:'+EG+';font-weight:700;text-decoration:none;white-space:nowrap;">&#128247; View</a>' : '<span style="color:#D1D5DB;">&#8212;</span>';
+      var _gm = (r.govtMom||'').split(/\s*,\s*/).filter(function(u){ return u; });
+      var govtLink = _gm.length ? '<a href="'+_gm[0]+'" target="_blank" style="color:#4338CA;font-weight:700;text-decoration:none;white-space:nowrap;">&#128196; '+(_gm.length>1?(_gm.length+' PDFs'):'View')+'</a>' : '<span style="color:#D1D5DB;">&#8212;</span>';
       return '<tr>' +
              '<td style="color:#9CA3AF;font-weight:600;">'+(i+1)+'</td>' +
              '<td><span style="font-size:10.5px;font-weight:800;color:'+EG+';">'+r.meetingId+'</span></td>' +
@@ -1061,11 +1063,12 @@
              '<td><span class="badge-type">'+r.meetingType+'</span></td>' +
              '<td>'+momLink+'</td>' +
              '<td>'+photoLink+'</td>' +
+             '<td>'+govtLink+'</td>' +
              '</tr>';
     }).join('');
     var table = '<table class="rep-table"><thead><tr>' +
       '<th>#</th><th>Meeting ID</th><th>Date</th><th>District</th><th>By</th><th>Designation</th>' +
-      '<th>Met With</th><th>Post</th><th>Purpose</th><th>Type</th><th>MoM</th><th>Photos</th>' +
+      '<th>Met With</th><th>Post</th><th>Purpose</th><th>Type</th><th>MoM</th><th>Photos</th><th>Govt MoM</th>' +
       '</tr></thead><tbody>' + body + '</tbody></table>';
     var pager = pages <= 1 ? '' :
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;flex-wrap:wrap;">' +
