@@ -614,9 +614,10 @@ function getPlanDistricts(role, zone) {
     return zkey ? ZONE_DISTRICTS[zkey].slice().sort() : [];
   }
   if (role === 'State') {
-    // All admin districts across every zone
+    // All admin districts across every zone + state-level-only districts
     var all = [];
     for (var z in ZONE_DISTRICTS) all = all.concat(ZONE_DISTRICTS[z]);
+    all = all.concat(STATE_EXTRA_DISTRICTS);
     return all.sort();
   }
   return [];
@@ -1837,6 +1838,9 @@ var ZONE_DISTRICTS = {
   'UP ZONE-2': ['BAHRAICH','SHRAVASTI','BALRAMPUR','GONDA','KUSHINAGAR','MAHARAJGANJ'],
   'UP ZONE-3': ['BUDAUN','FARRUKHABAD','HARDOI','LAKHIMPUR KHERI','SHAHJAHANPUR','BARA BANKI','SITAPUR']
 };
+// State-level-only districts — selectable by State users when planning a meeting,
+// but not part of any zone (zone leads don't see them; not zone-grouped in analytics).
+var STATE_EXTRA_DISTRICTS = ['LUCKNOW'];
 function normDist_(d) { return (d || '').toString().trim().toUpperCase().replace(/\s+/g, ''); }
 function findZoneKey_(zone) {
   var zn = normDist_(zone);
