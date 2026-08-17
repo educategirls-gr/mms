@@ -101,17 +101,18 @@ function setDemoRole_(role) {
 //  To reuse for someone else, just edit the two lines below and re-run.
 // ------------------------------------------------------------
 function setupDualCharge() {
-  // Each entry: [email, extra district(s)] — extra MUST match the exact district
-  // name used in Employee_DB / meeting sheets (e.g. "LAKHIMPUR KHERI", not "LAKHIMPUR").
+  // Each entry: [identifier, extra district(s)] — identifier can be an EMAIL
+  // (contains '@') or the exact employee NAME. extra MUST match the exact
+  // district name used in Employee_DB / meeting sheets (e.g. "LAKHIMPUR KHERI",
+  // not "LAKHIMPUR"; "FARRUKHABAD"). Only the listed rows are touched — other
+  // people's existing charge in col H is left untouched.
   var GRANTS = [
-    ['vikash.tiwari@educategirls.ngo',  'LAKHIMPUR KHERI'],
-    ['ankit.dixit@educategirls.ngo',    'LAKHIMPUR KHERI'],
-    ['indradev.tiwari@educategirls.ngo','LAKHIMPUR KHERI']
+    ['Manvendra Mishra', 'FARRUKHABAD']   // primary HARDOI stays; adds FARRUKHABAD charge
   ];
 
   var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName(EMPLOYEE_SHEET);
-  if (!sheet) { Logger.log('❌ Employee sheet not found: ' + EMPLOYEE_SHEET); return; }
+  if (!sheet) { return '❌ Employee sheet not found: ' + EMPLOYEE_SHEET; }
 
   var COL_H = 8;   // H = Additional Districts (A=1 … G=7 Zone, H=8)
   if (!sheet.getRange(1, COL_H).getValue()) {
@@ -120,20 +121,27 @@ function setupDualCharge() {
 
   var data  = sheet.getDataRange().getValues();
   var cache = CacheService.getScriptCache();
+  var out = [];
   GRANTS.forEach(function(g) {
-    var email = (g[0] || '').trim().toLowerCase();
-    var extra = g[1] || '';
+    var id      = (g[0] || '').toString().trim().toLowerCase();
+    var byEmail = id.indexOf('@') !== -1;
+    var extra   = g[1] || '';
     for (var i = 1; i < data.length; i++) {
-      if ((data[i][4] || '').toString().trim().toLowerCase() === email) {
+      var rowEmail = (data[i][4] || '').toString().trim().toLowerCase();
+      var rowName  = (data[i][2] || '').toString().trim().toLowerCase();
+      if ((byEmail && rowEmail === id) || (!byEmail && rowName === id)) {
         sheet.getRange(i + 1, COL_H).setValue(extra);
-        try { cache.remove('emp_' + email); } catch(e) {}
-        Logger.log('✅ ' + (data[i][2] || '') + ' (' + (data[i][0] || '') + ') → "' + extra + '"  [cache cleared]');
+        try { cache.remove('emp_' + rowEmail); } catch(e) {}
+        var msg = '✅ ' + (data[i][2] || '') + ' (' + (data[i][0] || '') + ' + ' + extra + ')  [cache cleared]';
+        Logger.log(msg); out.push(msg);
         return;
       }
     }
-    Logger.log('❌ Email not found in Employee sheet: ' + g[0]);
+    var nf = '❌ Not found in Employee sheet: ' + g[0];
+    Logger.log(nf); out.push(nf);
   });
   Logger.log('🔄 Done. Ask these users to LOGOUT and LOGIN again.');
+  return out.join('\n') + '\n🔄 Done — user should LOGOUT and LOGIN again.';
 }
 
 // ------------------------------------------------------------
