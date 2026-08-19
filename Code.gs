@@ -145,6 +145,47 @@ function setupDualCharge() {
 }
 
 // ------------------------------------------------------------
+//  CHANGE PRIMARY DISTRICT — Run ONCE from GAS editor
+//  Corrects a user's home district (col A) in Employee_DB + clears cache.
+//  Only the listed rows are touched. District MUST be the exact spelling
+//  used across the system (e.g. "BUDAUN", "LAKHIMPUR KHERI").
+// ------------------------------------------------------------
+function setPrimaryDistrict() {
+  // [identifier (email preferred, or exact name), new primary district]
+  var CHANGES = [
+    ['rahul.kumar3@educategirls.ngo', 'BUDAUN']   // was HARDOI
+  ];
+
+  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(EMPLOYEE_SHEET);
+  if (!sheet) return '❌ Employee sheet not found: ' + EMPLOYEE_SHEET;
+
+  var data  = sheet.getDataRange().getValues();
+  var cache = CacheService.getScriptCache();
+  var out = [];
+  CHANGES.forEach(function(c) {
+    var id      = (c[0] || '').toString().trim().toLowerCase();
+    var byEmail = id.indexOf('@') !== -1;
+    var dist    = c[1] || '';
+    for (var i = 1; i < data.length; i++) {
+      var rowEmail = (data[i][4] || '').toString().trim().toLowerCase();
+      var rowName  = (data[i][2] || '').toString().trim().toLowerCase();
+      if ((byEmail && rowEmail === id) || (!byEmail && rowName === id)) {
+        var old = (data[i][0] || '').toString();
+        sheet.getRange(i + 1, 1).setValue(dist);   // col A = District
+        try { cache.remove('emp_' + rowEmail); } catch(e) {}
+        var msg = '✅ ' + (data[i][2] || '') + ': ' + old + ' → ' + dist + '  [cache cleared]';
+        Logger.log(msg); out.push(msg);
+        return;
+      }
+    }
+    var nf = '❌ Not found in Employee sheet: ' + c[0];
+    Logger.log(nf); out.push(nf);
+  });
+  return out.join('\n') + '\n🔄 Done — user should LOGOUT and LOGIN again.';
+}
+
+// ------------------------------------------------------------
 //  NORMALIZE DISTRICTS — Run ONCE from GAS editor
 //  Trims + UPPERCASEs the district column in Employee_DB and all
 //  4 meeting sheets so spelling/casing is consistent everywhere.
