@@ -3,3 +3,6 @@ docs/**
 *.md
 .claspignore
 build-pages.js
+*.sh
+scripts/**
+.github/**

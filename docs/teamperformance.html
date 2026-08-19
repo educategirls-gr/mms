@@ -297,6 +297,7 @@
       <div class="tb-sub"   id="topbar-sub">Organisation-wide meeting summary</div>
     </div>
     <div class="topbar-right">
+      <span id="snap-note" style="display:none;align-items:center;gap:6px;font-size:11px;font-weight:700;color:#fff;background:rgba(255,255,255,0.18);padding:5px 10px;border-radius:20px;white-space:nowrap;"></span>
       <span class="tb-badge">📅 <span id="top-date"></span></span>
       <button class="btn-refresh" onclick="refreshData()">&#x21BA; Refresh</button>
     </div>
@@ -486,6 +487,34 @@
     });
   }
 
+  // ── Static snapshot layer (30-min) — CDN-fast, falls back to live GAS ──
+  // Tries docs/data/*.json first (served instantly by the Pages CDN). If the
+  // file is missing/stale/invalid, or the user asked for live, it falls back
+  // to the live GAS endpoint — so the portal never breaks.
+  var _forceLive = false, _usingSnap = false, _snapAt = '';
+  function snapFetch(snapFile, liveUrl, onOk, onErr) {
+    if (_forceLive) { fetchJSON(liveUrl, onOk, onErr); return; }
+    fetch(snapFile, { cache: 'no-store' })
+      .then(function(r){ if (!r.ok) throw new Error('no snap'); return r.json(); })
+      .then(function(j){
+        if (!j || j.success === false || (!j.meetings && !j.employees && !j.totals)) throw new Error('bad snap');
+        if (j._snapshotAt) _snapAt = j._snapshotAt;
+        _usingSnap = true; updateSnapNote();
+        onOk(j);
+      })
+      .catch(function(){ fetchJSON(liveUrl, onOk, onErr); });
+  }
+  function updateSnapNote() {
+    var el = document.getElementById('snap-note'); if (!el) return;
+    if (_forceLive || !_usingSnap) { el.style.display = 'none'; return; }
+    var t = '';
+    if (_snapAt) { try { t = new Date(_snapAt).toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' }); } catch(e) {} }
+    el.innerHTML = '&#9889; Snapshot' + (t ? (' &middot; ' + t) : '') +
+      ' <a href="#" onclick="refreshLive();return false;" style="color:#fff;text-decoration:underline;">live</a>';
+    el.style.display = 'inline-flex';
+  }
+  function refreshLive() { _forceLive = true; _usingSnap = false; updateSnapNote(); refreshData(); }
+
   // Open analytics portal — no login required. Send the session token if
   // one happens to exist (harmless; these endpoints are public).
   var TOKEN = '';
@@ -501,13 +530,13 @@
 
   // ── API ───────────────────────────────────────────────────────
   function loadData(onDone) {
-    fetchJSON(withTok(GAS_URL + '?action=getDashboardStats&all=1'),
+    snapFetch('data/stats.json', withTok(GAS_URL + '?action=getDashboardStats&all=1'),
       function(res) { if (!checkAuth(res)) return; _data = res; onDone(res); },
       function(e) { onDone({ success: false, message: e.message }); });
   }
 
   function refreshData() {
-    _data = null; _allMeetings = null;
+    _data = null; _allMeetings = null; _allEmployees = null;
     if (PORTAL_VIEW === 'overview') {
       document.getElementById('ov-loading').style.display = 'block';
       document.getElementById('ov-content').style.display = 'none';
@@ -526,7 +555,7 @@
   // Fetch the employee master once (cached backend); cb runs when ready.
   function ensureEmployees(cb) {
     if (_allEmployees) { if (cb) cb(); return; }
-    fetchJSON(withTok(GAS_URL + '?action=getEmployeeMaster'),
+    snapFetch('data/employees.json', withTok(GAS_URL + '?action=getEmployeeMaster'),
       function(res){ _allEmployees = (res && res.employees) ? res.employees : []; if (cb) cb(); },
       function(){ if (!_allEmployees) _allEmployees = []; if (cb) cb(); });
   }
@@ -714,7 +743,7 @@
     ensureEmployees(function(){ populateReportDistricts(); });
     if (_allMeetings) { applyReportFilters(); return; }
     document.getElementById('rp-sel-loading').style.display = 'flex';
-    fetchJSON(withTok(GAS_URL + '?action=getReportData'),
+    snapFetch('data/report.json', withTok(GAS_URL + '?action=getReportData'),
       function(res){
         document.getElementById('rp-sel-loading').style.display = 'none';
         if (!checkAuth(res)) return;
@@ -1090,7 +1119,7 @@
     document.getElementById('pf-desigdetail').innerHTML = '';
     document.getElementById('pf-byperson').innerHTML = '';
     document.getElementById('pf-count').textContent = '';
-    fetchJSON(withTok(GAS_URL + '?action=getReportData'),
+    snapFetch('data/report.json', withTok(GAS_URL + '?action=getReportData'),
       function(res){
         if (!checkAuth(res)) return;
         _allMeetings = (res && res.meetings) ? res.meetings : [];
