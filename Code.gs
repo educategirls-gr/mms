@@ -2649,6 +2649,11 @@ function sendMonthlyReports(mode, monthOverride) {
 
 function monthlyReportJob() { return sendMonthlyReports('live', ''); }
 
+// ---- Run these from the editor, in order ----
+function REPORT_step1_TEST()        { return sendMonthlyReports('test'); }   // all reports to admin only (review)
+function REPORT_step2_SEND_LIVE()   { return sendMonthlyReports('live'); }   // real send to all 33 leads
+function REPORT_step3_INSTALL_AUTO(){ return installMonthlyTrigger(); }      // schedule for the 1st of each month
+
 function installMonthlyTrigger() {
   ScriptApp.getProjectTriggers().forEach(function(t){ if (t.getHandlerFunction() === 'monthlyReportJob') ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('monthlyReportJob').timeBased().onMonthDay(1).atHour(7).create();
