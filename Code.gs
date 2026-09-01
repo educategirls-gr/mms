@@ -2824,6 +2824,96 @@ function CAL_live()        { return syncCalendarEvents('live', 30); }   // invit
 function CAL_installAuto() { return installCalendarTrigger(); }         // hourly auto
 
 // ============================================================
+//  TIER 2 - WEEKLY NUDGES (Monday)
+//  Each officer gets their open follow-ups (last 30 days, Follow-up needed /
+//  Blocked). Each lead gets a team summary (open follow-ups + inactive staff).
+//  Free (email). Test mode sends everything to the admin.
+// ============================================================
+function buildOfficerNudge_(o) {
+  var rows = o.items.slice(0,15).map(function(it){
+    var fc = it.flag==='Blocked' ? '#B91C1C' : '#9a5b0e';
+    return '<tr style="border-top:1px solid #f0ebe5;"><td style="padding:9px 12px;"><b>'+_emailEsc(it.stakeholder)+'</b>'+(it.purpose?' <span style="color:#6b7280;">- '+_emailEsc(it.purpose)+'</span>':'')+'<br><span style="font-size:12px;color:#4338CA;">Next: '+_emailEsc(it.nextAction||'-')+'</span></td>'+
+      '<td align="right" style="padding:9px 12px;white-space:nowrap;color:'+fc+';font-weight:700;font-size:12px;">'+_emailEsc(it.flag)+'<br><span style="color:#9ca3af;font-weight:400;">'+_emailEsc(it.date)+'</span></td></tr>';
+  }).join('');
+  return '<div style="margin:0;padding:20px 12px;background:#f4f2ef;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">'+
+    '<table width="100%" cellpadding="0" cellspacing="0" style="max-width:620px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:12px;">'+
+    '<tr><td style="padding:22px 28px 12px;border-bottom:2px solid #7B1010;"><div style="font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#7B1010;">Weekly reminder</div>'+
+    '<h1 style="font-family:Georgia,serif;font-size:20px;margin:8px 0 3px;">Your pending follow-ups</h1><div style="font-size:13px;color:#6b7280;">'+_emailEsc(o.name)+' &middot; '+o.items.length+' open</div></td></tr>'+
+    '<tr><td style="padding:14px 28px 0;font-size:14px;color:#374151;">Dear '+_emailEsc(o.name)+', the following meetings need a follow-up. Please schedule or close them this week.</td></tr>'+
+    '<tr><td style="padding:12px 28px 0;"><table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-collapse:collapse;font-size:13px;">'+rows+'</table></td></tr>'+
+    '<tr><td style="padding:18px 28px 24px;"><div style="border-top:1px solid #e5e7eb;padding-top:12px;font-size:11px;color:#9ca3af;">EG-MMS weekly reminder &middot; https://dataimpact.in/report.html</div></td></tr>'+
+    '</table></div>';
+}
+function buildLeadNudge_(r, scopeLabel, openCount, byOff, totalStaff, inactive) {
+  var top = Object.keys(byOff).map(function(n){ return {n:n,c:byOff[n]}; }).sort(function(a,b){ return b.c-a.c; }).slice(0,8);
+  var rows = top.map(function(x){ return '<tr style="border-top:1px solid #f0ebe5;"><td style="padding:8px 12px;">'+_emailEsc(x.n)+'</td><td align="right" style="padding:8px 12px;font-weight:700;">'+x.c+'</td></tr>'; }).join('') || '<tr><td style="padding:8px 12px;color:#9ca3af;">No open follow-ups</td></tr>';
+  return '<div style="margin:0;padding:20px 12px;background:#f4f2ef;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">'+
+    '<table width="100%" cellpadding="0" cellspacing="0" style="max-width:620px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:12px;">'+
+    '<tr><td style="padding:22px 28px 12px;border-bottom:2px solid #7B1010;"><div style="font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#7B1010;">Weekly team summary</div>'+
+    '<h1 style="font-family:Georgia,serif;font-size:20px;margin:8px 0 3px;">Follow-up status</h1><div style="font-size:13px;color:#6b7280;">'+_emailEsc(scopeLabel)+'</div></td></tr>'+
+    '<tr><td style="padding:16px 28px 0;"><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:8px;"><tr>'+
+      '<td width="50%" style="background:#fafafa;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#6b7280;">Open follow-ups</div><div style="font-family:Georgia,serif;font-size:24px;font-weight:700;color:#9a5b0e;">'+openCount+'</div></td>'+
+      '<td width="50%" style="background:#fafafa;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#6b7280;">Inactive staff</div><div style="font-family:Georgia,serif;font-size:24px;font-weight:700;color:#B91C1C;">'+inactive+' <span style="font-size:14px;color:#9ca3af;">/ '+totalStaff+'</span></div></td>'+
+    '</tr></table></td></tr>'+
+    '<tr><td style="padding:16px 28px 0;"><div style="font-family:Georgia,serif;font-size:15px;font-weight:700;margin-bottom:6px;">Officers with pending follow-ups</div>'+
+      '<table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-collapse:collapse;font-size:13px;">'+rows+'</table></td></tr>'+
+    '<tr><td style="padding:18px 28px 24px;"><div style="border-top:1px solid #e5e7eb;padding-top:12px;font-size:11px;color:#9ca3af;">EG-MMS weekly summary &middot; https://dataimpact.in/report.html</div></td></tr>'+
+    '</table></div>';
+}
+
+function sendWeeklyNudges(mode) {
+  mode = mode || 'test';
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID), cS = ss.getSheetByName(CONDUCTED_SHEET);
+  var data = cS ? cS.getDataRange().getValues() : [];
+  var cutoff = Date.now() - 30*86400000;
+  var byOfficer = {}, activeNames = {};
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    var dt = parseStart_(fmtDateVal(data[i][13]), ''); if (!dt || dt.getTime() < cutoff) continue;
+    var nm = (data[i][2]||'').toString().trim(); if (nm) activeNames[nm.toLowerCase()] = 1;
+    var flag = (data[i][23]||'').toString();
+    if (flag !== 'Follow-up needed' && flag !== 'Blocked') continue;
+    var email = (data[i][4]||'').toString().trim().toLowerCase(); if (!email) continue;
+    if (!byOfficer[email]) byOfficer[email] = { name:nm, email:email, items:[] };
+    byOfficer[email].items.push({ district:(data[i][1]||'').toString(), stakeholder:(data[i][9]||'').toString(), purpose:(data[i][11]||'').toString(), flag:flag, nextAction:(data[i][24]||'').toString(), date:fmtDateVal(data[i][13]) });
+  }
+  var sent = [], done = 0;
+  // Officer nudges
+  Object.keys(byOfficer).forEach(function(em){
+    var o = byOfficer[em]; if (!o.items.length) return;
+    var to = (mode==='live') ? o.email : REPORT_TEST_EMAIL;
+    try { MailApp.sendEmail({ to:to, subject:(mode!=='live'?'[TEST -> '+o.email+'] ':'')+'Your pending follow-ups ('+o.items.length+')', htmlBody:buildOfficerNudge_(o), name:'EG-MMS Reminders' }); sent.push('officer '+to+' ('+o.items.length+')'); done++; } catch(e){}
+  });
+  // Lead nudges
+  var recips = getReportRecipients();
+  var em2 = getEmployeeMaster(); var allE = (em2 && em2.employees) || [];
+  recips.forEach(function(r){
+    var scopeDists = r.role==='State' ? null : r.role==='Zone' ? (ZONE_DISTRICTS[findZoneKey_(r.zone)]||[]) : (r.districts||[r.district]);
+    function inScope(d){ if(!scopeDists) return true; for(var k=0;k<scopeDists.length;k++) if(normDist_(scopeDists[k])===normDist_(d)) return true; return false; }
+    var openCount = 0, byOff = {};
+    Object.keys(byOfficer).forEach(function(em){ byOfficer[em].items.forEach(function(it){ if (inScope(it.district)) { openCount++; byOff[byOfficer[em].name] = (byOff[byOfficer[em].name]||0)+1; } }); });
+    var emps = allE.filter(function(e){ return e.district && inScope(e.district); });
+    var inactive = emps.filter(function(e){ return !activeNames[(e.name||'').trim().toLowerCase()]; }).length;
+    if (openCount === 0 && inactive === 0) return;   // nothing to report
+    var scopeLabel = r.role==='State' ? 'Uttar Pradesh' : r.role==='Zone' ? r.zone : (r.districts||[r.district]).join(', ');
+    var to = (mode==='live') ? r.email : REPORT_TEST_EMAIL;
+    try { MailApp.sendEmail({ to:to, subject:(mode!=='live'?'[TEST -> '+r.email+'] ':'')+'Team follow-up summary - '+scopeLabel, htmlBody:buildLeadNudge_(r, scopeLabel, openCount, byOff, emps.length, inactive), name:'EG-MMS Reminders' }); sent.push('lead '+to); done++; } catch(e){}
+  });
+  Logger.log('Nudges sent: ' + done); Logger.log(sent.join('\n'));
+  return { success:true, mode:mode, sent:done, details:sent };
+}
+function nudgeJob() { return sendWeeklyNudges('live'); }
+function installNudgeTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function(t){ if (t.getHandlerFunction()==='nudgeJob') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('nudgeJob').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(8).create();
+  return 'Nudge trigger installed: nudgeJob runs every Monday ~8am.';
+}
+// ---- Run from the editor ----
+function NUDGE_test()        { return sendWeeklyNudges('test'); }   // all to admin (review)
+function NUDGE_live()        { return sendWeeklyNudges('live'); }   // officers + leads
+function NUDGE_installAuto() { return installNudgeTrigger(); }      // every Monday
+
+// ============================================================
 //  MONTHLY REPORT EMAIL DELIVERY
 //  Recipients = State / Zone / District leads (each their own scope).
 //  Sent from gr@educategirls.ngo via MailApp. Run installMonthlyTrigger()
