@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monthly GR Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;0,700;1,400&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    --paper:#FBFAF8; --surface:#FFFFFF; --band:#F7F2EE;
+    --ink:#1C1917; --muted:#78716C; --faint:#A8A29E;
+    --line:#E9E3DC; --line-soft:#F0EBE5;
+    --brand:#7B1010; --brand-soft:#F6E9E9; --brand-ink:#7B1010;
+    --good:#166534; --good-soft:#E6F0E8;
+    --warn:#9A5B0E; --warn-soft:#FaF0DE;
+    --crit:#991B1B; --crit-soft:#FBE9E9;
+    --shadow:0 1px 2px rgba(28,25,23,.04),0 8px 30px rgba(28,25,23,.06);
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --paper:#17130F; --surface:#211B17; --band:#241D18; --ink:#F4EEE7; --muted:#B8AEA4; --faint:#8A8078;
+    --line:#352C25; --line-soft:#2A221C; --brand:#EFA39C; --brand-soft:#3A211F; --brand-ink:#EFA39C;
+    --good:#7FCf9a; --good-soft:#1B3325; --warn:#E4B577; --warn-soft:#37281A; --crit:#F0A3A3; --crit-soft:#3A1F1F;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 34px rgba(0,0,0,.4);
+  }}
+  :root[data-theme="dark"]{
+    --paper:#17130F; --surface:#211B17; --band:#241D18; --ink:#F4EEE7; --muted:#B8AEA4; --faint:#8A8078;
+    --line:#352C25; --line-soft:#2A221C; --brand:#EFA39C; --brand-soft:#3A211F; --brand-ink:#EFA39C;
+    --good:#7FCf9a; --good-soft:#1B3325; --warn:#E4B577; --warn-soft:#37281A; --crit:#F0A3A3; --crit-soft:#3A1F1F;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 34px rgba(0,0,0,.4);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif;font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+  .num{font-variant-numeric:tabular-nums}
+  h1,h2,h3{font-family:"Spectral",Georgia,serif;text-wrap:balance;margin:0}
+
+  /* Controls bar */
+  .bar{position:sticky;top:0;z-index:5;background:var(--surface);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:12px 20px;flex-wrap:wrap}
+  .bar .home{font-size:13px;font-weight:600;color:var(--brand-ink);text-decoration:none}
+  .bar .sp{flex:1}
+  .bar select,.bar button{font-family:inherit;font-size:13px;font-weight:600;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:9px;padding:8px 12px;cursor:pointer}
+  .bar button{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .bar label{font-size:12px;color:var(--muted);font-weight:600}
+
+  .sheet{max-width:900px;margin:24px auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:44px 48px 36px;overflow:hidden}
+  .kicker{font-size:11.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--brand-ink)}
+  .mast{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;flex-wrap:wrap;padding-bottom:18px;border-bottom:2px solid var(--brand)}
+  .mast h1{font-size:29px;font-weight:700;line-height:1.1;margin:8px 0 4px;letter-spacing:-.01em}
+  .scope{font-size:15px;color:var(--muted);font-weight:500}.scope b{color:var(--ink);font-weight:600}
+  .meta{font-size:12.5px;color:var(--muted);text-align:right;line-height:1.7;white-space:nowrap}.meta b{color:var(--ink);font-weight:600}
+
+  section{margin-top:28px}
+  .eyebrow{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .eyebrow h2{font-size:18px;font-weight:600}
+  .eyebrow .rule{flex:1;height:1px;background:var(--line)}
+  .tag{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:20px;white-space:nowrap}
+  .tag.ai{color:var(--brand-ink);background:var(--brand-soft)}
+  .tag.calc{color:var(--muted);background:var(--band);border:1px solid var(--line)}
+
+  .summary{background:var(--band);border:1px solid var(--line);border-left:3px solid var(--brand);border-radius:10px;padding:18px 22px}
+  .summary p{margin:0;font-size:15.5px;line-height:1.62}
+  .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .kpi{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:15px 16px}
+  .kpi .lbl{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .kpi .val{font-family:"Spectral",serif;font-size:28px;font-weight:700;line-height:1.05;margin-top:7px}
+  .kpi .val small{font-size:15px;font-weight:600;color:var(--faint)}
+  .kpi .sub{font-size:12px;color:var(--muted);margin-top:3px}
+  .kpi .val.good{color:var(--good)}.kpi .val.brand{color:var(--brand-ink)}.kpi .val.warn{color:var(--warn)}
+
+  .tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:11px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:460px}
+  thead th{background:var(--band);text-align:left;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);padding:11px 14px;border-bottom:1px solid var(--line)}
+  thead th.r,tbody td.r{text-align:right}
+  tbody td{padding:11px 14px;border-bottom:1px solid var(--line-soft)}
+  tbody tr:last-child td{border-bottom:none}
+  tbody td.name{font-weight:600;color:var(--ink)}
+  tbody td.rank{color:var(--faint);font-weight:600;width:34px}
+  tfoot td{padding:11px 14px;font-weight:700;background:var(--band);font-size:13px}tfoot td.r{text-align:right}
+  .pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px;white-space:nowrap}
+  .pill.good{color:var(--good);background:var(--good-soft)}.pill.warn{color:var(--warn);background:var(--warn-soft)}.pill.crit{color:var(--crit);background:var(--crit-soft)}
+
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:4px}
+  .card h3{font-size:14px;font-weight:600;padding:13px 16px 4px}
+
+  .part{display:flex;gap:22px;align-items:center;flex-wrap:wrap;background:var(--band);border:1px solid var(--line);border-radius:11px;padding:16px 20px}
+  .part .big{font-family:"Spectral",serif;font-size:34px;font-weight:700}
+  .barw{flex:1;min-width:200px}
+  .barw .track{height:9px;border-radius:6px;background:var(--line);overflow:hidden}
+  .barw .fill{height:100%;background:var(--good);border-radius:6px}
+  .barw .cap{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:7px}
+
+  ul.clean{list-style:none;margin:0;padding:0}
+  ul.clean li{padding:11px 0;border-bottom:1px solid var(--line-soft);display:flex;gap:12px;align-items:flex-start}
+  ul.clean li:last-child{border-bottom:none}
+  .dot{flex:none;width:7px;height:7px;border-radius:50%;margin-top:7px}
+  .dot.crit{background:var(--crit)}.dot.warn{background:var(--warn)}.dot.good{background:var(--good)}.dot.brand{background:var(--brand)}
+  li .h{font-weight:600}li .d{color:var(--muted);font-size:13px}
+  ol.recs{margin:0;padding-left:0;list-style:none;counter-reset:r}
+  ol.recs li{counter-increment:r;padding:12px 0 12px 40px;position:relative;border-bottom:1px solid var(--line-soft)}
+  ol.recs li:last-child{border-bottom:none}
+  ol.recs li::before{content:counter(r);position:absolute;left:0;top:11px;width:26px;height:26px;border-radius:8px;background:var(--brand-soft);color:var(--brand-ink);font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center}
+  footer{margin-top:28px;padding-top:16px;border-top:1px solid var(--line);font-size:12px;color:var(--faint);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  footer .legend{display:flex;gap:14px;flex-wrap:wrap}footer .legend span{display:inline-flex;align-items:center;gap:6px}
+  .swatch{width:10px;height:10px;border-radius:3px;display:inline-block}
+
+  .state-msg{max-width:520px;margin:80px auto;text-align:center;padding:0 20px}
+  .state-msg .big{font-size:40px}.state-msg h2{font-size:20px;margin:14px 0 8px}.state-msg p{color:var(--muted)}
+  .spin{width:34px;height:34px;border:3px solid var(--line);border-top-color:var(--brand);border-radius:50%;animation:sp .8s linear infinite;margin:0 auto}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.spin{animation:none}}
+
+  @media (max-width:680px){.sheet{padding:26px 20px;margin:12px}.kpis{grid-template-columns:1fr 1fr}.two{grid-template-columns:1fr}.mast h1{font-size:23px}.meta{text-align:left}}
+  @media print{.bar{display:none}.sheet{border:none;box-shadow:none;margin:0;max-width:none}body{background:#fff}}
+</style>
+</head>
+<body>
+  <div class="bar" id="bar" style="display:none">
+    <a class="home" href="dashboard.html">&#8592; Dashboard</a>
+    <span class="sp"></span>
+    <label for="month-sel">Month</label>
+    <select id="month-sel" onchange="load()"></select>
+    <button onclick="window.print()">&#128424; Print / PDF</button>
+  </div>
+  <div id="root">
+    <div class="state-msg"><div class="spin"></div><p style="margin-top:16px">Loading report&hellip;</p></div>
+  </div>
+
+<script>
+  var GAS_URL = 'https://script.google.com/macros/s/AKfycbw2JJ5xmZ-zLUolbZJb7eApczsZjsXwzVY6uXpAYO-7h8j9CyNF9y5Upgxji8rD2oJb/exec';
+  var SESSION = (function(){ try { return JSON.parse(sessionStorage.getItem('eg_grm_session')||'null'); } catch(e){ return null; } })();
+  function esc(s){ return s==null?'':String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function pctPill(planned, p){
+    if(!planned) return '<span class="pill crit">No activity</span>';
+    if(p>=80) return '<span class="pill good">On track</span>';
+    if(p>=50) return '<span class="pill good">Steady</span>';
+    if(p>=30) return '<span class="pill warn">Watch</span>';
+    return '<span class="pill crit">Attention</span>';
+  }
+  function msg(icon,title,sub,linkTxt){
+    document.getElementById('root').innerHTML =
+      '<div class="state-msg"><div class="big">'+icon+'</div><h2>'+title+'</h2><p>'+sub+'</p>'+
+      (linkTxt?'<p style="margin-top:16px"><a class="home" href="dashboard.html">'+linkTxt+'</a></p>':'')+'</div>';
+  }
+
+  if(!SESSION || !SESSION.token){
+    msg('&#128274;','Login required','Please open the dashboard and log in first — this report uses your account to show your scope.','&#8592; Go to Dashboard');
+  } else {
+    load();
+  }
+
+  function load(){
+    var monthSel = document.getElementById('month-sel');
+    var month = (monthSel && monthSel.value) ? monthSel.value : '';
+    document.getElementById('root').innerHTML = '<div class="state-msg"><div class="spin"></div><p style="margin-top:16px">Loading report&hellip;</p></div>';
+    var url = GAS_URL + '?action=getMonthlyReport&token=' + encodeURIComponent(SESSION.token) + (month?('&month='+encodeURIComponent(month)):'');
+    fetch(url).then(function(r){return r.text();}).then(function(t){
+      var j; try{ j=JSON.parse(t); }catch(e){ msg('&#9888;&#65039;','Server busy','Please try again in a moment.',''); return; }
+      if(j && j.message==='AUTH_REQUIRED'){ msg('&#128274;','Session expired','Please log in again from the dashboard.','&#8592; Go to Dashboard'); return; }
+      if(!j || !j.success){ msg('&#9888;&#65039;','Could not build report', esc((j&&j.message)||'Unknown error'),''); return; }
+      render(j);
+    }).catch(function(e){ msg('&#9888;&#65039;','Network error', esc(e.message),''); });
+  }
+
+  function render(j){
+    var k=j.kpis, sc=j.scope, EG='var(--brand-ink)';
+    document.getElementById('bar').style.display='flex';
+    // month picker
+    var msel=document.getElementById('month-sel');
+    if(!msel.options.length){
+      (j.months||[]).slice().reverse().forEach(function(m){ var o=document.createElement('option'); o.value=m; o.textContent=m; if(m===sc.month)o.selected=true; msel.appendChild(o); });
+    }
+    var gen = new Date(sc.generatedAt||Date.now()).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});
+    var roleLabel = {state:'State',zone:'Zone',district:'District'}[sc.kind]||sc.kind;
+
+    var html='<div class="sheet">';
+    // Masthead
+    html+='<header class="mast"><div>'+
+      '<div class="kicker">Educate Girls &middot; Government Relations</div>'+
+      '<h1>Monthly GR Meetings Report</h1>'+
+      '<div class="scope"><b>'+esc(sc.label)+'</b> &middot; '+roleLabel+'-level</div></div>'+
+      '<div class="meta">Reporting period &middot; <b>'+esc(sc.month)+'</b><br>Scope &middot; <b>'+roleLabel+'</b><br>Prepared for &middot; <b>'+esc(SESSION.name||'—')+'</b><br>Generated &middot; <b>'+gen+'</b></div></header>';
+
+    // Executive summary (template — tagged Auto-summary in Phase 1)
+    html+=sec('Executive Summary','ai','Auto-summary')+
+      '<div class="summary"><p>'+esc(j.narrative.summary)+'</p></div></section>';
+
+    // KPIs
+    html+=sec('At a Glance','calc','Computed')+'<div class="kpis">'+
+      kpi('Total Meetings',k.total,'','','Planned in month')+
+      kpi('Conducted',k.conducted,'good','','This month')+
+      kpi('Success Rate',k.success+'%','brand','','Conducted vs planned')+
+      kpi('Active Staff',k.activeStaff,'',' / '+k.totalStaff,k.participation+'% participation')+
+      kpi('Pending Follow-ups',k.pending,'warn','','Open in month')+
+      kpi('Govt MoM',k.govtMom,'',' / '+k.conducted,'Official minutes')+
+      '</div></section>';
+
+    // Breakdown
+    var b=j.breakdown, byLabel={zone:'Zone',district:'District',block:'Block'}[b.by]||'Area';
+    html+=sec('Performance by '+byLabel,'calc','Computed');
+    html+='<div class="tbl-wrap"><table><thead><tr><th>'+byLabel+'</th>'+
+      (b.by==='zone'?'<th class="r">Districts</th>':'')+
+      '<th class="r">Planned</th><th class="r">Conducted</th><th class="r">Success</th><th class="r">Active Staff</th><th>Status</th></tr></thead><tbody class="num">';
+    var tP=0,tC=0,tA=0;
+    (b.rows||[]).forEach(function(r){
+      tP+=r.planned;tC+=r.conducted;tA+=r.activeStaff||0;
+      html+='<tr><td class="name">'+esc(r.name)+'</td>'+
+        (b.by==='zone'?'<td class="r">'+(r.districts||0)+'</td>':'')+
+        '<td class="r">'+r.planned+'</td><td class="r">'+r.conducted+'</td>'+
+        '<td class="r">'+(r.planned?r.pct+'%':'—')+'</td><td class="r">'+(r.activeStaff||0)+'</td>'+
+        '<td>'+pctPill(r.planned,r.pct)+'</td></tr>';
+    });
+    html+='</tbody>';
+    if(b.by==='zone'){ html+='<tfoot><tr><td>State total</td><td class="r">'+(j.breakdown.rows.reduce(function(s,r){return s+(r.districts||0)},0))+'</td><td class="r">'+tP+'</td><td class="r">'+tC+'</td><td class="r">'+(tP?Math.round(tC/tP*100):0)+'%</td><td class="r">'+tA+'</td><td></td></tr></tfoot>'; }
+    html+='</table></div></section>';
+
+    // Leaderboard (state)
+    if(b.leaderboard && b.leaderboard.length){
+      html+=sec('District Leaderboard','calc','Top '+b.leaderboard.length);
+      html+='<div class="tbl-wrap"><table><thead><tr><th>#</th><th>District</th><th>Zone</th><th class="r">Conducted</th><th class="r">Success</th><th class="r">Active Staff</th></tr></thead><tbody class="num">';
+      b.leaderboard.forEach(function(r,i){ html+='<tr><td class="rank">'+(i+1)+'</td><td class="name">'+esc(r.name)+'</td><td>'+esc((r.zone||'').replace('UP ','')) +'</td><td class="r">'+r.conducted+'</td><td class="r">'+r.pct+'%</td><td class="r">'+(r.activeStaff||0)+'</td></tr>'; });
+      html+='</tbody></table></div></section>';
+    }
+
+    // Participation
+    html+=sec('Team Participation','calc','Computed')+
+      '<div class="part"><div><div class="big num" style="color:var(--good)">'+k.participation+'%</div><div style="font-size:12px;color:var(--muted)">participation</div></div>'+
+      '<div class="barw"><div class="track"><div class="fill" style="width:'+k.participation+'%"></div></div>'+
+      '<div class="cap"><span><b class="num" style="color:var(--good)">'+k.activeStaff+'</b> active</span><span><b class="num" style="color:var(--crit)">'+(k.totalStaff-k.activeStaff)+'</b> inactive &middot; of '+k.totalStaff+' staff</span></div></div></div></section>';
+
+    // Focus
+    html+=sec('Meeting Focus','calc','Computed')+'<div class="two">'+
+      focusCard('By Purpose', j.byPurpose)+focusCard('By Stakeholder', j.byStakeholder)+'</div></section>';
+
+    // Attention
+    if(j.attention && j.attention.length){
+      html+=sec('Attention Needed','calc','Rules')+'<ul class="clean">';
+      j.attention.forEach(function(a){ html+='<li><span class="dot '+(a.level||'warn')+'"></span><div><div class="h">'+esc(a.title)+'</div><div class="d">'+esc(a.detail||'')+'</div></div></li>'; });
+      html+='</ul></section>';
+    }
+    // Highlights
+    if(j.narrative.highlights && j.narrative.highlights.length){
+      html+=sec('Highlights','ai','Auto-summary')+'<ul class="clean">';
+      j.narrative.highlights.forEach(function(h){ html+='<li><span class="dot brand"></span><div><div class="h">'+esc(h.h)+'</div><div class="d">'+esc(h.d||'')+'</div></div></li>'; });
+      html+='</ul></section>';
+    }
+    // Recommendations
+    if(j.narrative.recommendations && j.narrative.recommendations.length){
+      html+=sec('Recommendations','ai','Auto-summary')+'<ol class="recs">';
+      j.narrative.recommendations.forEach(function(r){ html+='<li><span class="h">'+esc(r.h)+'</span> <span class="d">'+esc(r.d||'')+'</span></li>'; });
+      html+='</ol></section>';
+    }
+
+    html+='<footer><div class="legend"><span><span class="swatch" style="background:var(--brand)"></span> Auto-summary (numbers-driven)</span><span><span class="swatch" style="background:var(--muted)"></span> Computed from records</span></div><div>EG-MMS &middot; dataimpact.in</div></footer>';
+    html+='</div>';
+    document.getElementById('root').innerHTML=html;
+  }
+
+  function sec(title,tagcls,tagtxt){ return '<section><div class="eyebrow"><h2>'+title.split(' &middot;')[0]+'</h2><span class="rule"></span><span class="tag '+tagcls+'">'+tagtxt+'</span></div>'; }
+  function kpi(lbl,val,cls,small,sub){ return '<div class="kpi"><div class="lbl">'+lbl+'</div><div class="val '+(cls||'')+' num">'+val+(small?'<small>'+small+'</small>':'')+'</div><div class="sub">'+(sub||'')+'</div></div>'; }
+  function focusCard(title,rows){
+    var body='<table style="min-width:0"><tbody class="num">';
+    (rows||[]).forEach(function(r){ body+='<tr><td class="name">'+esc(r.name)+'</td><td class="r">'+r.count+'</td></tr>'; });
+    if(!rows||!rows.length) body+='<tr><td colspan="2" style="color:var(--faint)">No conducted meetings</td></tr>';
+    body+='</tbody></table>';
+    return '<div class="card"><h3>'+title+'</h3><div class="tbl-wrap" style="border:none">'+body+'</div></div>';
+  }
+</script>
+</body>
+</html>

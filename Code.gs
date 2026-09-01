@@ -380,6 +380,7 @@ function apiResponse(e, method) {
         if      (action === 'getDropdownData')      result = getDropdownData(session.email);
         else if (action === 'getMyMeetings')        result = getMyMeetings(session.email);
         else if (action === 'getAllMyMeetings')     result = getAllMyMeetings(session.email);
+        else if (action === 'getMonthlyReport')     result = getMonthlyReport(session, e.parameter.month || '');
         else if (action === 'getDistrictEmployees') result = getDistrictEmployees(resolveActiveDistrict_(session, e.parameter.district), session.email);
         else if (action === 'getAllEmployees')      result = getAllEmployees(session.email);
         else if (action === 'getZoneTeamEmployees') result = getZoneTeamEmployees(session.zone, session.email);
@@ -2304,6 +2305,158 @@ function getEmployeeByName(name) {
 //  from the creator's email via Employee_DB. Client filters by
 //  District × Block × Month (any combination, incl. "All").
 // ------------------------------------------------------------
+// ------------------------------------------------------------
+//  MONTHLY REPORT — role-scoped (State→all, Zone→zone, District/Field→district).
+//  All numbers computed here (exact); narrative is a template (Phase 1, no AI).
+// ------------------------------------------------------------
+var _RPT_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function monthKeyOf_(m) {
+  var s = (m.status === 'Conducted' ? (m.conductDate || m.date) : m.date) || '';
+  var p = s.toString().trim().split(' ');
+  return p.length >= 3 ? (p[1] + ' ' + p[2]) : '';
+}
+function monthSortVal_(k) { var p = (k||'').split(' '); return (parseInt(p[1], 10) || 0) * 12 + _RPT_MONTHS.indexOf(p[0]); }
+
+function getMonthlyReport(session, monthParam) {
+  try {
+    var role = (session && session.role || '').toString();
+
+    // ── Scope from role ──
+    var scopeDistricts = null, scopeKind = 'state', scopeLabel = 'Uttar Pradesh';
+    if (role === 'Zone') {
+      var zk = findZoneKey_(session.zone);
+      scopeDistricts = zk ? ZONE_DISTRICTS[zk].slice() : [];
+      scopeKind = 'zone'; scopeLabel = (session.zone || 'Zone');
+    } else if (role === 'District' || role === 'Field') {
+      scopeDistricts = (session.districts && session.districts.length) ? session.districts.slice() : [session.district];
+      scopeKind = 'district'; scopeLabel = scopeDistricts.filter(String).join(', ');
+    }
+    function inScope(d) {
+      if (!scopeDistricts) return true;
+      for (var i = 0; i < scopeDistricts.length; i++) if (normDist_(scopeDistricts[i]) === normDist_(d)) return true;
+      return false;
+    }
+
+    // ── Data (cached) ──
+    var rd = getReportData();      var allM = (rd && rd.meetings)  ? rd.meetings  : [];
+    var em = getEmployeeMaster();  var allE = (em && em.employees) ? em.employees : [];
+
+    // available months (newest last)
+    var mset = {};
+    allM.forEach(function(m){ var k = monthKeyOf_(m); if (k) mset[k] = 1; });
+    var months = Object.keys(mset).sort(function(a,b){ return monthSortVal_(a) - monthSortVal_(b); });
+    var month = monthParam || months[months.length - 1] || '';
+
+    // month + scope slice
+    var mm = allM.filter(function(m){ return monthKeyOf_(m) === month && inScope(m.district); });
+    var conducted = mm.filter(function(m){ return m.status === 'Conducted'; });
+    var emps = allE.filter(function(e){ return e.district && inScope(e.district); });
+
+    // active staff = distinct conductors this month
+    var activeNames = {};
+    conducted.forEach(function(m){ if (m.employeeName) activeNames[m.employeeName.trim().toLowerCase()] = 1; });
+    var activeStaff = emps.filter(function(e){ return activeNames[(e.name||'').trim().toLowerCase()]; }).length;
+
+    var pct = function(n, d){ return d ? Math.round(n / d * 100) : 0; };
+    var success = pct(conducted.length, mm.length);
+    var distsActive = {}, distsScope = {};
+    conducted.forEach(function(m){ if (m.district) distsActive[normDist_(m.district)] = 1; });
+    emps.forEach(function(e){ if (e.district) distsScope[normDist_(e.district)] = 1; });
+    var pending = mm.filter(function(m){ return ['Planned','Follow-up','Postponed'].indexOf(m.status) !== -1; }).length;
+    var govtMom = conducted.filter(function(m){ return (m.govtMom || '').toString().trim(); }).length;
+
+    // ── Primary breakdown (state→zone, zone→district, district→block) ──
+    function activeIn(list){ var s={}; list.forEach(function(m){ if(m.status==='Conducted' && m.employeeName) s[m.employeeName.trim().toLowerCase()]=1; }); return Object.keys(s).length; }
+    function groupBy(keyFn){
+      var g = {};
+      mm.forEach(function(m){ var k = keyFn(m) || '—'; if (!g[k]) g[k] = { name:k, list:[], planned:0, conducted:0 }; g[k].planned++; g[k].list.push(m); if (m.status==='Conducted') g[k].conducted++; });
+      return Object.keys(g).map(function(k){ var r=g[k]; return { name:r.name, planned:r.planned, conducted:r.conducted, pct:pct(r.conducted,r.planned), activeStaff:activeIn(r.list) }; });
+    }
+    var breakdown = { by:'', rows:[], leaderboard:[] };
+    if (scopeKind === 'state') {
+      breakdown.by = 'zone';
+      var zg = {};
+      mm.forEach(function(m){ var z = districtToZone_(m.district) || 'Unzoned'; if (!zg[z]) zg[z] = { name:z, planned:0, conducted:0, list:[] }; zg[z].planned++; zg[z].list.push(m); if (m.status==='Conducted') zg[z].conducted++; });
+      breakdown.rows = Object.keys(ZONE_DISTRICTS).concat(zg['Unzoned'] ? ['Unzoned'] : []).map(function(z){
+        var r = zg[z] || { planned:0, conducted:0, list:[] };
+        var dcount = (ZONE_DISTRICTS[z] ? ZONE_DISTRICTS[z].length : 0);
+        return { name:z, districts:dcount, planned:r.planned, conducted:r.conducted, pct:pct(r.conducted,r.planned), activeStaff:activeIn(r.list) };
+      }).filter(function(r){ return r.districts || r.planned; }).sort(function(a,b){ return b.conducted - a.conducted; });
+      // district leaderboard (top 8)
+      breakdown.leaderboard = groupBy(function(m){ return m.district || '—'; })
+        .map(function(r){ r.zone = districtToZone_(r.name) || '—'; return r; })
+        .sort(function(a,b){ return b.conducted - a.conducted; }).slice(0, 8);
+    } else if (scopeKind === 'zone') {
+      breakdown.by = 'district';
+      breakdown.rows = groupBy(function(m){ return m.district || '—'; }).sort(function(a,b){ return b.conducted - a.conducted; });
+    } else {
+      breakdown.by = 'block';
+      breakdown.rows = groupBy(function(m){ return (m.block || '').trim() || 'District-level'; }).sort(function(a,b){ return b.conducted - a.conducted; });
+    }
+
+    // zero-activity areas (in scope, original names) — districts (or blocks for district scope)
+    var zeroAreas = [];
+    if (scopeKind === 'district') {
+      var blockSet = {};
+      emps.forEach(function(e){ if (e.block) blockSet[e.block] = 1; });
+      var activeBlocks = {}; conducted.forEach(function(m){ if (m.block) activeBlocks[normDist_(m.block)] = 1; });
+      zeroAreas = Object.keys(blockSet).filter(function(b){ return !activeBlocks[normDist_(b)]; });
+    } else {
+      var distNames = {};
+      emps.forEach(function(e){ if (e.district) distNames[normDist_(e.district)] = e.district; });
+      zeroAreas = Object.keys(distNames).filter(function(k){ return !distsActive[k]; }).map(function(k){ return distNames[k]; });
+    }
+
+    // focus
+    function tally(list, key){ var o={}; list.forEach(function(m){ var k=(m[key]||'—').toString().trim()||'—'; o[k]=(o[k]||0)+1; }); return Object.keys(o).map(function(k){ return { name:k, count:o[k] }; }).sort(function(a,b){ return b.count-a.count; }).slice(0,6); }
+    var byPurpose = tally(conducted, 'purpose');
+    var byStakeholder = tally(conducted, 'stakeholderPost');
+
+    // ── Attention (rules) ──
+    var attention = [];
+    var areaWord = scopeKind === 'district' ? 'blocks' : 'districts';
+    if (zeroAreas.length) attention.push({ level:'crit', title:zeroAreas.length + ' ' + areaWord + ' with no activity', detail:zeroAreas.slice(0,8).join(', ') + (zeroAreas.length>8?' +more':'') });
+    if (pending) attention.push({ level:'warn', title:pending + ' follow-ups / planned meetings pending', detail:'Open in ' + month });
+    if (conducted.length && govtMom < conducted.length) attention.push({ level:'warn', title:'Govt MoM pending on ' + (conducted.length - govtMom) + ' of ' + conducted.length, detail:'Only ' + govtMom + ' conducted meetings have official minutes uploaded' });
+    if (scopeKind === 'state' && breakdown.rows.length) {
+      var worst = breakdown.rows.slice().sort(function(a,b){ return a.pct - b.pct; })[0];
+      if (worst) attention.push({ level:'warn', title:worst.name + ' is the lowest-performing zone (' + worst.pct + '%)', detail:worst.conducted + ' of ' + worst.planned + ' conducted' });
+    }
+
+    // ── Narrative (Phase 1 template — grounded in the numbers) ──
+    var best = breakdown.rows[0];
+    var topPerf = breakdown.leaderboard[0] || breakdown.rows[0];
+    var summary = 'In ' + month + ', ' + scopeLabel + ' conducted ' + conducted.length + ' of ' + mm.length +
+      ' planned meetings (' + success + '% success rate)' + (best ? ', led by ' + best.name + ' (' + best.pct + '%)' : '') + '. ' +
+      'Staff participation stood at ' + pct(activeStaff, emps.length) + '% (' + activeStaff + ' of ' + emps.length + ' active)' +
+      (zeroAreas.length ? ', and ' + zeroAreas.length + ' ' + areaWord + ' recorded no activity' : '') + '.';
+    var highlights = [];
+    if (topPerf) highlights.push({ h: topPerf.name + ' led with ' + topPerf.conducted + ' conducted (' + topPerf.pct + '%)', d: 'Strongest ' + (scopeKind==='state'?'district':breakdown.by) + ' this month.' });
+    if (byPurpose[0]) highlights.push({ h: 'Focus on ' + byPurpose[0].name + ' (' + byPurpose[0].count + ' meetings)', d: 'Most common meeting purpose.' });
+    if (byStakeholder[0]) highlights.push({ h: 'Most engaged: ' + byStakeholder[0].name + ' (' + byStakeholder[0].count + ')', d: 'Top government stakeholder met.' });
+    var recs = [];
+    if (zeroAreas.length) recs.push({ h:'Activate the ' + zeroAreas.length + ' inactive ' + areaWord + ' first.', d:zeroAreas.slice(0,5).join(', ') + ' had no conducted meetings.' });
+    if (pending) recs.push({ h:'Close the ' + pending + ' pending follow-ups.', d:'Convert planned/postponed meetings before month-end.' });
+    if (conducted.length && govtMom < conducted.length) recs.push({ h:'Push Govt MoM collection.', d:'Only ' + pct(govtMom, conducted.length) + '% of meetings have official minutes.' });
+
+    return {
+      success: true,
+      scope: { kind:scopeKind, label:scopeLabel, role:role, month:month, generatedAt:new Date().toISOString() },
+      months: months,
+      kpis: { total:mm.length, conducted:conducted.length, success:success,
+              totalStaff:emps.length, activeStaff:activeStaff, participation:pct(activeStaff, emps.length),
+              distsActive:Object.keys(distsActive).length, distsInScope:Object.keys(distsScope).length,
+              pending:pending, govtMom:govtMom },
+      breakdown: breakdown,
+      byPurpose: byPurpose, byStakeholder: byStakeholder,
+      zeroAreas: zeroAreas, attention: attention,
+      narrative: { summary:summary, highlights:highlights, recommendations:recs }
+    };
+  } catch (err) {
+    return { success:false, message: err.message };
+  }
+}
+
 // ------------------------------------------------------------
 //  EMPLOYEE MASTER (public) — name/designation/district/block only
 //  (no email/role). Powers the coverage & active/inactive reports.
