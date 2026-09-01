@@ -2592,47 +2592,109 @@ function _pctColor(p){ return p>=80?'#166534':p>=50?'#166534':p>=30?'#9a5b0e':'#
 function buildReportEmailHtml(rep, recipientName) {
   var k = rep.kpis, sc = rep.scope, b = rep.breakdown;
   var byLabel = { zone:'Zone', district:'District', block:'Block' }[b.by] || 'Area';
-  function tile(lbl, val, color){ return '<td width="33%" style="background:#fafafa;border:1px solid #e5e7eb;border-radius:8px;padding:11px 13px;"><div style="font-size:10px;font-weight:bold;text-transform:uppercase;color:#6b7280;letter-spacing:.5px;">'+lbl+'</div><div style="font-family:Georgia,serif;font-size:22px;font-weight:bold;color:'+(color||'#1f2937')+';">'+val+'</div></td>'; }
+  var SERIF = "font-family:'Spectral',Georgia,'Times New Roman',serif;";
+  function sech(title, tag, cls){
+    var ts = (cls==='ai') ? 'color:#7B1010;background:#f6e9e9;' : 'color:#6b7280;background:#f7f2ee;border:1px solid #e5e7eb;';
+    return '<table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 12px;"><tr>'+
+      '<td style="'+SERIF+'font-size:17px;font-weight:700;color:#1f2937;">'+title+'</td>'+
+      '<td align="right"><span style="font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;padding:3px 9px;border-radius:20px;'+ts+'">'+tag+'</span></td>'+
+      '</tr></table>';
+  }
+  function pill(planned, p){
+    var c,bg,t;
+    if(!planned){c='#991b1b';bg='#fbe9e9';t='No activity';}
+    else if(p>=80){c='#166534';bg='#e6f0e8';t='On track';}
+    else if(p>=50){c='#166534';bg='#e6f0e8';t='Steady';}
+    else if(p>=30){c='#9a5b0e';bg='#faf0de';t='Watch';}
+    else {c='#991b1b';bg='#fbe9e9';t='Attention';}
+    return '<span style="font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px;color:'+c+';background:'+bg+';white-space:nowrap;">'+t+'</span>';
+  }
+  function tile(lbl, val, color, sub){
+    return '<td width="33%" style="background:#fafafa;border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;">'+
+      '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#6b7280;letter-spacing:.5px;">'+lbl+'</div>'+
+      '<div style="'+SERIF+'font-size:23px;font-weight:700;color:'+(color||'#1f2937')+';margin-top:5px;">'+val+'</div>'+
+      (sub?'<div style="font-size:11px;color:#6b7280;margin-top:2px;">'+sub+'</div>':'')+'</td>';
+  }
+  function sec(inner){ return '<tr><td style="padding:24px 30px 0;">'+inner+'</td></tr>'; }
+
+  // Performance table
+  var zsum = 0; (b.rows||[]).forEach(function(r){ zsum += (r.districts||0); });
   var rows = (b.rows||[]).slice(0,15).map(function(r){
-    return '<tr style="border-top:1px solid #eee;"><td style="padding:9px 12px;font-weight:bold;">'+_emailEsc(r.name)+'</td>'+
-      (b.by==='zone'?'<td align="right" style="padding:9px 12px;">'+(r.districts||0)+'</td>':'')+
-      '<td align="right" style="padding:9px 12px;">'+r.planned+'</td><td align="right" style="padding:9px 12px;">'+r.conducted+'</td>'+
-      '<td align="right" style="padding:9px 12px;color:'+_pctColor(r.pct)+';font-weight:bold;">'+(r.planned?r.pct+'%':'-')+'</td></tr>';
+    return '<tr style="border-top:1px solid #f0ebe5;"><td style="padding:10px 12px;font-weight:700;">'+_emailEsc(r.name)+'</td>'+
+      (b.by==='zone'?'<td align="right" style="padding:10px 12px;">'+(r.districts||0)+'</td>':'')+
+      '<td align="right" style="padding:10px 12px;">'+r.planned+'</td><td align="right" style="padding:10px 12px;">'+r.conducted+'</td>'+
+      '<td align="right" style="padding:10px 12px;color:'+_pctColor(r.pct)+';font-weight:700;">'+(r.planned?r.pct+'%':'-')+'</td>'+
+      '<td style="padding:10px 12px;">'+pill(r.planned,r.pct)+'</td></tr>';
   }).join('');
-  var lead = (b.leaderboard||[]).slice(0,5).map(function(x){ return _emailEsc(x.name)+' '+x.conducted+' ('+x.pct+'%)'; }).join(', ');
-  var att = (rep.attention||[]).slice(0,3).map(function(a){ return '&bull; <b>'+_emailEsc(a.title)+'</b>'+(a.detail?' - '+_emailEsc(a.detail):''); }).join('<br>');
-  var recs = (rep.narrative&&rep.narrative.recommendations||[]).map(function(x,i){ return '<b>'+(i+1)+'.</b> '+_emailEsc(x.h)+(x.d?' '+_emailEsc(x.d):''); }).join('<br>');
-  var hi = (rep.narrative&&rep.narrative.highlights||[]).map(function(x){ return '&bull; <b>'+_emailEsc(x.h)+'</b>'+(x.d?' - '+_emailEsc(x.d):''); }).join('<br>');
-  var purp = (rep.byPurpose||[]).map(function(x){ return _emailEsc(x.name)+' &nbsp;<b>'+x.count+'</b>'; }).join('<br>');
-  var stake = (rep.byStakeholder||[]).map(function(x){ return _emailEsc(x.name)+' &nbsp;<b>'+x.count+'</b>'; }).join('<br>');
-  var focus = (purp||stake) ?
-    '<tr><td style="padding:20px 30px 0;"><div style="font-family:Georgia,serif;font-size:16px;font-weight:bold;margin-bottom:8px;">Meeting Focus</div>'+
+  var zoneTotal = (b.by==='zone') ? '<tr style="border-top:1px solid #e5e7eb;background:#f7f2ee;font-weight:700;font-size:13px;"><td style="padding:10px 12px;">State total</td><td align="right" style="padding:10px 12px;">'+zsum+'</td><td align="right" style="padding:10px 12px;">'+k.total+'</td><td align="right" style="padding:10px 12px;">'+k.conducted+'</td><td align="right" style="padding:10px 12px;">'+k.success+'%</td><td></td></tr>' : '';
+  var perfTable = sec(sech('Performance by '+byLabel,'Computed','calc')+
+    '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px;border:1px solid #e5e7eb;border-radius:8px;">'+
+    '<tr style="background:#f7f2ee;color:#6b7280;font-size:11px;text-transform:uppercase;"><th align="left" style="padding:10px 12px;">'+byLabel+'</th>'+(b.by==='zone'?'<th align="right" style="padding:10px 12px;">Dist</th>':'')+'<th align="right" style="padding:10px 12px;">Planned</th><th align="right" style="padding:10px 12px;">Conducted</th><th align="right" style="padding:10px 12px;">Success</th><th align="left" style="padding:10px 12px;">Status</th></tr>'+
+    rows + zoneTotal + '</table>');
+
+  // Leaderboard (state)
+  var lb = '';
+  if (b.leaderboard && b.leaderboard.length) {
+    var lrows = b.leaderboard.slice(0,8).map(function(x,i){
+      return '<tr style="border-top:1px solid #f0ebe5;"><td style="padding:10px 12px;color:#a8a29e;font-weight:700;">'+(i+1)+'</td><td style="padding:10px 12px;font-weight:700;">'+_emailEsc(x.name)+'</td><td style="padding:10px 12px;color:#6b7280;">'+_emailEsc((x.zone||'').replace('UP ',''))+'</td><td align="right" style="padding:10px 12px;">'+x.conducted+'</td><td align="right" style="padding:10px 12px;color:'+_pctColor(x.pct)+';font-weight:700;">'+x.pct+'%</td></tr>';
+    }).join('');
+    lb = sec(sech('District Leaderboard','Top '+Math.min(8,b.leaderboard.length),'calc')+
+      '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px;border:1px solid #e5e7eb;border-radius:8px;">'+
+      '<tr style="background:#f7f2ee;color:#6b7280;font-size:11px;text-transform:uppercase;"><th align="left" style="padding:10px 12px;">#</th><th align="left" style="padding:10px 12px;">District</th><th align="left" style="padding:10px 12px;">Zone</th><th align="right" style="padding:10px 12px;">Conducted</th><th align="right" style="padding:10px 12px;">Success</th></tr>'+
+      lrows + '</table>');
+  }
+
+  // Participation
+  var part = sec(sech('Team Participation','Computed','calc')+
+    '<div style="background:#f7f2ee;border:1px solid #e5e7eb;border-radius:10px;padding:16px 18px;">'+
     '<table width="100%" cellpadding="0" cellspacing="0"><tr>'+
-    '<td width="50%" valign="top" style="padding-right:10px;"><div style="font-size:11px;font-weight:bold;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">By Purpose</div><div style="font-size:13px;line-height:1.9;">'+(purp||'-')+'</div></td>'+
-    '<td width="50%" valign="top" style="padding-left:10px;border-left:1px solid #eee;"><div style="font-size:11px;font-weight:bold;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">By Stakeholder</div><div style="font-size:13px;line-height:1.9;">'+(stake||'-')+'</div></td>'+
-    '</tr></table></td></tr>' : '';
+    '<td width="92" valign="top"><div style="'+SERIF+'font-size:30px;font-weight:700;color:#166534;">'+k.participation+'%</div><div style="font-size:11px;color:#6b7280;">participation</div></td>'+
+    '<td valign="middle" style="padding-left:14px;"><div style="height:9px;background:#e5e7eb;border-radius:6px;"><div style="height:9px;width:'+Math.max(2,Math.min(100,k.participation))+'%;background:#166534;border-radius:6px;font-size:1px;">&nbsp;</div></div>'+
+    '<div style="font-size:12px;color:#6b7280;margin-top:8px;"><b style="color:#166534;">'+k.activeStaff+'</b> active &nbsp;&middot;&nbsp; <b style="color:#991b1b;">'+(k.totalStaff-k.activeStaff)+'</b> inactive of '+k.totalStaff+' staff</div></td></tr></table></div>');
+
+  // Meeting focus
+  function focusCol(title, arr){
+    var body = (arr||[]).map(function(x){ return '<tr><td style="padding:5px 0;font-weight:600;">'+_emailEsc(x.name)+'</td><td align="right" style="padding:5px 0;font-weight:700;">'+x.count+'</td></tr>'; }).join('') || '<tr><td style="color:#a8a29e;padding:5px 0;">No data</td></tr>';
+    return '<td width="50%" valign="top" style="padding:0 8px;"><div style="border:1px solid #e5e7eb;border-radius:10px;padding:10px 14px;"><div style="font-size:12px;font-weight:700;color:#1f2937;margin-bottom:4px;">'+title+'</div><table width="100%" style="font-size:13px;">'+body+'</table></div></td>';
+  }
+  var focus = (rep.byPurpose&&rep.byPurpose.length || rep.byStakeholder&&rep.byStakeholder.length) ?
+    sec(sech('Meeting Focus','Computed','calc')+'<table width="100%" cellpadding="0" cellspacing="0"><tr>'+focusCol('By Purpose',rep.byPurpose)+focusCol('By Stakeholder',rep.byStakeholder)+'</tr></table>') : '';
+
+  // Dot lists
+  function dotList(items, dotColorFn){
+    var body = items.map(function(it){
+      return '<tr><td width="16" valign="top" style="padding:9px 0;"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:'+dotColorFn(it)+';">&nbsp;</span></td>'+
+        '<td style="padding:9px 0;"><b>'+_emailEsc(it.h)+'</b>'+(it.d?'<br><span style="color:#6b7280;font-size:13px;">'+_emailEsc(it.d)+'</span>':'')+'</td></tr>';
+    }).join('');
+    return '<table width="100%" cellpadding="0" cellspacing="0" style="font-size:13.5px;">'+body+'</table>';
+  }
+  var attItems = (rep.attention||[]).slice(0,4).map(function(a){ return { h:a.title, d:a.detail, level:a.level }; });
+  var attention = attItems.length ? sec(sech('Attention Needed','Rules','calc')+dotList(attItems, function(it){ return it.level==='crit'?'#991b1b':it.level==='good'?'#166534':'#9a5b0e'; })) : '';
+  var hiItems = (rep.narrative&&rep.narrative.highlights)||[];
+  var highlights = hiItems.length ? sec(sech('Highlights','AI-written','ai')+dotList(hiItems, function(){ return '#7B1010'; })) : '';
+
+  // Recommendations (numbered)
+  var recItems = (rep.narrative&&rep.narrative.recommendations)||[];
+  var recBody = recItems.map(function(x,i){
+    return '<tr><td width="34" valign="top" style="padding:9px 0;"><span style="display:inline-block;width:24px;height:24px;line-height:24px;text-align:center;border-radius:7px;background:#f6e9e9;color:#7B1010;font-weight:700;font-size:13px;">'+(i+1)+'</span></td>'+
+      '<td style="padding:9px 0 9px 6px;"><b>'+_emailEsc(x.h)+'</b>'+(x.d?' <span style="color:#6b7280;font-size:13px;">'+_emailEsc(x.d)+'</span>':'')+'</td></tr>';
+  }).join('');
+  var recommendations = recItems.length ? sec(sech('Recommendations','AI-written','ai')+'<table width="100%" cellpadding="0" cellspacing="0" style="font-size:13.5px;">'+recBody+'</table>') : '';
 
   return '<div style="margin:0;padding:24px 12px;background:#f4f2ef;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">'+
-    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:660px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;">'+
-    '<tr><td style="padding:26px 30px 16px;border-bottom:2px solid #7B1010;">'+
-      '<div style="font-size:11px;font-weight:bold;letter-spacing:1.4px;text-transform:uppercase;color:#7B1010;">Educate Girls &middot; Government Relations</div>'+
-      '<h1 style="font-family:Georgia,serif;font-size:23px;line-height:1.15;margin:8px 0 5px;color:#1f2937;">Monthly GR Meetings Report</h1>'+
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;">'+
+    '<tr><td style="padding:28px 30px 16px;border-bottom:2px solid #7B1010;">'+
+      '<div style="font-size:11px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:#7B1010;">Educate Girls &middot; Government Relations</div>'+
+      '<h1 style="'+SERIF+'font-size:25px;line-height:1.12;margin:9px 0 5px;color:#1f2937;">Monthly GR Meetings Report</h1>'+
       '<div style="font-size:14px;color:#6b7280;"><b style="color:#1f2937;">'+_emailEsc(sc.label)+'</b> &middot; '+_emailEsc(sc.month)+'</div></td></tr>'+
     '<tr><td style="padding:18px 30px 0;font-size:13px;color:#6b7280;">Dear '+_emailEsc(recipientName||'Colleague')+', here is your '+_emailEsc(sc.kind)+'-level summary for '+_emailEsc(sc.month)+'.</td></tr>'+
-    '<tr><td style="padding:14px 30px 0;"><div style="background:#f7f2ee;border:1px solid #e5e7eb;border-left:3px solid #7B1010;border-radius:8px;padding:14px 18px;font-size:14px;line-height:1.6;">'+_emailEsc(rep.narrative.summary)+'</div></td></tr>'+
-    '<tr><td style="padding:20px 30px 0;"><div style="font-family:Georgia,serif;font-size:16px;font-weight:bold;margin-bottom:6px;">At a Glance</div>'+
+    sec(sech('Executive Summary','AI-written','ai')+'<div style="background:#f7f2ee;border:1px solid #e5e7eb;border-left:3px solid #7B1010;border-radius:10px;padding:16px 20px;font-size:14.5px;line-height:1.6;">'+_emailEsc(rep.narrative.summary)+'</div>')+
+    sec(sech('At a Glance','Computed','calc')+
       '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:8px;">'+
-      '<tr>'+tile('Total',k.total)+tile('Conducted',k.conducted,'#166534')+tile('Success',k.success+'%','#7B1010')+'</tr>'+
-      '<tr>'+tile('Active Staff',k.activeStaff+' / '+k.totalStaff)+tile('Pending',k.pending,'#9a5b0e')+tile('Govt MoM',k.govtMom+' / '+k.conducted)+'</tr></table></td></tr>'+
-    '<tr><td style="padding:20px 30px 0;"><div style="font-family:Georgia,serif;font-size:16px;font-weight:bold;margin-bottom:8px;">Performance by '+byLabel+'</div>'+
-      '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px;border:1px solid #e5e7eb;">'+
-      '<tr style="background:#f7f2ee;color:#6b7280;font-size:11px;text-transform:uppercase;"><th align="left" style="padding:9px 12px;">'+byLabel+'</th>'+(b.by==='zone'?'<th align="right" style="padding:9px 12px;">Dist</th>':'')+'<th align="right" style="padding:9px 12px;">Planned</th><th align="right" style="padding:9px 12px;">Conducted</th><th align="right" style="padding:9px 12px;">Success</th></tr>'+
-      rows + '</table>'+ (lead?'<div style="font-size:12.5px;color:#6b7280;margin-top:8px;"><b style="color:#1f2937;">Top districts:</b> '+lead+'</div>':'') +'</td></tr>'+
-    focus +
-    (att?'<tr><td style="padding:20px 30px 0;"><div style="font-family:Georgia,serif;font-size:16px;font-weight:bold;margin-bottom:6px;">Attention Needed</div><div style="font-size:13.5px;line-height:1.7;">'+att+'</div></td></tr>':'')+
-    (hi?'<tr><td style="padding:18px 30px 0;"><div style="font-family:Georgia,serif;font-size:16px;font-weight:bold;margin-bottom:6px;">Highlights</div><div style="font-size:13.5px;line-height:1.7;">'+hi+'</div></td></tr>':'')+
-    (recs?'<tr><td style="padding:18px 30px 0;"><div style="font-family:Georgia,serif;font-size:16px;font-weight:bold;margin-bottom:6px;">Recommendations</div><div style="font-size:13.5px;line-height:1.7;">'+recs+'</div></td></tr>':'')+
-    '<tr><td style="padding:22px 30px 26px;"><div style="border-top:1px solid #e5e7eb;padding-top:14px;font-size:11px;color:#9ca3af;line-height:1.6;">Numbers computed from records; summary written by AI. Full analytics portal: https://dataimpact.in/report.html<br>EG-MMS &middot; automated monthly report.</div></td></tr>'+
+      '<tr>'+tile('Total',k.total,'','Planned in month')+tile('Conducted',k.conducted,'#166534','This month')+tile('Success',k.success+'%','#7B1010','Conducted vs planned')+'</tr>'+
+      '<tr>'+tile('Active Staff',k.activeStaff+' / '+k.totalStaff,'',k.participation+'% participation')+tile('Pending',k.pending,'#9a5b0e','Open in month')+tile('Govt MoM',k.govtMom+' / '+k.conducted,'','Official minutes')+'</tr></table>')+
+    perfTable + lb + part + focus + attention + highlights + recommendations +
+    '<tr><td style="padding:24px 30px 26px;"><div style="border-top:1px solid #e5e7eb;padding-top:14px;font-size:11px;color:#9ca3af;line-height:1.6;">Numbers computed from records; summary and recommendations written by AI. Full analytics portal: https://dataimpact.in/report.html<br>EG-MMS &middot; automated monthly report.</div></td></tr>'+
     '</table></div>';
 }
 
