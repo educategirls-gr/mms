@@ -2829,22 +2829,23 @@ function CAL_installAuto() { return installCalendarTrigger(); }         // hourl
 //  Blocked). Each lead gets a team summary (open follow-ups + inactive staff).
 //  Free (email). Test mode sends everything to the admin.
 // ============================================================
-function buildOfficerNudge_(o) {
-  var rows = o.items.slice(0,15).map(function(it){
-    var fc = it.flag==='Blocked' ? '#B91C1C' : '#9a5b0e';
-    return '<tr style="border-top:1px solid #f0ebe5;"><td style="padding:9px 12px;"><b>'+_emailEsc(it.stakeholder)+'</b>'+(it.purpose?' <span style="color:#6b7280;">- '+_emailEsc(it.purpose)+'</span>':'')+'<br><span style="font-size:12px;color:#4338CA;">Next: '+_emailEsc(it.nextAction||'-')+'</span></td>'+
-      '<td align="right" style="padding:9px 12px;white-space:nowrap;color:'+fc+';font-weight:700;font-size:12px;">'+_emailEsc(it.flag)+'<br><span style="color:#9ca3af;font-weight:400;">'+_emailEsc(it.date)+'</span></td></tr>';
-  }).join('');
+function buildOfficerDigest_(o) {
+  function sec(title, rows){ return rows ? '<tr><td style="padding:16px 28px 0;"><div style="font-family:Georgia,serif;font-size:15px;font-weight:700;color:#1f2937;margin-bottom:6px;">'+title+'</div><table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-collapse:collapse;font-size:13px;">'+rows+'</table></td></tr>' : ''; }
+  var up = o.upcoming.map(function(it){ return '<tr style="border-top:1px solid #f0ebe5;"><td style="padding:8px 12px;"><b>'+_emailEsc(it.stakeholder)+'</b>'+(it.purpose?' <span style="color:#6b7280;">- '+_emailEsc(it.purpose)+'</span>':'')+'</td><td align="right" style="padding:8px 12px;color:#1D4ED8;font-weight:600;white-space:nowrap;">'+_emailEsc(it.date)+(it.time?' '+_emailEsc(it.time):'')+'</td></tr>'; }).join('');
+  var pend = o.pending.map(function(it){ var fc=it.flag==='Blocked'?'#B91C1C':'#9a5b0e'; return '<tr style="border-top:1px solid #f0ebe5;"><td style="padding:8px 12px;"><b>'+_emailEsc(it.stakeholder)+'</b><br><span style="font-size:12px;color:#4338CA;">Next: '+_emailEsc(it.nextAction||'-')+'</span></td><td align="right" style="padding:8px 12px;color:'+fc+';font-weight:700;font-size:12px;white-space:nowrap;">'+_emailEsc(it.flag)+'</td></tr>'; }).join('');
+  var last = o.last.map(function(it){ return '<tr style="border-top:1px solid #f0ebe5;"><td style="padding:8px 12px;"><b>'+_emailEsc(it.stakeholder)+'</b>'+(it.purpose?' <span style="color:#6b7280;">- '+_emailEsc(it.purpose)+'</span>':'')+'</td><td align="right" style="padding:8px 12px;color:#166534;white-space:nowrap;">'+_emailEsc(it.date)+'</td></tr>'; }).join('');
   return '<div style="margin:0;padding:20px 12px;background:#f4f2ef;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">'+
     '<table width="100%" cellpadding="0" cellspacing="0" style="max-width:620px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:12px;">'+
-    '<tr><td style="padding:22px 28px 12px;border-bottom:2px solid #7B1010;"><div style="font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#7B1010;">Weekly reminder</div>'+
-    '<h1 style="font-family:Georgia,serif;font-size:20px;margin:8px 0 3px;">Your pending follow-ups</h1><div style="font-size:13px;color:#6b7280;">'+_emailEsc(o.name)+' &middot; '+o.items.length+' open</div></td></tr>'+
-    '<tr><td style="padding:14px 28px 0;font-size:14px;color:#374151;">Dear '+_emailEsc(o.name)+', the following meetings need a follow-up. Please schedule or close them this week.</td></tr>'+
-    '<tr><td style="padding:12px 28px 0;"><table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-collapse:collapse;font-size:13px;">'+rows+'</table></td></tr>'+
-    '<tr><td style="padding:18px 28px 24px;"><div style="border-top:1px solid #e5e7eb;padding-top:12px;font-size:11px;color:#9ca3af;">EG-MMS weekly reminder &middot; https://dataimpact.in/report.html</div></td></tr>'+
+    '<tr><td style="padding:22px 28px 12px;border-bottom:2px solid #7B1010;"><div style="font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#7B1010;">Weekly update</div>'+
+    '<h1 style="font-family:Georgia,serif;font-size:20px;margin:8px 0 3px;">Your GR week</h1><div style="font-size:13px;color:#6b7280;">'+_emailEsc(o.name)+'</div></td></tr>'+
+    '<tr><td style="padding:14px 28px 0;font-size:14px;color:#374151;">Dear '+_emailEsc(o.name)+', here is your weekly GR meetings update.</td></tr>'+
+    sec('Upcoming this week ('+o.upcoming.length+')', up)+
+    sec('Pending follow-ups ('+o.pending.length+')', pend)+
+    sec('Conducted last week ('+o.last.length+')', last)+
+    '<tr><td style="padding:18px 28px 24px;"><div style="border-top:1px solid #e5e7eb;padding-top:12px;font-size:11px;color:#9ca3af;">EG-MMS weekly update &middot; https://dataimpact.in/report.html</div></td></tr>'+
     '</table></div>';
 }
-function buildLeadNudge_(r, scopeLabel, openCount, byOff, totalStaff, inactive) {
+function buildLeadNudge_(r, scopeLabel, openCount, byOff, conductedLW) {
   var top = Object.keys(byOff).map(function(n){ return {n:n,c:byOff[n]}; }).sort(function(a,b){ return b.c-a.c; }).slice(0,8);
   var rows = top.map(function(x){ return '<tr style="border-top:1px solid #f0ebe5;"><td style="padding:8px 12px;">'+_emailEsc(x.n)+'</td><td align="right" style="padding:8px 12px;font-weight:700;">'+x.c+'</td></tr>'; }).join('') || '<tr><td style="padding:8px 12px;color:#9ca3af;">No open follow-ups</td></tr>';
   return '<div style="margin:0;padding:20px 12px;background:#f4f2ef;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">'+
@@ -2853,7 +2854,7 @@ function buildLeadNudge_(r, scopeLabel, openCount, byOff, totalStaff, inactive) 
     '<h1 style="font-family:Georgia,serif;font-size:20px;margin:8px 0 3px;">Follow-up status</h1><div style="font-size:13px;color:#6b7280;">'+_emailEsc(scopeLabel)+'</div></td></tr>'+
     '<tr><td style="padding:16px 28px 0;"><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:8px;"><tr>'+
       '<td width="50%" style="background:#fafafa;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#6b7280;">Open follow-ups</div><div style="font-family:Georgia,serif;font-size:24px;font-weight:700;color:#9a5b0e;">'+openCount+'</div></td>'+
-      '<td width="50%" style="background:#fafafa;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#6b7280;">Inactive staff</div><div style="font-family:Georgia,serif;font-size:24px;font-weight:700;color:#B91C1C;">'+inactive+' <span style="font-size:14px;color:#9ca3af;">/ '+totalStaff+'</span></div></td>'+
+      '<td width="50%" style="background:#fafafa;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#6b7280;">Conducted last week</div><div style="font-family:Georgia,serif;font-size:24px;font-weight:700;color:#166534;">'+conductedLW+'</div></td>'+
     '</tr></table></td></tr>'+
     '<tr><td style="padding:16px 28px 0;"><div style="font-family:Georgia,serif;font-size:15px;font-weight:700;margin-bottom:6px;">Officers with pending follow-ups</div>'+
       '<table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-collapse:collapse;font-size:13px;">'+rows+'</table></td></tr>'+
@@ -2863,41 +2864,55 @@ function buildLeadNudge_(r, scopeLabel, openCount, byOff, totalStaff, inactive) 
 
 function sendWeeklyNudges(mode) {
   mode = mode || 'test';
-  var ss = SpreadsheetApp.openById(SPREADSHEET_ID), cS = ss.getSheetByName(CONDUCTED_SHEET);
-  var data = cS ? cS.getDataRange().getValues() : [];
-  var cutoff = Date.now() - 30*86400000;
-  var byOfficer = {}, activeNames = {};
-  for (var i = 1; i < data.length; i++) {
-    if (!data[i][0]) continue;
-    var dt = parseStart_(fmtDateVal(data[i][13]), ''); if (!dt || dt.getTime() < cutoff) continue;
-    var nm = (data[i][2]||'').toString().trim(); if (nm) activeNames[nm.toLowerCase()] = 1;
-    var flag = (data[i][23]||'').toString();
-    if (flag !== 'Follow-up needed' && flag !== 'Blocked') continue;
-    var email = (data[i][4]||'').toString().trim().toLowerCase(); if (!email) continue;
-    if (!byOfficer[email]) byOfficer[email] = { name:nm, email:email, items:[] };
-    byOfficer[email].items.push({ district:(data[i][1]||'').toString(), stakeholder:(data[i][9]||'').toString(), purpose:(data[i][11]||'').toString(), flag:flag, nextAction:(data[i][24]||'').toString(), date:fmtDateVal(data[i][13]) });
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var cS = ss.getSheetByName(CONDUCTED_SHEET), pS = ss.getSheetByName(MEETINGS_SHEET);
+  var now = Date.now(), weekAgo = now - 7*86400000, weekAhead = now + 7*86400000, cutoff30 = now - 30*86400000;
+  var byOfficer = {};
+  function ofc(email, name){ email = email.toLowerCase(); if (!byOfficer[email]) byOfficer[email] = { name:name, email:email, upcoming:[], pending:[], last:[] }; return byOfficer[email]; }
+  // Conducted: last-week recap + pending follow-ups (last 30 days)
+  var cd = cS ? cS.getDataRange().getValues() : [];
+  for (var i = 1; i < cd.length; i++) {
+    if (!cd[i][0]) continue;
+    var email = (cd[i][4]||'').toString().trim(); if (!email) continue;
+    var dt = parseStart_(fmtDateVal(cd[i][13]), ''); if (!dt) continue; var t = dt.getTime();
+    var o = ofc(email, (cd[i][2]||'').toString().trim());
+    var rowInfo = { district:(cd[i][1]||'').toString(), stakeholder:(cd[i][9]||'').toString(), purpose:(cd[i][11]||'').toString(), date:fmtDateVal(cd[i][13]) };
+    if (t >= weekAgo && t <= now) o.last.push(rowInfo);
+    var flag = (cd[i][23]||'').toString();
+    if (t >= cutoff30 && (flag==='Follow-up needed' || flag==='Blocked')) o.pending.push({ district:rowInfo.district, stakeholder:rowInfo.stakeholder, purpose:rowInfo.purpose, flag:flag, nextAction:(cd[i][24]||'').toString(), date:rowInfo.date });
+  }
+  // Planned: upcoming week
+  var pd = pS ? pS.getDataRange().getValues() : [];
+  for (var j = 1; j < pd.length; j++) {
+    if (!pd[j][0]) continue;
+    var stt = (pd[j][13]||'Planned').toString(); if (stt!=='Planned' && stt!=='Follow-up') continue;
+    var em3 = (pd[j][4]||'').toString().trim(); if (!em3) continue;
+    var dt2 = parseStart_(fmtDateVal(pd[j][5]), (pd[j][6]||'').toString()); if (!dt2) continue; var t2 = dt2.getTime();
+    if (t2 >= now && t2 <= weekAhead) ofc(em3, (pd[j][2]||'').toString().trim()).upcoming.push({ district:(pd[j][1]||'').toString(), stakeholder:(pd[j][9]||'').toString(), purpose:(pd[j][11]||'').toString(), date:fmtDateVal(pd[j][5]), time:(pd[j][6]||'').toString() });
   }
   var sent = [], done = 0;
-  // Officer nudges
+  // Officer digests - only to those with upcoming, pending or last-week activity (skip the 0/0/0)
   Object.keys(byOfficer).forEach(function(em){
-    var o = byOfficer[em]; if (!o.items.length) return;
+    var o = byOfficer[em];
+    if (!o.upcoming.length && !o.pending.length && !o.last.length) return;
     var to = (mode==='live') ? o.email : REPORT_TEST_EMAIL;
-    try { MailApp.sendEmail({ to:to, subject:(mode!=='live'?'[TEST -> '+o.email+'] ':'')+'Your pending follow-ups ('+o.items.length+')', htmlBody:buildOfficerNudge_(o), name:'EG-MMS Reminders' }); sent.push('officer '+to+' ('+o.items.length+')'); done++; } catch(e){}
+    try { MailApp.sendEmail({ to:to, subject:(mode!=='live'?'[TEST -> '+o.email+'] ':'')+'Your GR week: '+o.upcoming.length+' upcoming, '+o.pending.length+' pending', htmlBody:buildOfficerDigest_(o), name:'EG-MMS' }); sent.push('officer '+to+' (up '+o.upcoming.length+', pend '+o.pending.length+', last '+o.last.length+')'); done++; } catch(e){}
   });
-  // Lead nudges
+  // Lead summaries
   var recips = getReportRecipients();
-  var em2 = getEmployeeMaster(); var allE = (em2 && em2.employees) || [];
   recips.forEach(function(r){
     var scopeDists = r.role==='State' ? null : r.role==='Zone' ? (ZONE_DISTRICTS[findZoneKey_(r.zone)]||[]) : (r.districts||[r.district]);
     function inScope(d){ if(!scopeDists) return true; for(var k=0;k<scopeDists.length;k++) if(normDist_(scopeDists[k])===normDist_(d)) return true; return false; }
-    var openCount = 0, byOff = {};
-    Object.keys(byOfficer).forEach(function(em){ byOfficer[em].items.forEach(function(it){ if (inScope(it.district)) { openCount++; byOff[byOfficer[em].name] = (byOff[byOfficer[em].name]||0)+1; } }); });
-    var emps = allE.filter(function(e){ return e.district && inScope(e.district); });
-    var inactive = emps.filter(function(e){ return !activeNames[(e.name||'').trim().toLowerCase()]; }).length;
-    if (openCount === 0 && inactive === 0) return;   // nothing to report
+    var openCount = 0, conductedLW = 0, byOff = {};
+    Object.keys(byOfficer).forEach(function(em){
+      var o = byOfficer[em];
+      o.pending.forEach(function(it){ if (inScope(it.district)) { openCount++; byOff[o.name] = (byOff[o.name]||0)+1; } });
+      o.last.forEach(function(it){ if (inScope(it.district)) conductedLW++; });
+    });
+    if (openCount === 0 && conductedLW === 0) return;
     var scopeLabel = r.role==='State' ? 'Uttar Pradesh' : r.role==='Zone' ? r.zone : (r.districts||[r.district]).join(', ');
     var to = (mode==='live') ? r.email : REPORT_TEST_EMAIL;
-    try { MailApp.sendEmail({ to:to, subject:(mode!=='live'?'[TEST -> '+r.email+'] ':'')+'Team follow-up summary - '+scopeLabel, htmlBody:buildLeadNudge_(r, scopeLabel, openCount, byOff, emps.length, inactive), name:'EG-MMS Reminders' }); sent.push('lead '+to); done++; } catch(e){}
+    try { MailApp.sendEmail({ to:to, subject:(mode!=='live'?'[TEST -> '+r.email+'] ':'')+'Team GR summary - '+scopeLabel, htmlBody:buildLeadNudge_(r, scopeLabel, openCount, byOff, conductedLW), name:'EG-MMS' }); sent.push('lead '+to); done++; } catch(e){}
   });
   Logger.log('Nudges sent: ' + done); Logger.log(sent.join('\n'));
   return { success:true, mode:mode, sent:done, details:sent };
