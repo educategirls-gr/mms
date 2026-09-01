@@ -3085,9 +3085,10 @@ function buildReportEmailHtml(rep, recipientName) {
 }
 
 // mode: 'test' sends every report to REPORT_TEST_EMAIL; 'live' sends to each lead.
-function sendMonthlyReports(mode, monthOverride) {
+function sendMonthlyReports(mode, monthOverride, roleFilter) {
   mode = mode || 'test';
   var recips = getReportRecipients();
+  if (roleFilter) recips = recips.filter(function(r){ return r.role === roleFilter; });
   var month = monthOverride || prevMonthKey_();   // default: the just-completed month (Aug on 1 Sep)
   var sent = [], failed = [];
   recips.forEach(function(r){
@@ -3118,6 +3119,14 @@ function monthlyReportJob() { return sendMonthlyReports('live'); }   // uses pre
 function REPORT_step1_TEST()        { return sendMonthlyReports('test'); }   // all reports to admin only (review)
 function REPORT_step2_SEND_LIVE()   { return sendMonthlyReports('live'); }   // real send to all 33 leads
 function REPORT_step3_INSTALL_AUTO(){ return installMonthlyTrigger(); }      // schedule for the 1st of each month
+
+// ---- Re-send only to STATE-level people (e.g. after adding a new state name) ----
+function REPORT_STATE_preview() {   // see the State recipients (confirm the new name is here)
+  var r = getReportRecipients().filter(function(x){ return x.role === 'State'; });
+  return { count:r.length, recipients:r.map(function(x){ return { name:x.name, email:x.email }; }) };
+}
+function REPORT_STATE_test()   { return sendMonthlyReports('test', null, 'State'); }   // State reports to admin only (review)
+function REPORT_STATE_live()   { return sendMonthlyReports('live', null, 'State'); }   // real send to State people only
 
 function installMonthlyTrigger() {
   ScriptApp.getProjectTriggers().forEach(function(t){ if (t.getHandlerFunction() === 'monthlyReportJob') ScriptApp.deleteTrigger(t); });
