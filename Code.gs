@@ -2379,11 +2379,11 @@ function getMonthlyReport(session, monthParam) {
       breakdown.by = 'zone';
       var zg = {};
       mm.forEach(function(m){ var z = districtToZone_(m.district) || 'Unzoned'; if (!zg[z]) zg[z] = { name:z, planned:0, conducted:0, list:[] }; zg[z].planned++; zg[z].list.push(m); if (m.status==='Conducted') zg[z].conducted++; });
-      breakdown.rows = Object.keys(ZONE_DISTRICTS).concat(zg['Unzoned'] ? ['Unzoned'] : []).map(function(z){
+      breakdown.rows = Object.keys(ZONE_DISTRICTS).map(function(z){
         var r = zg[z] || { planned:0, conducted:0, list:[] };
         var dcount = (ZONE_DISTRICTS[z] ? ZONE_DISTRICTS[z].length : 0);
         return { name:z, districts:dcount, planned:r.planned, conducted:r.conducted, pct:pct(r.conducted,r.planned), activeStaff:activeIn(r.list) };
-      }).filter(function(r){ return r.districts || r.planned; }).sort(function(a,b){ return b.conducted - a.conducted; });
+      }).sort(function(a,b){ return b.conducted - a.conducted; });
       // district leaderboard (top 8)
       breakdown.leaderboard = groupBy(function(m){ return m.district || '-'; })
         .map(function(r){ r.zone = districtToZone_(r.name) || '-'; return r; })
@@ -2603,6 +2603,14 @@ function buildReportEmailHtml(rep, recipientName) {
   var att = (rep.attention||[]).slice(0,3).map(function(a){ return '&bull; <b>'+_emailEsc(a.title)+'</b>'+(a.detail?' - '+_emailEsc(a.detail):''); }).join('<br>');
   var recs = (rep.narrative&&rep.narrative.recommendations||[]).map(function(x,i){ return '<b>'+(i+1)+'.</b> '+_emailEsc(x.h)+(x.d?' '+_emailEsc(x.d):''); }).join('<br>');
   var hi = (rep.narrative&&rep.narrative.highlights||[]).map(function(x){ return '&bull; <b>'+_emailEsc(x.h)+'</b>'+(x.d?' - '+_emailEsc(x.d):''); }).join('<br>');
+  var purp = (rep.byPurpose||[]).map(function(x){ return _emailEsc(x.name)+' &nbsp;<b>'+x.count+'</b>'; }).join('<br>');
+  var stake = (rep.byStakeholder||[]).map(function(x){ return _emailEsc(x.name)+' &nbsp;<b>'+x.count+'</b>'; }).join('<br>');
+  var focus = (purp||stake) ?
+    '<tr><td style="padding:20px 30px 0;"><div style="font-family:Georgia,serif;font-size:16px;font-weight:bold;margin-bottom:8px;">Meeting Focus</div>'+
+    '<table width="100%" cellpadding="0" cellspacing="0"><tr>'+
+    '<td width="50%" valign="top" style="padding-right:10px;"><div style="font-size:11px;font-weight:bold;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">By Purpose</div><div style="font-size:13px;line-height:1.9;">'+(purp||'-')+'</div></td>'+
+    '<td width="50%" valign="top" style="padding-left:10px;border-left:1px solid #eee;"><div style="font-size:11px;font-weight:bold;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">By Stakeholder</div><div style="font-size:13px;line-height:1.9;">'+(stake||'-')+'</div></td>'+
+    '</tr></table></td></tr>' : '';
 
   return '<div style="margin:0;padding:24px 12px;background:#f4f2ef;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">'+
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:660px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;">'+
@@ -2620,10 +2628,11 @@ function buildReportEmailHtml(rep, recipientName) {
       '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px;border:1px solid #e5e7eb;">'+
       '<tr style="background:#f7f2ee;color:#6b7280;font-size:11px;text-transform:uppercase;"><th align="left" style="padding:9px 12px;">'+byLabel+'</th>'+(b.by==='zone'?'<th align="right" style="padding:9px 12px;">Dist</th>':'')+'<th align="right" style="padding:9px 12px;">Planned</th><th align="right" style="padding:9px 12px;">Conducted</th><th align="right" style="padding:9px 12px;">Success</th></tr>'+
       rows + '</table>'+ (lead?'<div style="font-size:12.5px;color:#6b7280;margin-top:8px;"><b style="color:#1f2937;">Top districts:</b> '+lead+'</div>':'') +'</td></tr>'+
+    focus +
     (att?'<tr><td style="padding:20px 30px 0;"><div style="font-family:Georgia,serif;font-size:16px;font-weight:bold;margin-bottom:6px;">Attention Needed</div><div style="font-size:13.5px;line-height:1.7;">'+att+'</div></td></tr>':'')+
     (hi?'<tr><td style="padding:18px 30px 0;"><div style="font-family:Georgia,serif;font-size:16px;font-weight:bold;margin-bottom:6px;">Highlights</div><div style="font-size:13.5px;line-height:1.7;">'+hi+'</div></td></tr>':'')+
     (recs?'<tr><td style="padding:18px 30px 0;"><div style="font-family:Georgia,serif;font-size:16px;font-weight:bold;margin-bottom:6px;">Recommendations</div><div style="font-size:13.5px;line-height:1.7;">'+recs+'</div></td></tr>':'')+
-    '<tr><td style="padding:22px 30px 26px;"><div style="border-top:1px solid #e5e7eb;padding-top:14px;font-size:11px;color:#9ca3af;line-height:1.6;">Numbers computed from records; summary written by AI. Full portal: dataimpact.in (login required).<br>EG-MMS &middot; automated monthly report.</div></td></tr>'+
+    '<tr><td style="padding:22px 30px 26px;"><div style="border-top:1px solid #e5e7eb;padding-top:14px;font-size:11px;color:#9ca3af;line-height:1.6;">Numbers computed from records; summary written by AI. Full analytics portal: https://dataimpact.in/report.html<br>EG-MMS &middot; automated monthly report.</div></td></tr>'+
     '</table></div>';
 }
 
@@ -2639,7 +2648,10 @@ function sendMonthlyReports(mode, monthOverride) {
       if (!rep || !rep.success) { failed.push(r.email + ' (no report)'); return; }
       var html = buildReportEmailHtml(rep, r.name);
       var to = (mode === 'live') ? r.email : REPORT_TEST_EMAIL;
-      MailApp.sendEmail({ to:to, subject:'Monthly GR Report - ' + rep.scope.label + ' - ' + rep.scope.month, htmlBody:html, name:'EG-MMS Reports' });
+      var pdf = Utilities.newBlob('<html><head><meta charset="utf-8"></head><body>' + html + '</body></html>', 'text/html', 'report.html')
+                  .getAs('application/pdf')
+                  .setName('GR-Report-' + rep.scope.label.replace(/[^A-Za-z0-9]+/g,'-') + '-' + rep.scope.month.replace(/\s/g,'') + '.pdf');
+      MailApp.sendEmail({ to:to, subject:'Monthly GR Report - ' + rep.scope.label + ' - ' + rep.scope.month, htmlBody:html, name:'EG-MMS Reports', attachments:[pdf] });
       sent.push(to + ' [' + r.role + ': ' + (r.role==='State'?'UP':r.role==='Zone'?r.zone:r.district) + ']');
     } catch(e){ failed.push(r.email + ' ' + e.message); }
   });

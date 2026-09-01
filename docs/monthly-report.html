@@ -213,7 +213,7 @@
         '<td>'+pctPill(r.planned,r.pct)+'</td></tr>';
     });
     html+='</tbody>';
-    if(b.by==='zone'){ html+='<tfoot><tr><td>State total</td><td class="r">'+(j.breakdown.rows.reduce(function(s,r){return s+(r.districts||0)},0))+'</td><td class="r">'+tP+'</td><td class="r">'+tC+'</td><td class="r">'+(tP?Math.round(tC/tP*100):0)+'%</td><td class="r">'+tA+'</td><td></td></tr></tfoot>'; }
+    if(b.by==='zone'){ html+='<tfoot><tr><td>State total</td><td class="r">'+(j.breakdown.rows.reduce(function(s,r){return s+(r.districts||0)},0))+'</td><td class="r">'+k.total+'</td><td class="r">'+k.conducted+'</td><td class="r">'+k.success+'%</td><td class="r">'+k.activeStaff+'</td><td></td></tr></tfoot>'; }
     html+='</table></div></section>';
 
     // Leaderboard (state)
