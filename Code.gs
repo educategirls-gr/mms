@@ -3021,10 +3021,10 @@ function buildReportEmailHtml(rep, recipientName) {
   // Leaderboard (state)
   var lb = '';
   if (b.leaderboard && b.leaderboard.length) {
-    var lrows = b.leaderboard.slice(0,8).map(function(x,i){
+    var lrows = b.leaderboard.map(function(x,i){
       return '<tr style="border-top:1px solid #f0ebe5;"><td style="padding:10px 12px;color:#a8a29e;font-weight:700;">'+(i+1)+'</td><td style="padding:10px 12px;font-weight:700;">'+_emailEsc(x.name)+'</td><td style="padding:10px 12px;color:#6b7280;">'+_emailEsc((x.zone||'').replace('UP ',''))+'</td><td align="right" style="padding:10px 12px;">'+x.conducted+'</td><td align="right" style="padding:10px 12px;color:'+_pctColor(x.pct)+';font-weight:700;">'+x.pct+'%</td></tr>';
     }).join('');
-    lb = sec(sech('District Leaderboard','Top '+Math.min(8,b.leaderboard.length),'calc')+
+    lb = sec(sech('District Leaderboard','Top '+b.leaderboard.length,'calc')+
       '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px;border:1px solid #e5e7eb;border-radius:8px;">'+
       '<tr style="background:#f7f2ee;color:#6b7280;font-size:11px;text-transform:uppercase;"><th align="left" style="padding:10px 12px;">#</th><th align="left" style="padding:10px 12px;">District</th><th align="left" style="padding:10px 12px;">Zone</th><th align="right" style="padding:10px 12px;">Conducted</th><th align="right" style="padding:10px 12px;">Success</th></tr>'+
       lrows + '</table>');
