@@ -2758,6 +2758,7 @@ function installEscalationTrigger() {
 function ESC_step1_TEST()      { return sendEscalations('test', 25); }   // all to admin (review)
 function ESC_step2_LIVE()      { return sendEscalations('live', 40); }   // officer + senior CC
 function ESC_installAuto()     { return installEscalationTrigger(); }    // hourly auto
+function ESC_stopAuto()        { var n=0; ScriptApp.getProjectTriggers().forEach(function(t){ if(t.getHandlerFunction()==='escalationJob'){ ScriptApp.deleteTrigger(t); n++; } }); return 'Escalation paused: removed '+n+' trigger(s). Re-enable later with ESC_installAuto.'; }
 function ESC_reset()           { var sh=SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(CONDUCTED_SHEET); var n=sh.getLastRow(); if(n>1) sh.getRange(2,COL_ESC_SENT,n-1,1).clearContent(); return 'Cleared escalation-sent flags on '+(n-1)+' rows.'; }
 
 // ============================================================
