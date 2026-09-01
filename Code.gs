@@ -2761,6 +2761,69 @@ function ESC_installAuto()     { return installEscalationTrigger(); }    // hour
 function ESC_reset()           { var sh=SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(CONDUCTED_SHEET); var n=sh.getLastRow(); if(n>1) sh.getRange(2,COL_ESC_SENT,n-1,1).clearContent(); return 'Cleared escalation-sent flags on '+(n-1)+' rows.'; }
 
 // ============================================================
+//  TIER 2 - GOOGLE CALENDAR (planned meetings -> officer calendar)
+//  Creates a Calendar event for each future Planned/Follow-up meeting and
+//  invites the officer (and colleague/stakeholder if an email is present).
+//  Event id stored in Plan Meetings col W to avoid duplicates.
+// ============================================================
+var COL_CAL_EVENT = 23;   // W in Plan Meetings
+
+function parseStart_(dateStr, timeStr) {
+  var p = (dateStr||'').toString().trim().split(' '); if (p.length < 3) return null;
+  var day = parseInt(p[0],10), mon = _RPT_MONTHS.indexOf(p[1]), yr = parseInt(p[2],10);
+  if (isNaN(day) || mon < 0 || isNaN(yr)) return null;
+  var h = 10, mi = 0;
+  var mt = (timeStr||'').toString().trim().match(/(\d{1,2}):(\d{2})\s*(am|pm)?/i);
+  if (mt) { h = parseInt(mt[1],10); mi = parseInt(mt[2],10); var ap=(mt[3]||'').toLowerCase(); if(ap==='pm'&&h<12)h+=12; if(ap==='am'&&h===12)h=0; }
+  return new Date(yr, mon, day, h, mi, 0);
+}
+function durMin_(s){ s=(s||'').toString().toLowerCase(); var m=s.match(/(\d+)/); var n=m?parseInt(m[1],10):0; if(s.indexOf('hour')>=0||s.indexOf('hr')>=0) return (n||1)*60; if(s.indexOf('min')>=0) return n||30; return 60; }
+
+// mode 'test' invites only the admin (review); 'live' invites the officer + stores the event id.
+function syncCalendarEvents(mode, limit) {
+  mode = mode || 'test'; limit = limit || 20;
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID), sh = ss.getSheetByName(MEETINGS_SHEET);
+  if (!sh) return { success:false, message:'no plan sheet' };
+  if (!sh.getRange(1, COL_CAL_EVENT).getValue()) sh.getRange(1, COL_CAL_EVENT).setValue('Calendar Event ID');
+  var data = sh.getDataRange().getValues();
+  var cal = CalendarApp.getDefaultCalendar();
+  var done = 0, out = [], now = Date.now();
+  for (var i = 1; i < data.length && done < limit; i++) {
+    if (!data[i][0]) continue;
+    var status = (data[i][13]||'Planned').toString();
+    if (status !== 'Planned' && status !== 'Follow-up') continue;
+    if ((data[i][COL_CAL_EVENT-1]||'').toString().trim()) continue;   // already synced
+    var start = parseStart_(fmtDateVal(data[i][5]), (data[i][6]||'').toString());
+    if (!start) continue;
+    if (start.getTime() < now - 3600000) continue;                    // skip past meetings
+    var end = new Date(start.getTime() + durMin_(data[i][7]) * 60000);
+    var officer = (data[i][4]||'').toString().trim();
+    var title = 'GR Meeting: ' + (data[i][9]||'Stakeholder') + (data[i][11] ? ' (' + data[i][11] + ')' : '');
+    var desc = 'Stakeholder: ' + (data[i][9]||'') + ' ' + (data[i][10]||'') +
+               '\nPurpose: ' + (data[i][11]||'') + '\nAgenda: ' + (data[i][12]||'') +
+               '\nType: ' + (data[i][8]||'') + (data[i][17] ? '\nColleague: ' + data[i][17] : '') + '\nvia EG-MMS';
+    var guests = (mode==='live') ? officer : REPORT_TEST_EMAIL;
+    try {
+      var ev = cal.createEvent(title, start, end, { description:desc, location:(data[i][1]||'').toString(), guests:guests, sendInvites:true });
+      if (mode==='live') sh.getRange(i+1, COL_CAL_EVENT).setValue(ev.getId());
+      done++; out.push(title + ' @ ' + start + ' -> ' + guests);
+    } catch(e){ out.push('FAIL ' + data[i][0] + ' ' + e.message); }
+  }
+  Logger.log('Calendar events created: ' + done); Logger.log(out.join('\n'));
+  return { success:true, mode:mode, created:done, details:out };
+}
+function calendarJob() { return syncCalendarEvents('live', 30); }
+function installCalendarTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function(t){ if (t.getHandlerFunction()==='calendarJob') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('calendarJob').timeBased().everyHours(1).create();
+  return 'Calendar trigger installed: calendarJob runs hourly.';
+}
+// ---- Run from the editor ----
+function CAL_test()        { return syncCalendarEvents('test', 5); }    // 5 events, invite admin only (review)
+function CAL_live()        { return syncCalendarEvents('live', 30); }   // invite officers, store ids
+function CAL_installAuto() { return installCalendarTrigger(); }         // hourly auto
+
+// ============================================================
 //  MONTHLY REPORT EMAIL DELIVERY
 //  Recipients = State / Zone / District leads (each their own scope).
 //  Sent from gr@educategirls.ngo via MailApp. Run installMonthlyTrigger()
