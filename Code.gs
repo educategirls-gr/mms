@@ -2384,23 +2384,23 @@ function getMonthlyReport(session, monthParam) {
     if (scopeKind === 'state') {
       breakdown.by = 'zone';
       var zg = {};
-      mm.forEach(function(m){ var z = districtToZone_(m.district) || 'Unzoned'; if (!zg[z]) zg[z] = { name:z, planned:0, conducted:0, list:[] }; zg[z].planned++; zg[z].list.push(m); if (m.status==='Conducted') zg[z].conducted++; });
+      mm.forEach(function(m){ var z = districtToZone_(m.district) || 'State'; if (!zg[z]) zg[z] = { name:z, planned:0, conducted:0, list:[] }; zg[z].planned++; zg[z].list.push(m); if (m.status==='Conducted') zg[z].conducted++; });
       breakdown.rows = Object.keys(ZONE_DISTRICTS).map(function(z){
         var r = zg[z] || { planned:0, conducted:0, list:[] };
         var dcount = (ZONE_DISTRICTS[z] ? ZONE_DISTRICTS[z].length : 0);
         return { name:z, districts:dcount, planned:r.planned, conducted:r.conducted, pct:pct(r.conducted,r.planned), activeStaff:activeIn(r.list) };
       }).sort(function(a,b){ return b.conducted - a.conducted; });
-      // un-zoned row (e.g. Lucknow), shown only when present
-      if (zg['Unzoned']) {
-        var uz = zg['Unzoned'];
-        breakdown.rows.push({ name:'Unzoned', districts:1, planned:uz.planned, conducted:uz.conducted, pct:pct(uz.conducted,uz.planned), activeStaff:activeIn(uz.list) });
+      // state-level row (zone-less districts like Lucknow), shown only when present
+      if (zg['State']) {
+        var uz = zg['State'];
+        breakdown.rows.push({ name:'State', districts:1, planned:uz.planned, conducted:uz.conducted, pct:pct(uz.conducted,uz.planned), activeStaff:activeIn(uz.list) });
       }
-      // district leaderboard (top 8) + always include un-zoned districts like Lucknow
+      // district leaderboard (top 8) + always include state-level districts like Lucknow
       var lbAll = groupBy(function(m){ return m.district || '-'; })
-        .map(function(r){ r.zone = districtToZone_(r.name) || 'Unzoned'; return r; })
+        .map(function(r){ r.zone = districtToZone_(r.name) || 'State'; return r; })
         .sort(function(a,b){ return b.conducted - a.conducted; });
       breakdown.leaderboard = lbAll.slice(0, 8);
-      lbAll.forEach(function(r){ if (r.zone === 'Unzoned' && r.name !== '-' && breakdown.leaderboard.indexOf(r) === -1) breakdown.leaderboard.push(r); });
+      lbAll.forEach(function(r){ if (r.zone === 'State' && r.name !== '-' && breakdown.leaderboard.indexOf(r) === -1) breakdown.leaderboard.push(r); });
     } else if (scopeKind === 'zone') {
       breakdown.by = 'district';
       breakdown.rows = groupBy(function(m){ return m.district || '-'; }).sort(function(a,b){ return b.conducted - a.conducted; });
