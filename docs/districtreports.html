@@ -415,7 +415,7 @@
     <div id="view-perf" class="view">
       <!-- Filters -->
       <div class="card" style="margin-bottom:18px;">
-        <div class="card-title">Filter — Who Did How Many Meetings<span class="card-title-line"></span></div>
+        <div class="card-title">Filter - Who Did How Many Meetings<span class="card-title-line"></span></div>
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
           <select id="pf-district" class="rp-sel" onchange="renderPerf()"><option value="">All Districts</option></select>
           <select id="pf-month" class="rp-sel" onchange="renderPerf()"><option value="">All Months</option></select>
@@ -434,26 +434,26 @@
 
       <div class="section-label" id="pf-label"></div>
 
-      <!-- By Designation summary (designation → meetings) — click a row for details -->
+      <!-- By Designation summary (designation → meetings) - click a row for details -->
       <div class="card" style="margin-bottom:18px;">
         <div class="card-title">By Designation<span class="card-title-line"></span></div>
         <div id="pf-desigsummary" style="overflow-x:auto;"></div>
         <div id="pf-desigdetail" style="margin-top:14px;"></div>
       </div>
 
-      <!-- Profile Coverage — people in a profile vs entries done -->
+      <!-- Profile Coverage - people in a profile vs entries done -->
       <div class="card" style="margin-bottom:18px;">
         <div class="card-title">Profile Coverage<span class="card-title-line"></span></div>
         <div id="pf-coverage" style="overflow-x:auto;"></div>
       </div>
 
-      <!-- By person (who did how many) — shown only when a district is selected -->
+      <!-- By person (who did how many) - shown only when a district is selected -->
       <div class="card" id="pf-byperson-card" style="margin-bottom:18px;display:none;">
         <div class="card-title">By Person<span class="card-title-line"></span></div>
         <div id="pf-byperson" style="overflow-x:auto;"></div>
       </div>
 
-      <!-- Inactive team members — shown only when a district is selected -->
+      <!-- Inactive team members - shown only when a district is selected -->
       <div class="card" id="pf-inactive-card" style="display:none;">
         <div class="card-title">Inactive Team Members<span class="card-title-line"></span></div>
         <div style="font-size:12px;color:#6B7280;margin:-6px 0 12px;">Team members in this district with <b>no meeting</b> in the selected filters.</div>
@@ -470,7 +470,7 @@
   var EG = '#8B1212';
   function esc(s) { return s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-  // Robust JSON fetch — GAS occasionally returns an HTML error page; retry once, then fail gracefully.
+  // Robust JSON fetch - GAS occasionally returns an HTML error page; retry once, then fail gracefully.
   function fetchJSON(url, onOk, onErr, _tries) {
     _tries = _tries || 0;
     fetch(url).then(function(r){ return r.text(); }).then(function(txt){
@@ -478,7 +478,7 @@
       try { data = JSON.parse(txt); }
       catch(e) {
         if (_tries < 2) { setTimeout(function(){ fetchJSON(url, onOk, onErr, _tries + 1); }, 900); return; }
-        (onErr || function(){})(new Error('Server busy — please tap Refresh in a moment.')); return;
+        (onErr || function(){})(new Error('Server busy - please tap Refresh in a moment.')); return;
       }
       onOk(data);
     }).catch(function(e){
@@ -487,10 +487,10 @@
     });
   }
 
-  // ── Static snapshot layer (30-min) — CDN-fast, falls back to live GAS ──
+  // ── Static snapshot layer (30-min) - CDN-fast, falls back to live GAS ──
   // Tries docs/data/*.json first (served instantly by the Pages CDN). If the
   // file is missing/stale/invalid, or the user asked for live, it falls back
-  // to the live GAS endpoint — so the portal never breaks.
+  // to the live GAS endpoint - so the portal never breaks.
   var _forceLive = false, _usingSnap = false, _snapAt = '';
   function snapFetch(snapFile, liveUrl, onOk, onErr) {
     if (_forceLive) { fetchJSON(liveUrl, onOk, onErr); return; }
@@ -515,7 +515,7 @@
   }
   function refreshLive() { _forceLive = true; _usingSnap = false; updateSnapNote(); refreshData(); }
 
-  // Open analytics portal — no login required. Send the session token if
+  // Open analytics portal - no login required. Send the session token if
   // one happens to exist (harmless; these endpoints are public).
   var TOKEN = '';
   try { TOKEN = sessionStorage.getItem('eg_grm_token') || ''; } catch(e) {}
@@ -634,7 +634,7 @@
     var activeEmp  = d.activeEmployees || 0;
     var dtfSess    = d.dtfSessions || 0;
     var momReady   = d.momReady || 0;
-    var topStkPost = d.topStakeholderPost || '—';
+    var topStkPost = d.topStakeholderPost || '-';
 
     var insights = [
       { iconC:'#8B1212', val: pct + '%', lbl:'Success Rate',   sub: t.conducted+' of '+t.total+' meetings done' },
@@ -652,7 +652,7 @@
              '</div></div>';
     }).join('');
 
-    // ─ District Rank Board — ALL districts (incl. those with no meeting) ─
+    // ─ District Rank Board - ALL districts (incl. those with no meeting) ─
     var dstat = {};
     dists.forEach(function(x){
       var nm = String(x.name || '').trim();
@@ -735,7 +735,7 @@
   var _reportFiltered = [];   // currently filtered meetings (for download)
 
   // Org's core/home districts (staff posted here). Keep in sync with the
-  // Employee_DB master — mirrors the district cache keys in Code.gs.
+  // Employee_DB master - mirrors the district cache keys in Code.gs.
   var CORE_DISTRICTS = ['BAHRAICH','FATEHPUR','GONDA','HARDOI','PRAYAGRAJ','SHAHJAHANPUR','SITAPUR'];
 
   function loadReports() {
@@ -847,7 +847,7 @@
   // ── Auto "districts needing attention" (zero conducted) ───────
   function renderAttentionAlert() {
     var card = document.getElementById('rp-alert-card');
-    if (!card || !_allMeetings) return;   // alert card removed — no-op
+    if (!card || !_allMeetings) return;   // alert card removed - no-op
     var body = document.getElementById('rp-alert-body');
 
     // Tally per district from all meetings
@@ -996,12 +996,12 @@
              '</div>';
     }).join('');
 
-    // Block-wise breakdown — show when a district is chosen and no block is fixed
+    // Block-wise breakdown - show when a district is chosen and no block is fixed
     var blockCard = document.getElementById('rp-byblock-card');
     if (dist && !block) {
       var bMap = {};
       meetings.forEach(function(m){
-        var bn = m.block || '— No Block (District-level) —';
+        var bn = m.block || '- No Block (District-level) -';
         if (!bMap[bn]) bMap[bn] = { total:0, conducted:0 };
         bMap[bn].total++;
         if ((m.status||'') === 'Conducted') bMap[bn].conducted++;
@@ -1054,7 +1054,7 @@
           return '<div class="post-card"><div class="post-card-head"><div class="post-card-name">'+bp.post+'</div><div class="post-card-count">'+bp.count+'</div></div>'+empRows+'</div>';
         }).join('');
 
-    // All Conducted Meetings — paginated (20/page, newest first)
+    // All Conducted Meetings - paginated (20/page, newest first)
     _rpConducted = conducted;               // already sorted newest-first
     _rpEmptyMsg  = rpEmpty || '<div style="color:#9CA3AF;font-size:13px;padding:20px 0;text-align:center;">No conducted meetings for this selection</div>';
     _rpPage = 0;
@@ -1075,10 +1075,10 @@
     var start = _rpPage * RP_PAGE, end = Math.min(start + RP_PAGE, total);
     var body = _rpConducted.slice(start, end).map(function(r, idx){
       var i = start + idx;
-      var momLink   = r.momUrl   ? '<a href="'+r.momUrl  +'" target="_blank" style="color:'+EG+';font-weight:700;text-decoration:none;white-space:nowrap;">&#128196; View</a>' : '<span style="color:#D1D5DB;">&#8212;</span>';
-      var photoLink = r.photoUrl ? '<a href="'+r.photoUrl+'" target="_blank" style="color:'+EG+';font-weight:700;text-decoration:none;white-space:nowrap;">&#128247; View</a>' : '<span style="color:#D1D5DB;">&#8212;</span>';
+      var momLink   = r.momUrl   ? '<a href="'+r.momUrl  +'" target="_blank" style="color:'+EG+';font-weight:700;text-decoration:none;white-space:nowrap;">&#128196; View</a>' : '<span style="color:#D1D5DB;">-</span>';
+      var photoLink = r.photoUrl ? '<a href="'+r.photoUrl+'" target="_blank" style="color:'+EG+';font-weight:700;text-decoration:none;white-space:nowrap;">&#128247; View</a>' : '<span style="color:#D1D5DB;">-</span>';
       var _gm = (r.govtMom||'').split(/\s*,\s*/).filter(function(u){ return u; });
-      var govtLink = _gm.length ? '<a href="'+_gm[0]+'" target="_blank" style="color:#4338CA;font-weight:700;text-decoration:none;white-space:nowrap;">&#128196; '+(_gm.length>1?(_gm.length+' PDFs'):'View')+'</a>' : '<span style="color:#D1D5DB;">&#8212;</span>';
+      var govtLink = _gm.length ? '<a href="'+_gm[0]+'" target="_blank" style="color:#4338CA;font-weight:700;text-decoration:none;white-space:nowrap;">&#128196; '+(_gm.length>1?(_gm.length+' PDFs'):'View')+'</a>' : '<span style="color:#D1D5DB;">-</span>';
       return '<tr>' +
              '<td style="color:#9CA3AF;font-weight:600;">'+(i+1)+'</td>' +
              '<td><span style="font-size:10.5px;font-weight:800;color:'+EG+';">'+r.meetingId+'</span></td>' +
@@ -1129,12 +1129,12 @@
         document.getElementById('pf-desigsummary').innerHTML =
           '<div style="text-align:center;padding:32px 0;color:#DC2626;font-size:13px;">' + esc(e.message || 'Failed to load') + '</div>';
       });
-    // Employee master (headcount) — powers Profile Coverage, Inactive & the full district list
+    // Employee master (headcount) - powers Profile Coverage, Inactive & the full district list
     ensureEmployees(function(){ buildPerfFilters(); if (_allMeetings) renderPerf(); });
   }
   var _allEmployees = null;
   function _normNm(s){ return (s||'').toString().trim().toLowerCase(); }
-  function _normDg(s){ return (s||'').toString().trim() || '—'; }
+  function _normDg(s){ return (s||'').toString().trim() || '-'; }
 
   function buildPerfFilters() {
     fillSelect(document.getElementById('pf-district'), allDistrictList(), true);
@@ -1184,7 +1184,7 @@
              '<div class="kpi-lbl">'+k.l+'</div></div>';
     }).join('');
 
-    // ── By Person (who did how many) — only when a district is selected ──
+    // ── By Person (who did how many) - only when a district is selected ──
     var bpCard = document.getElementById('pf-byperson-card');
     if (!dist) {
       bpCard.style.display = 'none';
@@ -1192,7 +1192,7 @@
       bpCard.style.display = 'block';
       var pmap = {};
       f.forEach(function(m){
-        var k = (m.employeeName || '—');
+        var k = (m.employeeName || '-');
         if (!pmap[k]) pmap[k] = { name:k, desig:(m.post||''), district:(m.district||''), count:0 };
         pmap[k].count++;
       });
@@ -1214,7 +1214,7 @@
     // ── By Designation summary (designation → count), clickable for details ──
     _perfFiltered = f;
     var dmap = {};
-    f.forEach(function(m){ var k = (m.post || '—').toString().trim() || '—'; dmap[k] = (dmap[k]||0) + 1; });
+    f.forEach(function(m){ var k = (m.post || '-').toString().trim() || '-'; dmap[k] = (dmap[k]||0) + 1; });
     _perfDesigs = Object.keys(dmap).map(function(k){ return { k:k, n:dmap[k] }; }).sort(function(a,b){ return b.n - a.n; });
     _openDesig = -1;
     document.getElementById('pf-desigdetail').innerHTML = '';
@@ -1305,7 +1305,7 @@
         '</tbody></table>';
     }
 
-    // ── Inactive team members — only when a district is selected ──
+    // ── Inactive team members - only when a district is selected ──
     var inCard = document.getElementById('pf-inactive-card');
     if (!dist) {
       inCard.style.display = 'none';
@@ -1345,11 +1345,11 @@
     _openDesig = idx;
     var desig = (_perfDesigs[idx] || {}).k;
     if (desig == null) return;
-    var rows = _perfFiltered.filter(function(m){ return ((m.post || '—').toString().trim() || '—') === desig; });
+    var rows = _perfFiltered.filter(function(m){ return ((m.post || '-').toString().trim() || '-') === desig; });
     rows.sort(function(a,b){ return dateVal(b.conductDate||b.date) - dateVal(a.conductDate||a.date); });
     document.getElementById('pf-desigdetail').innerHTML =
       '<div style="display:flex;align-items:center;justify-content:space-between;margin:4px 0 8px;">' +
-        '<div style="font-weight:800;color:'+EG+';font-size:13px;">'+esc(desig)+' &mdash; '+rows.length+' meeting'+(rows.length!==1?'s':'')+'</div>' +
+        '<div style="font-weight:800;color:'+EG+';font-size:13px;">'+esc(desig)+' - '+rows.length+' meeting'+(rows.length!==1?'s':'')+'</div>' +
         '<button onclick="closeDesigDetail()" style="background:#F3F4F6;border:1px solid #E5E7EB;border-radius:8px;padding:5px 12px;font-size:12px;font-weight:700;color:#374151;cursor:pointer;">&#10005; Close</button>' +
       '</div>' +
       '<table class="rep-table"><thead><tr><th>#</th><th>Date</th><th>District</th><th>By</th><th>Stakeholder</th><th>Post</th><th>Purpose</th></tr></thead><tbody>' +

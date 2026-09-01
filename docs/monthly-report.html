@@ -145,7 +145,7 @@
   }
 
   if(!SESSION || !SESSION.token){
-    msg('&#128274;','Login required','Please open the dashboard and log in first — this report uses your account to show your scope.','&#8592; Go to Dashboard');
+    msg('&#128274;','Login required','Please open the dashboard and log in first - this report uses your account to show your scope.','&#8592; Go to Dashboard');
   } else {
     load();
   }
@@ -180,9 +180,9 @@
       '<div class="kicker">Educate Girls &middot; Government Relations</div>'+
       '<h1>Monthly GR Meetings Report</h1>'+
       '<div class="scope"><b>'+esc(sc.label)+'</b> &middot; '+roleLabel+'-level</div></div>'+
-      '<div class="meta">Reporting period &middot; <b>'+esc(sc.month)+'</b><br>Scope &middot; <b>'+roleLabel+'</b><br>Prepared for &middot; <b>'+esc(SESSION.name||'—')+'</b><br>Generated &middot; <b>'+gen+'</b></div></header>';
+      '<div class="meta">Reporting period &middot; <b>'+esc(sc.month)+'</b><br>Scope &middot; <b>'+roleLabel+'</b><br>Prepared for &middot; <b>'+esc(SESSION.name||'-')+'</b><br>Generated &middot; <b>'+gen+'</b></div></header>';
 
-    // Executive summary (template — tagged Auto-summary in Phase 1)
+    // Executive summary (template - tagged Auto-summary in Phase 1)
     html+=sec('Executive Summary','ai','Auto-summary')+
       '<div class="summary"><p>'+esc(j.narrative.summary)+'</p></div></section>';
 
@@ -208,7 +208,7 @@
       html+='<tr><td class="name">'+esc(r.name)+'</td>'+
         (b.by==='zone'?'<td class="r">'+(r.districts||0)+'</td>':'')+
         '<td class="r">'+r.planned+'</td><td class="r">'+r.conducted+'</td>'+
-        '<td class="r">'+(r.planned?r.pct+'%':'—')+'</td><td class="r">'+(r.activeStaff||0)+'</td>'+
+        '<td class="r">'+(r.planned?r.pct+'%':'-')+'</td><td class="r">'+(r.activeStaff||0)+'</td>'+
         '<td>'+pctPill(r.planned,r.pct)+'</td></tr>';
     });
     html+='</tbody>';

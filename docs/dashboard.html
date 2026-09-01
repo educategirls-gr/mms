@@ -393,7 +393,7 @@
     <div class="profile-row" id="p-block-row" style="display:none">
       <span class="pi">🏘</span><span id="p-block"></span>
     </div>
-    <!-- District switcher — shown only for users with charge of more than one district -->
+    <!-- District switcher - shown only for users with charge of more than one district -->
     <div class="profile-row" id="p-district-switch-row" style="display:none;margin-top:6px;">
       <span class="pi">🔀</span>
       <select id="district-switcher" onchange="onDistrictSwitch()"
@@ -474,14 +474,14 @@
             <div class="mtc-icon">🌾</div><div class="mtc-name">Field Visit</div>
           </div>
         </div>
-        <!-- District selector — shown only for State / Zone users (choose which district this meeting is for) -->
+        <!-- District selector - shown only for State / Zone users (choose which district this meeting is for) -->
         <div class="form-row" id="plan-district-row" style="display:none;margin-top:14px;">
           <div class="field full">
             <label>Meeting District <span class="req">*</span>
               <span style="color:#9CA3AF;font-weight:400;font-size:11px;">Kis district mein meeting hai?</span>
             </label>
             <select id="plan-district">
-              <option value="">— Select District —</option>
+              <option value="">- Select District -</option>
             </select>
           </div>
         </div>
@@ -546,7 +546,7 @@
             <textarea id="meetingAgenda" placeholder="Briefly describe what will be discussed in this meeting..."></textarea>
             <div style="margin-top:10px;">
               <label style="display:block;margin-bottom:6px;">Meeting Documents <span style="color:#9CA3AF;font-weight:400">(optional)</span>
-                <span style="color:#9CA3AF;font-weight:400;font-size:11px;">PDF / Word / Excel / PPT only — up to 5 files, 5MB each. (Photos go in the Conduct step.)</span>
+                <span style="color:#9CA3AF;font-weight:400;font-size:11px;">PDF / Word / Excel / PPT only - up to 5 files, 5MB each. (Photos go in the Conduct step.)</span>
               </label>
               <input type="file" id="meetingDocs" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
                      onchange="onDocsSelect(this)"
@@ -920,7 +920,7 @@
   var MY_DISTRICTS = (SESSION && SESSION.districts && SESSION.districts.length)
                        ? SESSION.districts : (SESSION ? [SESSION.district] : []);
 
-  // Active district context — which district all district-scoped views operate on.
+  // Active district context - which district all district-scoped views operate on.
   // Persisted in sessionStorage so report.html stays in sync with the switcher here.
   var ACTIVE_DISTRICT = (function() {
     var d = '';
@@ -1004,7 +1004,7 @@
     document.getElementById('p-post').textContent     = SESSION.designation || SESSION.role;
     document.getElementById('p-district').textContent = ACTIVE_DISTRICT;
 
-    // District switcher — only for users who hold charge of more than one district
+    // District switcher - only for users who hold charge of more than one district
     if (MY_DISTRICTS.length > 1) {
       var _sw = document.getElementById('district-switcher');
       _sw.innerHTML = MY_DISTRICTS.map(function(d) {
@@ -1053,7 +1053,7 @@
       document.getElementById('plan-district-row').style.display = 'flex';
     });
 
-    // Field role: hide "Delete Meeting" — prevents fake-meeting create-then-delete (keeps full audit trail)
+    // Field role: hide "Delete Meeting" - prevents fake-meeting create-then-delete (keeps full audit trail)
     if (_role === 'Field') {
       var _delRow = document.getElementById('delete-meeting-row');
       if (_delRow) _delRow.style.display = 'none';
@@ -1075,8 +1075,8 @@
     document.getElementById('meetingDate').min   = today;
 
     gasFetch('getDropdownData', { email: SESSION.email }, populateDropdowns, function() {
-      document.getElementById('adhikariPost').innerHTML   = '<option value="">— Error loading —</option>';
-      document.getElementById('meetingPurpose').innerHTML = '<option value="">— Error loading —</option>';
+      document.getElementById('adhikariPost').innerHTML   = '<option value="">- Error loading -</option>';
+      document.getElementById('meetingPurpose').innerHTML = '<option value="">- Error loading -</option>';
     });
 
     // Prefetch Manage + My Meetings in background so first click is instant
@@ -1346,7 +1346,7 @@
         allFiles.push(inp.files[0]);
       }
     }
-    // Photos are optional now — proceed even with 0 photos
+    // Photos are optional now - proceed even with 0 photos
     var m   = _manageMeetings[MODAL_IDX];
     var btn = document.getElementById('conduct-submit-btn');
     btn.disabled = true;
@@ -1462,7 +1462,7 @@
     }, function(e) { alert('Error: ' + e.message); });
   }
 
-  // ── My Meetings (conducted / postponed / cancelled — by month) ──
+  // ── My Meetings (conducted / postponed / cancelled - by month) ──
   var _mymAll   = [];   // all meetings from backend
   var _mymMonth = new Date().getMonth();   // 0-11
   var _mymYear  = new Date().getFullYear();
@@ -1492,7 +1492,7 @@
     });
   }
 
-  // ── Govt MoM (official, PDF) — conductor uploads to their own conducted meeting ──
+  // ── Govt MoM (official, PDF) - conductor uploads to their own conducted meeting ──
   function govtMomHtml(r) {
     var gm = (r.govtMom || '').split(/\s*,\s*/).filter(function(u){ return u; });
     var links = gm.map(function(u, gi){
@@ -1728,7 +1728,7 @@
     _dmYear  = new Date().getFullYear();
     dmUpdateLabel();
     var _dmt = document.getElementById('dm-title');
-    if (_dmt) _dmt.textContent = '🏢 District Meetings — ' + ACTIVE_DISTRICT;
+    if (_dmt) _dmt.textContent = '🏢 District Meetings - ' + ACTIVE_DISTRICT;
     var now = Date.now();
     if (!force && _distCache.data && (now - _distCache.ts) < _CACHE_TTL) {
       _dmAll = _distCache.data;
@@ -2102,7 +2102,7 @@
     showToast('Downloaded ' + data.length + ' meetings as ' + fname);
   }
 
-  // ── Zone Meetings (Zone role) — mirrors State, scoped to zone ──
+  // ── Zone Meetings (Zone role) - mirrors State, scoped to zone ──
   var _zmAll   = [];
   var _zmMonth = new Date().getMonth();
   var _zmYear  = new Date().getFullYear();
@@ -2465,7 +2465,7 @@
     var _docOk = /\.(pdf|docx?|xlsx?|pptx?)$/i;
     for (var di = 0; di < docFiles.length; di++) {
       if ((docFiles[di].type || '').indexOf('image/') === 0 || !_docOk.test(docFiles[di].name)) {
-        err('Only PDF / Word / Excel / PPT allowed in Documents. Photos go in the Conduct step — "' + docFiles[di].name + '" is not a document.'); return;
+        err('Only PDF / Word / Excel / PPT allowed in Documents. Photos go in the Conduct step - "' + docFiles[di].name + '" is not a document.'); return;
       }
       if (docFiles[di].size > 5 * 1024 * 1024) { err('"' + docFiles[di].name + '" exceeds the 5MB limit.'); return; }
     }

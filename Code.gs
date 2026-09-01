@@ -1,5 +1,5 @@
 // ============================================================
-//  EG GR Reporting System — Main Backend
+//  EG GR Reporting System - Main Backend
 //  Google Apps Script | Bound to Employee_DB Spreadsheet
 // ============================================================
 
@@ -14,11 +14,11 @@ var OTP_EXPIRY_SEC   = 600;
 var ALLOWED_DOMAIN   = 'educategirls.ngo';
 
 // ============================================================
-//  CACHE HELPERS  (GAS CacheService — script-level, 6 hr max)
+//  CACHE HELPERS  (GAS CacheService - script-level, 6 hr max)
 // ============================================================
-var C_TTL_EMP    = 1800;  // 30 min — employee data (rarely changes)
-var C_TTL_LIVE   = 90;    // 90 sec — dashboard stats & reports
-var C_TTL_DROP   = 900;   // 15 min — dropdown / colleague lists
+var C_TTL_EMP    = 1800;  // 30 min - employee data (rarely changes)
+var C_TTL_LIVE   = 90;    // 90 sec - dashboard stats & reports
+var C_TTL_DROP   = 900;   // 15 min - dropdown / colleague lists
 
 function cGet(key) {
   try {
@@ -46,20 +46,20 @@ function invalidateUser(email) {
 }
 
 // ------------------------------------------------------------
-//  DEMO / PRESENTATION HELPER — Run from GAS editor
+//  DEMO / PRESENTATION HELPER - Run from GAS editor
 //  Sheet mein role change karne ke baad ye run karo
-//  Turant cache clear hoga — logout/login ke baad naya role dikhega
+//  Turant cache clear hoga - logout/login ke baad naya role dikhega
 // ------------------------------------------------------------
 function clearCacheForDemo() {
   var email = 'alok.mohan@educategirls.ngo'; // ← apna email yahan rakho
   invalidateUser(email);
   CacheService.getScriptCache().remove('distMtg_sitapur');
   CacheService.getScriptCache().remove('stateMtg_all');
-  Logger.log('✅ Cache cleared for: ' + email + ' — ab logout karke login karo');
+  Logger.log('✅ Cache cleared for: ' + email + ' - ab logout karke login karo');
 }
 
 // ------------------------------------------------------------
-//  DEMO ROLE SWITCHERS — Run ONE of these from the GAS editor,
+//  DEMO ROLE SWITCHERS - Run ONE of these from the GAS editor,
 //  then Logout + Login in the app. Role badal jayega + cache
 //  clear ho jayega automatically. Sheet manually edit nahi karni.
 //  (Email niche DEMO_EMAIL mein set hai)
@@ -94,17 +94,17 @@ function setDemoRole_(role) {
 }
 
 // ------------------------------------------------------------
-//  GRANT ADDITIONAL DISTRICT CHARGE — Run ONCE from GAS editor
+//  GRANT ADDITIONAL DISTRICT CHARGE - Run ONCE from GAS editor
 //  Gives a user charge of one or more extra districts (beyond their
 //  primary). Writes to the "Additional Districts" column (col H) in
 //  Employee_DB and clears their cache so it applies on next login.
 //  To reuse for someone else, just edit the two lines below and re-run.
 // ------------------------------------------------------------
 function setupDualCharge() {
-  // Each entry: [identifier, extra district(s)] — identifier can be an EMAIL
+  // Each entry: [identifier, extra district(s)] - identifier can be an EMAIL
   // (contains '@') or the exact employee NAME. extra MUST match the exact
   // district name used in Employee_DB / meeting sheets (e.g. "LAKHIMPUR KHERI",
-  // not "LAKHIMPUR"; "FARRUKHABAD"). Only the listed rows are touched — other
+  // not "LAKHIMPUR"; "FARRUKHABAD"). Only the listed rows are touched - other
   // people's existing charge in col H is left untouched.
   var GRANTS = [
     ['Manvendra Mishra', 'FARRUKHABAD']   // primary HARDOI stays; adds FARRUKHABAD charge
@@ -141,11 +141,11 @@ function setupDualCharge() {
     Logger.log(nf); out.push(nf);
   });
   Logger.log('🔄 Done. Ask these users to LOGOUT and LOGIN again.');
-  return out.join('\n') + '\n🔄 Done — user should LOGOUT and LOGIN again.';
+  return out.join('\n') + '\n🔄 Done - user should LOGOUT and LOGIN again.';
 }
 
 // ------------------------------------------------------------
-//  CHANGE PRIMARY DISTRICT — Run ONCE from GAS editor
+//  CHANGE PRIMARY DISTRICT - Run ONCE from GAS editor
 //  Corrects a user's home district (col A) in Employee_DB + clears cache.
 //  Only the listed rows are touched. District MUST be the exact spelling
 //  used across the system (e.g. "BUDAUN", "LAKHIMPUR KHERI").
@@ -182,11 +182,11 @@ function setPrimaryDistrict() {
     var nf = '❌ Not found in Employee sheet: ' + c[0];
     Logger.log(nf); out.push(nf);
   });
-  return out.join('\n') + '\n🔄 Done — user should LOGOUT and LOGIN again.';
+  return out.join('\n') + '\n🔄 Done - user should LOGOUT and LOGIN again.';
 }
 
 // ------------------------------------------------------------
-//  NORMALIZE DISTRICTS — Run ONCE from GAS editor
+//  NORMALIZE DISTRICTS - Run ONCE from GAS editor
 //  Trims + UPPERCASEs the district column in Employee_DB and all
 //  4 meeting sheets so spelling/casing is consistent everywhere.
 //  Only touches the district column; nothing else is modified.
@@ -231,7 +231,7 @@ function normalizeDistrictColumn_(ss, sheetName, colIdx, report) {
 }
 
 // ------------------------------------------------------------
-//  DIAGNOSTIC — district column audit across all meeting sheets
+//  DIAGNOSTIC - district column audit across all meeting sheets
 //  Returns a summary of district values so we can see why a
 //  district filter (e.g. SITAPUR) shows fewer meetings than expected.
 // ------------------------------------------------------------
@@ -296,7 +296,7 @@ function diagnoseDistricts() {
 }
 
 // ------------------------------------------------------------
-//  AUTHORIZE ALL SERVICES — Run this once from GAS editor
+//  AUTHORIZE ALL SERVICES - Run this once from GAS editor
 //  to grant all required permissions (Spreadsheet, Drive, Mail)
 // ------------------------------------------------------------
 function authorizeAll() {
@@ -326,13 +326,13 @@ function authorizeAll() {
 //  ENTRY POINT
 // ------------------------------------------------------------
 // ------------------------------------------------------------
-//  API HANDLER — called from GitHub Pages frontend via fetch()
+//  API HANDLER - called from GitHub Pages frontend via fetch()
 // ------------------------------------------------------------
 function doPost(e) {
   return apiResponse(e, 'POST');
 }
 
-// Admin allowlist — only these emails can call destructive/import actions
+// Admin allowlist - only these emails can call destructive/import actions
 var ADMIN_EMAILS = ['gr@educategirls.ngo', 'alok.mohan@educategirls.ngo'];
 function isAdmin_(email) {
   email = (email || '').toString().trim().toLowerCase();
@@ -351,7 +351,7 @@ function apiResponse(e, method) {
       try { body = JSON.parse(e.postData.contents); } catch(pe) { body = {}; }
     }
     var token  = (e && e.parameter && e.parameter.token) ? e.parameter.token : '';
-    // getDashboardStats / getDistrictReport are public — power the open
+    // getDashboardStats / getDistrictReport are public - power the open
     // State Analytics Portal (report.html), which needs no login.
     var PUBLIC = { sendOTP: 1, verifyOTP: 1, getDashboardStats: 1, getDistrictReport: 1, getReportData: 1, getEmployeeMaster: 1 };
     var ADMIN  = { bulkUpdateEmployeeDB: 1, importFromSource: 1, peekSourceSheet: 1 };
@@ -406,7 +406,7 @@ function apiResponse(e, method) {
         else if (action === 'getAllReports')        result = getAllReports(session.email);
         else if (action === 'deleteMeeting')        result = deleteMeeting(e.parameter.meetingId || '', session.email);
         else if (action === 'saveMeeting') {
-          // Stamp identity from session — fixes attribution + blank district.
+          // Stamp identity from session - fixes attribution + blank district.
           // District = the active/charge district requested by the client, validated against
           // the user's authorized list (so a dual-charge lead files under the right district).
           body.email = session.email; body.employeeName = session.name;
@@ -434,12 +434,12 @@ function apiResponse(e, method) {
 }
 
 // ------------------------------------------------------------
-//  TEST FUNCTION — Run this once from GAS editor to authorize MailApp
+//  TEST FUNCTION - Run this once from GAS editor to authorize MailApp
 // ------------------------------------------------------------
 function authorizeMailApp() {
   MailApp.sendEmail({
     to: Session.getActiveUser().getEmail(),
-    subject: 'EG MMS — MailApp Authorization Successful',
+    subject: 'EG MMS - MailApp Authorization Successful',
     body: 'MailApp is now authorized. Colleague notifications will work.'
   });
   Logger.log('MailApp authorized successfully.');
@@ -524,7 +524,7 @@ function setupDriveFolder() {
 }
 
 // ------------------------------------------------------------
-//  OTP — SEND
+//  OTP - SEND
 // ------------------------------------------------------------
 function sendOTP(email) {
   email = email.trim().toLowerCase();
@@ -559,7 +559,7 @@ function sendOTP(email) {
 }
 
 // ------------------------------------------------------------
-//  OTP — VERIFY
+//  OTP - VERIFY
 // ------------------------------------------------------------
 function verifyOTP(email, otp) {
   email = email.trim().toLowerCase();
@@ -612,7 +612,7 @@ function verifyOTP(email, otp) {
 }
 
 // ------------------------------------------------------------
-//  SESSION — GET
+//  SESSION - GET
 // ------------------------------------------------------------
 function getSession(token) {
   var data = CacheService.getScriptCache().get('SESSION_' + token);
@@ -656,7 +656,7 @@ function resolveActiveDistrict_(session, requested) {
 }
 
 // ------------------------------------------------------------
-//  PLAN DISTRICTS — districts a State/Zone user may file a meeting
+//  PLAN DISTRICTS - districts a State/Zone user may file a meeting
 //  under. State → all districts; Zone → districts in their zone.
 // ------------------------------------------------------------
 function getPlanDistricts(role, zone, ownDistricts) {
@@ -686,7 +686,7 @@ function getPlanDistricts(role, zone, ownDistricts) {
 }
 
 // ------------------------------------------------------------
-//  ACCESS CHECK — re-verify employee still active in sheet
+//  ACCESS CHECK - re-verify employee still active in sheet
 //  Returns emp object if active, null if removed/not found
 // ------------------------------------------------------------
 function checkAccess(email) {
@@ -694,7 +694,7 @@ function checkAccess(email) {
 }
 
 // ------------------------------------------------------------
-//  DROPDOWN DATA — Stakeholder Type (hardcoded) + Meeting Purpose (sheet)
+//  DROPDOWN DATA - Stakeholder Type (hardcoded) + Meeting Purpose (sheet)
 // ------------------------------------------------------------
 function getDropdownData(email) {
   // Re-verify access on every page load
@@ -732,7 +732,7 @@ function getDropdownData(email) {
 }
 
 // ------------------------------------------------------------
-//  MEETINGS — SAVE
+//  MEETINGS - SAVE
 // ------------------------------------------------------------
 function saveMeeting(data) {
   try {
@@ -812,7 +812,7 @@ function saveMeeting(data) {
 }
 
 // ------------------------------------------------------------
-//  MEETINGS — GET (for logged-in employee)
+//  MEETINGS - GET (for logged-in employee)
 // ------------------------------------------------------------
 function getMyMeetings(email) {
   try {
@@ -857,7 +857,7 @@ function getMyMeetings(email) {
 }
 
 // ------------------------------------------------------------
-//  DISTRICT EMPLOYEES — for colleague picker
+//  DISTRICT EMPLOYEES - for colleague picker
 // ------------------------------------------------------------
 function getDistrictEmployees(district, currentEmail) {
   var distKey = 'distEmp_' + district.trim().toLowerCase();
@@ -890,7 +890,7 @@ function getDistrictEmployees(district, currentEmail) {
 }
 
 // ------------------------------------------------------------
-//  ALL EMPLOYEES — for colleague picker (no district filter)
+//  ALL EMPLOYEES - for colleague picker (no district filter)
 // ------------------------------------------------------------
 function getAllEmployees(currentEmail) {
   var cur    = currentEmail.trim().toLowerCase();
@@ -919,7 +919,7 @@ function getAllEmployees(currentEmail) {
 }
 
 // ------------------------------------------------------------
-//  ZONE TEAM EMPLOYEES — for colleague picker (Zone role)
+//  ZONE TEAM EMPLOYEES - for colleague picker (Zone role)
 //  All employees in the user's zone + all State-team members
 // ------------------------------------------------------------
 function getZoneTeamEmployees(zone, currentEmail) {
@@ -958,7 +958,7 @@ function getZoneTeamEmployees(zone, currentEmail) {
 }
 
 // ------------------------------------------------------------
-//  MEETING — UPDATE STATUS (from Manage Meetings)
+//  MEETING - UPDATE STATUS (from Manage Meetings)
 // ------------------------------------------------------------
 function updateMeetingStatus(meetingId, updateData) {
   try {
@@ -987,7 +987,7 @@ function updateMeetingStatus(meetingId, updateData) {
 }
 
 // ------------------------------------------------------------
-//  TIME HELPER — Sheets stores time as Dec-30-1899 Date objects.
+//  TIME HELPER - Sheets stores time as Dec-30-1899 Date objects.
 //  Historical timezone offset for Asia/Kolkata is NOT +5:30,
 //  so Utilities.formatDate gives wrong hour. Use UTC directly.
 // ------------------------------------------------------------
@@ -1017,11 +1017,11 @@ function fmtDateVal(d) {
     var p2 = s.split('-');
     return parseInt(p2[0]) + ' ' + MN[parseInt(p2[1])-1] + ' ' + p2[2];
   }
-  return s; // already formatted or unknown — return as-is
+  return s; // already formatted or unknown - return as-is
 }
 
 // ------------------------------------------------------------
-//  DRIVE — get or create folder by name under parent
+//  DRIVE - get or create folder by name under parent
 // ------------------------------------------------------------
 function getOrCreateFolder(parent, name) {
   var it = parent.getFoldersByName(name);
@@ -1038,7 +1038,7 @@ function getRootMeetingsFolder() {
 }
 
 // ------------------------------------------------------------
-//  CONDUCT MEETING — saves to Conducted sheet, Drive, MoM
+//  CONDUCT MEETING - saves to Conducted sheet, Drive, MoM
 // ------------------------------------------------------------
 function conductMeeting(payload) {
   try {
@@ -1060,7 +1060,7 @@ function conductMeeting(payload) {
       }
     }
 
-    // 2. Save photos to Drive — wrapped in try-catch so sheet save always happens
+    // 2. Save photos to Drive - wrapped in try-catch so sheet save always happens
     var photoError = '';
     try {
       if (payload.photos && payload.photos.length > 0) {
@@ -1140,7 +1140,7 @@ function conductMeeting(payload) {
     cSheet.getRange(clr, 7).setNumberFormat('@');  // G Original Time
     cSheet.getRange(clr, 15).setNumberFormat('@'); // O Conduct Time
 
-    // 5. Update status in Plan Meetings to "Conducted" — NEVER delete, keeps master ledger intact for dashboard reporting
+    // 5. Update status in Plan Meetings to "Conducted" - NEVER delete, keeps master ledger intact for dashboard reporting
     if (planSheet && planRowIdx > 0) {
       planSheet.getRange(planRowIdx + 1, 14).setValue('Conducted');
     }
@@ -1158,7 +1158,7 @@ function conductMeeting(payload) {
 }
 
 // ------------------------------------------------------------
-//  UPLOAD GOVT MoM — the meeting's conductor attaches the official
+//  UPLOAD GOVT MoM - the meeting's conductor attaches the official
 //  government-issued MoM (PDF only) to an already-conducted meeting.
 //  Stored in CONDUCTED_SHEET column V ("Govt MoM"), comma-separated URLs.
 // ------------------------------------------------------------
@@ -1227,7 +1227,7 @@ function uploadGovtMom(payload, session) {
 }
 
 // ------------------------------------------------------------
-//  MoM — auto Google Doc creation
+//  MoM - auto Google Doc creation
 // ------------------------------------------------------------
 function createMoMDoc(d, photoFolderUrl) {
   var title = 'MoM | ' + d.meetingId + ' | ' + d.adhikariName + ' | ' + d.conductDate;
@@ -1286,7 +1286,7 @@ function createMoMDoc(d, photoFolderUrl) {
   sec('Agenda');
   body.appendParagraph(d.agenda || '-').editAsText().setItalic(true).setForegroundColor('#4B5563');
 
-  // Meeting Documents (attached at plan time) — look up by meeting ID
+  // Meeting Documents (attached at plan time) - look up by meeting ID
   try {
     var _docUrl = d.docUrl || (getDocUrlMap_()[d.meetingId] || '');
     if (_docUrl) {
@@ -1303,7 +1303,7 @@ function createMoMDoc(d, photoFolderUrl) {
   if (points.length) {
     points.forEach(function(pt) { body.appendListItem(pt.trim()); });
   } else {
-    body.appendParagraph('—');
+    body.appendParagraph('-');
   }
 
   // Photos
@@ -1350,7 +1350,7 @@ function createMoMDoc(d, photoFolderUrl) {
 }
 
 // ------------------------------------------------------------
-//  POSTPONE MEETING — same ID, new date, history in sheet
+//  POSTPONE MEETING - same ID, new date, history in sheet
 // ------------------------------------------------------------
 function postponeMeeting(payload) {
   try {
@@ -1462,7 +1462,7 @@ function cancelMeeting(payload) {
       now.toLocaleString('en-IN')      // Cancelled At
     ]);
 
-    // Update status in Plan Meetings to "Cancelled" — NEVER delete, keeps master ledger intact for dashboard reporting
+    // Update status in Plan Meetings to "Cancelled" - NEVER delete, keeps master ledger intact for dashboard reporting
     sheet.getRange(rowIdx + 1, 14).setValue('Cancelled');
 
     invalidateUser((payload.email || '').trim().toLowerCase());
@@ -1477,7 +1477,7 @@ function cancelMeeting(payload) {
 // ------------------------------------------------------------
 function deleteMeeting(meetingId, email) {
   try {
-    // Field role cannot delete — prevents fake-meeting create-then-delete (full audit trail)
+    // Field role cannot delete - prevents fake-meeting create-then-delete (full audit trail)
     if (email) {
       var emp = getEmployeeByEmail(email.trim().toLowerCase());
       var role = emp && emp.role ? emp.role.toString().trim().toLowerCase() : '';
@@ -1502,7 +1502,7 @@ function deleteMeeting(meetingId, email) {
 }
 
 // ------------------------------------------------------------
-//  ACTIONED MEETINGS — for My Meetings view
+//  ACTIONED MEETINGS - for My Meetings view
 //  Reads Conducted + Cancelled sheets (Postponed stays in Plan Meetings)
 // ------------------------------------------------------------
 function getActionedMeetings(email) {
@@ -1578,7 +1578,7 @@ function getActionedMeetings(email) {
 }
 
 // ------------------------------------------------------------
-//  ALL MEETINGS — combined view for My Meetings tab
+//  ALL MEETINGS - combined view for My Meetings tab
 //  Returns Plan Meetings (all statuses) + Conducted + Cancelled
 // ------------------------------------------------------------
 function getAllMyMeetings(email) {
@@ -1592,7 +1592,7 @@ function getAllMyMeetings(email) {
     var tz       = Session.getScriptTimeZone();
     var meetings = [];
 
-    // 1. Postponed Meetings sheet — history of all reschedules
+    // 1. Postponed Meetings sheet - history of all reschedules
     var pSheet = ss.getSheetByName(POSTPONED_SHEET);
     if (pSheet && pSheet.getLastRow() > 1) {
       var phd = pSheet.getDataRange().getValues();
@@ -1691,7 +1691,7 @@ function getAllMyMeetings(email) {
 }
 
 // ------------------------------------------------------------
-//  DOC URL MAP — meetingId → Documents folder URL (from Plan sheet
+//  DOC URL MAP - meetingId → Documents folder URL (from Plan sheet
 //  col V). Plan rows are never deleted, so this resolves docs for a
 //  meeting in any later state (conducted/postponed/cancelled).
 // ------------------------------------------------------------
@@ -1715,7 +1715,7 @@ function getDocUrlMap_() {
 }
 
 // ------------------------------------------------------------
-//  DISTRICT ALL MEETINGS — for District Meetings view
+//  DISTRICT ALL MEETINGS - for District Meetings view
 //  All statuses: Planned, Conducted, Postponed, Cancelled
 // ------------------------------------------------------------
 function getDistrictAllMeetings(district) {
@@ -1728,7 +1728,7 @@ function getDistrictAllMeetings(district) {
     var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
     var meetings = [];
 
-    // 1. Plan Meetings — Planned / Follow-up only (Cancelled/Postponed go to their own sheets)
+    // 1. Plan Meetings - Planned / Follow-up only (Cancelled/Postponed go to their own sheets)
     var planSheet = ss.getSheetByName(MEETINGS_SHEET);
     if (planSheet) {
       var pd = planSheet.getDataRange().getValues();
@@ -1834,7 +1834,7 @@ function getDistrictAllMeetings(district) {
 }
 
 // ------------------------------------------------------------
-//  STATE ALL MEETINGS — for State Meetings view
+//  STATE ALL MEETINGS - for State Meetings view
 //  All districts, all statuses
 // ------------------------------------------------------------
 function getStateAllMeetings() {
@@ -1846,7 +1846,7 @@ function getStateAllMeetings() {
     var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
     var meetings = [];
 
-    // 1. Plan Meetings — Planned / Follow-up only
+    // 1. Plan Meetings - Planned / Follow-up only
     var planSheet = ss.getSheetByName(MEETINGS_SHEET);
     if (planSheet) {
       var pd = planSheet.getDataRange().getValues();
@@ -1956,12 +1956,12 @@ function getStateAllMeetings() {
 }
 
 // ------------------------------------------------------------
-//  ZONE ALL MEETINGS — for Zone Meetings view (Zone role)
+//  ZONE ALL MEETINGS - for Zone Meetings view (Zone role)
 //  A zone spans multiple districts; show every meeting whose
 //  district belongs to this zone (mapping comes from Employee_DB).
 // ------------------------------------------------------------
 // ------------------------------------------------------------
-//  ZONE STRUCTURE — fixed org mapping: Zone → Admin Districts.
+//  ZONE STRUCTURE - fixed org mapping: Zone → Admin Districts.
 //  A meeting/employee's zone is derived from its (admin) district;
 //  space/case differences are normalised (e.g. "BARA BANKI" == "BARABANKI").
 // ------------------------------------------------------------
@@ -1970,7 +1970,7 @@ var ZONE_DISTRICTS = {
   'UP ZONE-2': ['BAHRAICH','SHRAVASTI','BALRAMPUR','GONDA','KUSHINAGAR','MAHARAJGANJ'],
   'UP ZONE-3': ['BUDAUN','FARRUKHABAD','HARDOI','LAKHIMPUR KHERI','SHAHJAHANPUR','BARA BANKI','SITAPUR']
 };
-// State-level-only districts — selectable by State users when planning a meeting,
+// State-level-only districts - selectable by State users when planning a meeting,
 // but not part of any zone (zone leads don't see them; not zone-grouped in analytics).
 var STATE_EXTRA_DISTRICTS = ['LUCKNOW'];
 function normDist_(d) { return (d || '').toString().trim().toUpperCase().replace(/\s+/g, ''); }
@@ -1990,7 +1990,7 @@ function districtToZone_(district) {
   return '';
 }
 
-// districts of a zone as { NORMDIST: true } — for membership checks
+// districts of a zone as { NORMDIST: true } - for membership checks
 function getDistrictsInZone_(zone) {
   var zkey = findZoneKey_(zone);
   var set  = {};
@@ -2115,11 +2115,11 @@ function sendColleagueNotification(data, mtgId) {
           '</tr>' +
           '<tr style="border-bottom:1px solid #F3F4F6;">' +
             '<td style="padding:8px 0;color:#6B7280;">Duration</td>' +
-            '<td style="padding:8px 0;">' + (data.duration || '—') + '</td>' +
+            '<td style="padding:8px 0;">' + (data.duration || '-') + '</td>' +
           '</tr>' +
           '<tr style="border-bottom:1px solid #F3F4F6;">' +
             '<td style="padding:8px 0;color:#6B7280;">Meeting Type</td>' +
-            '<td style="padding:8px 0;">' + (data.meetingType || '—') + '</td>' +
+            '<td style="padding:8px 0;">' + (data.meetingType || '-') + '</td>' +
           '</tr>' +
           '<tr style="border-bottom:1px solid #F3F4F6;">' +
             '<td style="padding:8px 0;color:#6B7280;">Purpose</td>' +
@@ -2159,7 +2159,7 @@ function sendColleagueNotification(data, mtgId) {
 }
 
 // ------------------------------------------------------------
-//  COLLEAGUE MOM EMAIL — sent after meeting is conducted
+//  COLLEAGUE MOM EMAIL - sent after meeting is conducted
 // ------------------------------------------------------------
 function sendMOMNotification(data, momUrl, photoFolderUrl, followUpId) {
   if (!data || !data.colleagueName || !data.colleagueName.trim()) return;
@@ -2174,7 +2174,7 @@ function sendMOMNotification(data, momUrl, photoFolderUrl, followUpId) {
   var kpHtml = kpLines.map(function(l){
     return '<tr><td style="padding:5px 0 5px 8px;color:#374151;font-size:13px;border-bottom:1px solid #F3F4F6;">• ' + l.trim() + '</td></tr>';
   }).join('');
-  if (!kpHtml) kpHtml = '<tr><td style="padding:5px 0;color:#6B7280;font-size:13px;">—</td></tr>';
+  if (!kpHtml) kpHtml = '<tr><td style="padding:5px 0;color:#6B7280;font-size:13px;">-</td></tr>';
 
   var body =
     '<div style="font-family:Segoe UI,Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #E5E7EB;border-radius:10px;overflow:hidden;">' +
@@ -2215,15 +2215,15 @@ function sendMOMNotification(data, momUrl, photoFolderUrl, followUpId) {
           '</tr>' +
           '<tr style="border-bottom:1px solid #F3F4F6;">' +
             '<td style="padding:8px 0;color:#6B7280;">Meeting Type</td>' +
-            '<td style="padding:8px 0;">' + (data.meetingType || '—') + '</td>' +
+            '<td style="padding:8px 0;">' + (data.meetingType || '-') + '</td>' +
           '</tr>' +
           '<tr style="border-bottom:1px solid #F3F4F6;">' +
             '<td style="padding:8px 0;color:#6B7280;">Purpose</td>' +
-            '<td style="padding:8px 0;">' + (data.purpose || '—') + '</td>' +
+            '<td style="padding:8px 0;">' + (data.purpose || '-') + '</td>' +
           '</tr>' +
           '<tr style="border-bottom:1px solid #F3F4F6;">' +
             '<td style="padding:8px 0;color:#6B7280;">Conducted On</td>' +
-            '<td style="padding:8px 0;font-weight:600;color:#111827;">' + (data.conductDate || '—') + (data.conductTime ? ' &nbsp;at&nbsp; ' + data.conductTime : '') + '</td>' +
+            '<td style="padding:8px 0;font-weight:600;color:#111827;">' + (data.conductDate || '-') + (data.conductTime ? ' &nbsp;at&nbsp; ' + data.conductTime : '') + '</td>' +
           '</tr>' +
           (followUpId ? '<tr><td style="padding:8px 0;color:#6B7280;vertical-align:top;">Follow-up</td>' +
             '<td style="padding:8px 0;font-weight:600;color:#1D4ED8;">Meeting Scheduled &nbsp;|&nbsp; ' + (data.followUp && data.followUp.date ? data.followUp.date : '') + '</td></tr>' : '') +
@@ -2297,16 +2297,16 @@ function getEmployeeByName(name) {
 }
 
 // ------------------------------------------------------------
-//  DISTRICT REPORT — detailed breakdown for one district
+//  DISTRICT REPORT - detailed breakdown for one district
 // ------------------------------------------------------------
 // ------------------------------------------------------------
-//  REPORT DATA (public) — every meeting with district + block +
+//  REPORT DATA (public) - every meeting with district + block +
 //  status + date, for the open Analytics Portal. Block is resolved
 //  from the creator's email via Employee_DB. Client filters by
 //  District × Block × Month (any combination, incl. "All").
 // ------------------------------------------------------------
 // ------------------------------------------------------------
-//  MONTHLY REPORT — role-scoped (State→all, Zone→zone, District/Field→district).
+//  MONTHLY REPORT - role-scoped (State→all, Zone→zone, District/Field→district).
 //  All numbers computed here (exact); narrative is a template (Phase 1, no AI).
 // ------------------------------------------------------------
 var _RPT_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -2369,7 +2369,7 @@ function getMonthlyReport(session, monthParam) {
     function activeIn(list){ var s={}; list.forEach(function(m){ if(m.status==='Conducted' && m.employeeName) s[m.employeeName.trim().toLowerCase()]=1; }); return Object.keys(s).length; }
     function groupBy(keyFn){
       var g = {};
-      mm.forEach(function(m){ var k = keyFn(m) || '—'; if (!g[k]) g[k] = { name:k, list:[], planned:0, conducted:0 }; g[k].planned++; g[k].list.push(m); if (m.status==='Conducted') g[k].conducted++; });
+      mm.forEach(function(m){ var k = keyFn(m) || '-'; if (!g[k]) g[k] = { name:k, list:[], planned:0, conducted:0 }; g[k].planned++; g[k].list.push(m); if (m.status==='Conducted') g[k].conducted++; });
       return Object.keys(g).map(function(k){ var r=g[k]; return { name:r.name, planned:r.planned, conducted:r.conducted, pct:pct(r.conducted,r.planned), activeStaff:activeIn(r.list) }; });
     }
     var breakdown = { by:'', rows:[], leaderboard:[] };
@@ -2383,18 +2383,18 @@ function getMonthlyReport(session, monthParam) {
         return { name:z, districts:dcount, planned:r.planned, conducted:r.conducted, pct:pct(r.conducted,r.planned), activeStaff:activeIn(r.list) };
       }).filter(function(r){ return r.districts || r.planned; }).sort(function(a,b){ return b.conducted - a.conducted; });
       // district leaderboard (top 8)
-      breakdown.leaderboard = groupBy(function(m){ return m.district || '—'; })
-        .map(function(r){ r.zone = districtToZone_(r.name) || '—'; return r; })
+      breakdown.leaderboard = groupBy(function(m){ return m.district || '-'; })
+        .map(function(r){ r.zone = districtToZone_(r.name) || '-'; return r; })
         .sort(function(a,b){ return b.conducted - a.conducted; }).slice(0, 8);
     } else if (scopeKind === 'zone') {
       breakdown.by = 'district';
-      breakdown.rows = groupBy(function(m){ return m.district || '—'; }).sort(function(a,b){ return b.conducted - a.conducted; });
+      breakdown.rows = groupBy(function(m){ return m.district || '-'; }).sort(function(a,b){ return b.conducted - a.conducted; });
     } else {
       breakdown.by = 'block';
       breakdown.rows = groupBy(function(m){ return (m.block || '').trim() || 'District-level'; }).sort(function(a,b){ return b.conducted - a.conducted; });
     }
 
-    // zero-activity areas (in scope, original names) — districts (or blocks for district scope)
+    // zero-activity areas (in scope, original names) - districts (or blocks for district scope)
     var zeroAreas = [];
     if (scopeKind === 'district') {
       var blockSet = {};
@@ -2408,7 +2408,7 @@ function getMonthlyReport(session, monthParam) {
     }
 
     // focus
-    function tally(list, key){ var o={}; list.forEach(function(m){ var k=(m[key]||'—').toString().trim()||'—'; o[k]=(o[k]||0)+1; }); return Object.keys(o).map(function(k){ return { name:k, count:o[k] }; }).sort(function(a,b){ return b.count-a.count; }).slice(0,6); }
+    function tally(list, key){ var o={}; list.forEach(function(m){ var k=(m[key]||'-').toString().trim()||'-'; o[k]=(o[k]||0)+1; }); return Object.keys(o).map(function(k){ return { name:k, count:o[k] }; }).sort(function(a,b){ return b.count-a.count; }).slice(0,6); }
     var byPurpose = tally(conducted, 'purpose');
     var byStakeholder = tally(conducted, 'stakeholderPost');
 
@@ -2423,7 +2423,7 @@ function getMonthlyReport(session, monthParam) {
       if (worst) attention.push({ level:'warn', title:worst.name + ' is the lowest-performing zone (' + worst.pct + '%)', detail:worst.conducted + ' of ' + worst.planned + ' conducted' });
     }
 
-    // ── Narrative (Phase 1 template — grounded in the numbers) ──
+    // ── Narrative (Phase 1 template - grounded in the numbers) ──
     var best = breakdown.rows[0];
     var topPerf = breakdown.leaderboard[0] || breakdown.rows[0];
     var summary = 'In ' + month + ', ' + scopeLabel + ' conducted ' + conducted.length + ' of ' + mm.length +
@@ -2458,7 +2458,7 @@ function getMonthlyReport(session, monthParam) {
 }
 
 // ------------------------------------------------------------
-//  EMPLOYEE MASTER (public) — name/designation/district/block only
+//  EMPLOYEE MASTER (public) - name/designation/district/block only
 //  (no email/role). Powers the coverage & active/inactive reports.
 // ------------------------------------------------------------
 function getEmployeeMaster() {
@@ -2510,7 +2510,7 @@ function getReportData() {
 
     var meetings = [];
 
-    // 1. Plan Meetings — Planned / Follow-up only
+    // 1. Plan Meetings - Planned / Follow-up only
     var plan = ss.getSheetByName(MEETINGS_SHEET);
     if (plan) {
       var pd = plan.getDataRange().getValues();
@@ -2670,7 +2670,7 @@ function getDistrictReport(district) {
 }
 
 // ------------------------------------------------------------
-//  ALL CONDUCTED REPORTS — paginated list for dashboard
+//  ALL CONDUCTED REPORTS - paginated list for dashboard
 //  State user sees all districts; others see own district only
 // ------------------------------------------------------------
 function getAllReports(email) {
@@ -2724,7 +2724,7 @@ function getAllReports(email) {
 //  EMPLOYEE LOOKUP
 // ------------------------------------------------------------
 // ------------------------------------------------------------
-//  DASHBOARD STATS — cards & reports data
+//  DASHBOARD STATS - cards & reports data
 // ------------------------------------------------------------
 function getDashboardStats(email, allDistricts, activeDistrict) {
   try {
@@ -2806,7 +2806,7 @@ function getDashboardStats(email, allDistricts, activeDistrict) {
     var monthArr = [];
     for (var m in monthMap) monthArr.push({month:m, count:monthMap[m]});
 
-    // ── Conducted Meetings — enriched stats + recent ──────────────
+    // ── Conducted Meetings - enriched stats + recent ──────────────
     var cSheet      = ss.getSheetByName(CONDUCTED_SHEET);
     var recent      = [];
     var empSet      = {};     // unique employee names
@@ -2816,7 +2816,7 @@ function getDashboardStats(email, allDistricts, activeDistrict) {
 
     if (cSheet && cSheet.getLastRow() > 1) {
       var cd = cSheet.getDataRange().getValues();
-      // Forward pass — collect stats
+      // Forward pass - collect stats
       for (var ci = 1; ci < cd.length; ci++) {
         var cr      = cd[ci];
         var cdist   = (cr[1]||'').toString().trim();
@@ -2830,7 +2830,7 @@ function getDashboardStats(email, allDistricts, activeDistrict) {
         if (cType.toLowerCase().indexOf('group') !== -1) dtfCount++;
         if (cMom)  momReady++;
       }
-      // Reverse pass — collect recent 8
+      // Reverse pass - collect recent 8
       for (var ri = cd.length - 1; ri >= 1 && recent.length < 8; ri--) {
         var rr    = cd[ri];
         var rdist = (rr[1]||'').toString().trim();
@@ -2850,7 +2850,7 @@ function getDashboardStats(email, allDistricts, activeDistrict) {
     }
 
     // Top stakeholder post
-    var topStkPost = '—'; var topStkCount = 0;
+    var topStkPost = '-'; var topStkCount = 0;
     for (var sp in stkPostMap) {
       if (stkPostMap[sp] > topStkCount) { topStkCount = stkPostMap[sp]; topStkPost = sp; }
     }
@@ -2879,7 +2879,7 @@ function getDashboardStats(email, allDistricts, activeDistrict) {
 }
 
 // ------------------------------------------------------------
-//  INSERT SAMPLE DATA — run once from GAS editor
+//  INSERT SAMPLE DATA - run once from GAS editor
 // ------------------------------------------------------------
 function insertSampleData() {
   var ss        = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -2901,7 +2901,7 @@ function insertSampleData() {
     ['MTG-S-H02','Hardoi','Rahul Kumar','District Program Officer','rahul.kumar3@educategirls.ngo','2026-04-15','11:00 AM','45 min','One-on-One','Dr. Sunita Pathak','DIET Principal','Enrollment','Discuss strategies for out-of-school girl enrollment','Conducted','','','','Manvendra Mishra','District Program Officer','02/04/2026, 10:00:00 am'],
     ['MTG-S-H03','Hardoi','Manvendra Mishra','District Program Officer','manvendra.mishra@educategirls.ngo','2026-05-05','3:00 PM','30 min','One-on-One','Anil Tiwari','District Collector','Introductory Meeting','Initial introduction and EG program briefing','Conducted','','','','','','20/04/2026, 2:00:00 pm'],
     ['MTG-S-H04','Hardoi','Shivangi Verma','District Program Training Officer','shivangi.verma1@educategirls.ngo','2026-05-28','10:00 AM','2 hr','Group Meeting','Smt. Priya Agarwal','ABSA','DTF','Block-level training facilitation with ABSAs','Planned','','','','Rahul Kumar','District Program Officer','22/04/2026, 9:00:00 am'],
-    ['MTG-S-H05','Hardoi','Uday Raj','District Impact Specialist','uday.raj@educategirls.ngo','2026-04-20','2:00 PM','1 hr','One-on-One','Vinod Sharma','CDO','Retention','Retention strategies for upper primary girls — Cancelled due to officer unavailability','Cancelled','','','Officer on leave','','','10/04/2026, 3:00:00 pm'],
+    ['MTG-S-H05','Hardoi','Uday Raj','District Impact Specialist','uday.raj@educategirls.ngo','2026-04-20','2:00 PM','1 hr','One-on-One','Vinod Sharma','CDO','Retention','Retention strategies for upper primary girls - Cancelled due to officer unavailability','Cancelled','','','Officer on leave','','','10/04/2026, 3:00:00 pm'],
     ['MTG-S-H06','Hardoi','Manvendra Mishra','District Program Officer','manvendra.mishra@educategirls.ngo','2026-05-18','11:30 AM','1 hr','Dept. Review','Ram Kishore','JD','MPR Submission','Submit monthly progress report and discuss targets','Conducted','','','','Uday Raj','District Impact Specialist','15/05/2026, 10:00:00 am'],
 
     // FATEHPUR
@@ -2928,15 +2928,15 @@ function insertSampleData() {
     ['MTG-S-S05','Sitapur','Sumit Kumar','District Impact Specialist','sumit.kumar3@educategirls.ngo','2026-04-28','4:00 PM','30 min','One-on-One','Ajeet Singh','CDO','Courtesy Meeting','Courtesy visit and program update to CDO','Cancelled','','','CDO transferred to another district','','','20/04/2026, 3:00:00 pm'],
 
     // BAHRAICH
-    ['MTG-S-B01','Bahraich','Buddh Vilas','District Impact Specialist','buddh.vilas@educategirls.ngo','2026-04-16','10:00 AM','1 hr','One-on-One','Shyam Lal Gupta','BSA','Review Meeting','Annual review meeting — enrollment, retention, learning','Conducted','','','','Balwant Singh','District Operational Lead','08/04/2026, 9:00:00 am'],
+    ['MTG-S-B01','Bahraich','Buddh Vilas','District Impact Specialist','buddh.vilas@educategirls.ngo','2026-04-16','10:00 AM','1 hr','One-on-One','Shyam Lal Gupta','BSA','Review Meeting','Annual review meeting - enrollment, retention, learning','Conducted','','','','Balwant Singh','District Operational Lead','08/04/2026, 9:00:00 am'],
     ['MTG-S-B02','Bahraich','Shyam Narayan Nath','District Program Officer','shyamnarayan.nath@educategirls.ngo','2026-05-26','11:00 AM','1 hr','One-on-One','Dr. Alka Jain','DIET Principal','Enrollment','Out-of-school girls data sharing with DIET','Planned','','','','','','18/04/2026, 10:00:00 am'],
     ['MTG-S-B03','Bahraich','Sanwara Vaishnav','District Program Training Officer','sanwara.vaishnav@educategirls.ngo','2026-05-04','9:00 AM','3 hr','Group Meeting','Deepak Kumar','ABSA','DTF','Training session on EG methodology and community mobilization','Conducted','','','','','','25/04/2026, 8:00:00 am'],
     ['MTG-S-B04','Bahraich','Balwant Singh','District Operational Lead','balwant.singh@educategirls.ngo','2026-04-30','2:00 PM','1 hr','One-on-One','Mohd. Azam Khan','District Collector','Introductory Meeting','Introductory meeting with new District Collector','Cancelled','','','New DC not yet joined charge','','','22/04/2026, 1:00:00 pm'],
 
     // SHAHJAHANPUR
-    ['MTG-S-SJ1','Shahjahanpur','Indra Dev Tiwari','District Program Officer','indradev.tiwari@educategirls.ngo','2026-04-10','11:00 AM','1 hr','One-on-One','Surendra Bahadur Singh','BSA','MPR Submission','Monthly progress report submission — April','Conducted','','','','Ankit Kumar Dixit','District Program Officer','03/04/2026, 10:00:00 am'],
+    ['MTG-S-SJ1','Shahjahanpur','Indra Dev Tiwari','District Program Officer','indradev.tiwari@educategirls.ngo','2026-04-10','11:00 AM','1 hr','One-on-One','Surendra Bahadur Singh','BSA','MPR Submission','Monthly progress report submission - April','Conducted','','','','Ankit Kumar Dixit','District Program Officer','03/04/2026, 10:00:00 am'],
     ['MTG-S-SJ2','Shahjahanpur','Ankit Kumar Dixit','District Program Officer','ankit.dixit@educategirls.ngo','2026-04-23','10:30 AM','1 hr','One-on-One','Dr. Rama Kant','DIET Principal','Enrollment','Discuss enrollment targets and DIET support for EG program','Conducted','','','','','','14/04/2026, 9:00:00 am'],
-    ['MTG-S-SJ3','Shahjahanpur','Chandra Mohan Sharma','District Program Training Officer','chandramohan.sharma@educategirls.ngo','2026-05-28','9:00 AM','4 hr','Group Meeting','Smt. Pushpa Singh','ABSA','DTF','District Training Facilitation — refresher session','Planned','','','','Indra Dev Tiwari','District Program Officer','20/04/2026, 8:00:00 am'],
+    ['MTG-S-SJ3','Shahjahanpur','Chandra Mohan Sharma','District Program Training Officer','chandramohan.sharma@educategirls.ngo','2026-05-28','9:00 AM','4 hr','Group Meeting','Smt. Pushpa Singh','ABSA','DTF','District Training Facilitation - refresher session','Planned','','','','Indra Dev Tiwari','District Program Officer','20/04/2026, 8:00:00 am'],
     ['MTG-S-SJ4','Shahjahanpur','Vikas Kumar Tiwari','District Operational Assistant Lead','vikash.tiwari@educategirls.ngo','2026-05-07','3:00 PM','45 min','One-on-One','Ashutosh Verma','District Collector','Retention','Retention drive support request from district administration','Cancelled','','','Meeting rescheduled to next month','','','30/04/2026, 2:00:00 pm']
   ];
 
@@ -2945,13 +2945,13 @@ function insertSampleData() {
   //       Type, StkName, StkPost, Purpose, Agenda, ConductDate, ConductTime,
   //       KeyPoints, PhotosFolder, MoMDoc, ColleagueName, ColleaguePost, ConductedAt
   var condRows = [
-    ['MTG-S-H01','Hardoi','Uday Raj','District Impact Specialist','uday.raj@educategirls.ngo','2026-04-10','10:00 AM','1 hr','One-on-One','Rajesh Kumar Verma','BSA','Review Meeting','Quarterly review of enrollment and retention data','2026-04-10','10:45 AM','• Reviewed Q4 enrollment data — 87% target achieved\n• Discussed block-wise retention gaps in KPTG and SANDI\n• BSA agreed to issue circular for ABSA attendance in DTF sessions\n• Follow-up scheduled for May 15','','','','','10/04/2026, 11:50:00 am'],
+    ['MTG-S-H01','Hardoi','Uday Raj','District Impact Specialist','uday.raj@educategirls.ngo','2026-04-10','10:00 AM','1 hr','One-on-One','Rajesh Kumar Verma','BSA','Review Meeting','Quarterly review of enrollment and retention data','2026-04-10','10:45 AM','• Reviewed Q4 enrollment data - 87% target achieved\n• Discussed block-wise retention gaps in KPTG and SANDI\n• BSA agreed to issue circular for ABSA attendance in DTF sessions\n• Follow-up scheduled for May 15','','','','','10/04/2026, 11:50:00 am'],
     ['MTG-S-H02','Hardoi','Rahul Kumar','District Program Officer','rahul.kumar3@educategirls.ngo','2026-04-15','11:00 AM','45 min','One-on-One','Dr. Sunita Pathak','DIET Principal','Enrollment','Discuss strategies for out-of-school girl enrollment','2026-04-15','11:30 AM','• DIET will share block-wise OOS data by April 20\n• Principal agreed to conduct school-wise sensitization\n• EG to provide resource materials for DIET faculty\n• Joint visit to 3 schools planned for May','','','Manvendra Mishra','District Program Officer','15/04/2026, 12:05:00 pm'],
-    ['MTG-S-H03','Hardoi','Manvendra Mishra','District Program Officer','manvendra.mishra@educategirls.ngo','2026-05-05','3:00 PM','30 min','One-on-One','Anil Tiwari','District Collector','Introductory Meeting','Initial introduction and EG program briefing','2026-05-05','3:15 PM','• DC appreciated EG program outcomes in Hardoi\n• Requested monthly update sheet for DC office\n• Discussed upcoming enrollment campaign — DC agreed to flag-off\n• Next meeting scheduled post elections','','','','','05/05/2026, 4:00:00 pm'],
-    ['MTG-S-H06','Hardoi','Manvendra Mishra','District Program Officer','manvendra.mishra@educategirls.ngo','2026-05-18','11:30 AM','1 hr','Dept. Review','Ram Kishore','JD','MPR Submission','Submit monthly progress report and discuss targets','2026-05-18','12:00 PM','• April MPR submitted — 92% targets achieved\n• JD directed to improve learning outcomes data quality\n• EG team to share school-wise learning data by May 25\n• Monthly review mechanism to be strengthened','','','Uday Raj','District Impact Specialist','18/05/2026, 1:15:00 pm'],
+    ['MTG-S-H03','Hardoi','Manvendra Mishra','District Program Officer','manvendra.mishra@educategirls.ngo','2026-05-05','3:00 PM','30 min','One-on-One','Anil Tiwari','District Collector','Introductory Meeting','Initial introduction and EG program briefing','2026-05-05','3:15 PM','• DC appreciated EG program outcomes in Hardoi\n• Requested monthly update sheet for DC office\n• Discussed upcoming enrollment campaign - DC agreed to flag-off\n• Next meeting scheduled post elections','','','','','05/05/2026, 4:00:00 pm'],
+    ['MTG-S-H06','Hardoi','Manvendra Mishra','District Program Officer','manvendra.mishra@educategirls.ngo','2026-05-18','11:30 AM','1 hr','Dept. Review','Ram Kishore','JD','MPR Submission','Submit monthly progress report and discuss targets','2026-05-18','12:00 PM','• April MPR submitted - 92% targets achieved\n• JD directed to improve learning outcomes data quality\n• EG team to share school-wise learning data by May 25\n• Monthly review mechanism to be strengthened','','','Uday Raj','District Impact Specialist','18/05/2026, 1:15:00 pm'],
 
-    ['MTG-S-F01','Fatehpur','Shubham Yadav','District Impact Specialist','shubham.yadav@educategirls.ngo','2026-04-12','10:30 AM','1 hr','One-on-One','Pramod Srivastava','BSA','MPR Submission','Monthly progress report submission and follow-up','2026-04-12','11:00 AM','• March MPR accepted — strong enrollment numbers\n• BSA highlighted teacher absenteeism as key challenge\n• EG team to document school-wise attendance data\n• Follow-up on ABSA deployment in 3 blocks','','','Deepak Dixit','District Program Officer','12/04/2026, 12:00:00 pm'],
-    ['MTG-S-F02','Fatehpur','Deepak Dixit','District Program Officer','deepak.dixit@educategirls.ngo','2026-04-18','11:00 AM','1 hr','One-on-One','Dr. Kavita Mishra','DIET Principal','Review Meeting','Mid-year review of learning outcomes and teacher training','2026-04-18','11:45 AM','• Learning assessment data reviewed — improvement in Grade 3-5\n• DIET agreed to include EG module in next BTC training\n• Principal to depute 2 DIET faculty for EG school visits\n• Collaborative workshop planned for June','','','','','18/04/2026, 12:30:00 pm'],
+    ['MTG-S-F01','Fatehpur','Shubham Yadav','District Impact Specialist','shubham.yadav@educategirls.ngo','2026-04-12','10:30 AM','1 hr','One-on-One','Pramod Srivastava','BSA','MPR Submission','Monthly progress report submission and follow-up','2026-04-12','11:00 AM','• March MPR accepted - strong enrollment numbers\n• BSA highlighted teacher absenteeism as key challenge\n• EG team to document school-wise attendance data\n• Follow-up on ABSA deployment in 3 blocks','','','Deepak Dixit','District Program Officer','12/04/2026, 12:00:00 pm'],
+    ['MTG-S-F02','Fatehpur','Deepak Dixit','District Program Officer','deepak.dixit@educategirls.ngo','2026-04-18','11:00 AM','1 hr','One-on-One','Dr. Kavita Mishra','DIET Principal','Review Meeting','Mid-year review of learning outcomes and teacher training','2026-04-18','11:45 AM','• Learning assessment data reviewed - improvement in Grade 3-5\n• DIET agreed to include EG module in next BTC training\n• Principal to depute 2 DIET faculty for EG school visits\n• Collaborative workshop planned for June','','','','','18/04/2026, 12:30:00 pm'],
     ['MTG-S-F03','Fatehpur','Pushpendra Singh','District Program Training Officer','pushpendra.singh@educategirls.ngo','2026-04-25','9:00 AM','3 hr','Group Meeting','Anil Jaiswal','ABSA','DTF','Cluster-level training on learning assessment tools','2026-04-25','12:00 PM','• 18 ABSAs trained on NIPUN learning tools\n• Hands-on practice on assessment rubrics completed\n• All participants committed to weekly school monitoring\n• Next DTF scheduled for June','','','Shubham Yadav','District Impact Specialist','25/04/2026, 12:30:00 pm'],
     ['MTG-S-F06','Fatehpur','Deepak Dixit','District Program Officer','deepak.dixit@educategirls.ngo','2026-05-15','11:00 AM','1 hr','One-on-One','Suresh Patel','DC-Training','Learning','Discussion on training calendar and capacity building','2026-05-15','11:50 AM','• Training calendar for 2026-27 shared with DC Training\n• Three EG-specific modules approved for inclusion\n• Resource persons list to be shared by May 20\n• Joint review after first training cycle','','','','','15/05/2026, 12:20:00 pm'],
 
@@ -2960,14 +2960,14 @@ function insertSampleData() {
     ['MTG-S-G04','Gonda','Arvind Kumar Yadav','Training Senior Specialist','arvind.yadav@educategirls.ngo','2026-05-01','9:00 AM','4 hr','Group Meeting','Ramesh Misra','ABSA','DTF','Training on NIPUN assessment and learning level improvement','2026-05-01','1:00 PM','• 22 ABSAs trained across 4 blocks\n• Practical sessions on NIPUN tools completed\n• Block-wise action plans prepared by each ABSA\n• Follow-up classroom observation scheduled for June','','','Vedprakash Yadav','District Program Officer','01/05/2026, 1:30:00 pm'],
     ['MTG-S-G06','Gonda','Ashish Kumar Singh','District Program Officer','ashishkumar.singh1@educategirls.ngo','2026-05-20','10:30 AM','1 hr','Dept. Review','Om Prakash Tiwari','DC- Gender','MPR Submission','Gender data review and MPR submission','2026-05-20','11:20 AM','• Gender-disaggregated data reviewed for April\n• Drop-out rate among girls in Class 6-8 flagged as concern\n• DC Gender to raise in DISE data meeting\n• EG to provide school-wise risk analysis','','','','','20/05/2026, 11:45:00 am'],
 
-    ['MTG-S-S01','Sitapur','Sumit Kumar','District Impact Specialist','sumit.kumar3@educategirls.ngo','2026-04-14','11:00 AM','1 hr','One-on-One','Awadhesh Yadav','BSA','MPR Submission','Submit district MPR and review block-wise progress','2026-04-14','11:45 AM','• March MPR submitted — 89% enrollment, 82% retention\n• BSA requested EG data in Excel format for compilation\n• Block-wise performance matrix to be shared weekly\n• ABSA meeting to be organized in May','','','Vikrant Kumar','District Program Officer','14/04/2026, 12:30:00 pm'],
+    ['MTG-S-S01','Sitapur','Sumit Kumar','District Impact Specialist','sumit.kumar3@educategirls.ngo','2026-04-14','11:00 AM','1 hr','One-on-One','Awadhesh Yadav','BSA','MPR Submission','Submit district MPR and review block-wise progress','2026-04-14','11:45 AM','• March MPR submitted - 89% enrollment, 82% retention\n• BSA requested EG data in Excel format for compilation\n• Block-wise performance matrix to be shared weekly\n• ABSA meeting to be organized in May','','','Vikrant Kumar','District Program Officer','14/04/2026, 12:30:00 pm'],
     ['MTG-S-S02','Sitapur','Vikrant Kumar','District Program Officer','vikrant.kumar@educategirls.ngo','2026-05-06','10:00 AM','1 hr','One-on-One','Dr. Shashi Bala','DIET Principal','Review Meeting','Review of DIET training effectiveness on EG teachers','2026-05-06','10:55 AM','• DIET training impact study data shared\n• Significant improvement in teacher facilitation skills noted\n• 3 best-practice schools identified for documentation\n• Exposure visit for DIET faculty to EG schools planned','','','','','06/05/2026, 11:20:00 am'],
     ['MTG-S-S03','Sitapur','Mohd Shadab Ansari','District Program Officer','shadab.ansari@educategirls.ngo','2026-05-12','3:30 PM','45 min','One-on-One','Vinay Kumar Gupta','District Collector','Enrollment','Enrollment campaign planning for 2026-27','2026-05-12','4:05 PM','• DC approved EG-led enrollment campaign for June\n• Gram Pradhan mobilization to be done via BDO circulars\n• EG team to prepare campaign material by May 20\n• DC office to share support letter for schools','','','','','12/05/2026, 4:30:00 pm'],
 
-    ['MTG-S-B01','Bahraich','Buddh Vilas','District Impact Specialist','buddh.vilas@educategirls.ngo','2026-04-16','10:00 AM','1 hr','One-on-One','Shyam Lal Gupta','BSA','Review Meeting','Annual review meeting — enrollment, retention, learning','2026-04-16','10:50 AM','• Annual data reviewed — targets met in 7 of 9 blocks\n• Learning outcomes below benchmark in 2 blocks — plan needed\n• BSA agreed to depute resource persons for those blocks\n• EG to submit action plan by April 25','','','Balwant Singh','District Operational Lead','16/04/2026, 11:50:00 am'],
+    ['MTG-S-B01','Bahraich','Buddh Vilas','District Impact Specialist','buddh.vilas@educategirls.ngo','2026-04-16','10:00 AM','1 hr','One-on-One','Shyam Lal Gupta','BSA','Review Meeting','Annual review meeting - enrollment, retention, learning','2026-04-16','10:50 AM','• Annual data reviewed - targets met in 7 of 9 blocks\n• Learning outcomes below benchmark in 2 blocks - plan needed\n• BSA agreed to depute resource persons for those blocks\n• EG to submit action plan by April 25','','','Balwant Singh','District Operational Lead','16/04/2026, 11:50:00 am'],
     ['MTG-S-B03','Bahraich','Sanwara Vaishnav','District Program Training Officer','sanwara.vaishnav@educategirls.ngo','2026-05-04','9:00 AM','3 hr','Group Meeting','Deepak Kumar','ABSA','DTF','Training session on EG methodology and community mobilization','2026-05-04','12:00 PM','• 16 ABSAs trained on EG community mobilization approach\n• Role-play exercises on parent engagement conducted\n• Commitments taken for monthly school-community meets\n• Refresher session scheduled for July','','','','','04/05/2026, 12:30:00 pm'],
 
-    ['MTG-S-SJ1','Shahjahanpur','Indra Dev Tiwari','District Program Officer','indradev.tiwari@educategirls.ngo','2026-04-10','11:00 AM','1 hr','One-on-One','Surendra Bahadur Singh','BSA','MPR Submission','Monthly progress report submission — April','2026-04-10','11:50 AM','• March MPR submitted — 85% overall target achievement\n• BSA appreciated improvement in retention data quality\n• New data collection format to be piloted in 2 blocks\n• Follow-up meeting for April data in first week of May','','','Ankit Kumar Dixit','District Program Officer','10/04/2026, 12:00:00 pm'],
+    ['MTG-S-SJ1','Shahjahanpur','Indra Dev Tiwari','District Program Officer','indradev.tiwari@educategirls.ngo','2026-04-10','11:00 AM','1 hr','One-on-One','Surendra Bahadur Singh','BSA','MPR Submission','Monthly progress report submission - April','2026-04-10','11:50 AM','• March MPR submitted - 85% overall target achievement\n• BSA appreciated improvement in retention data quality\n• New data collection format to be piloted in 2 blocks\n• Follow-up meeting for April data in first week of May','','','Ankit Kumar Dixit','District Program Officer','10/04/2026, 12:00:00 pm'],
     ['MTG-S-SJ2','Shahjahanpur','Ankit Kumar Dixit','District Program Officer','ankit.dixit@educategirls.ngo','2026-04-23','10:30 AM','1 hr','One-on-One','Dr. Rama Kant','DIET Principal','Enrollment','Discuss enrollment targets and DIET support for EG program','2026-04-23','11:20 AM','• Enrollment targets for 2026-27 discussed and agreed\n• DIET to provide training support for 45 EG schools\n• Resource material library to be set up at DIET\n• Joint visit to 5 EG schools planned for May','','','','','23/04/2026, 11:45:00 am']
   ];
 
@@ -2975,12 +2975,12 @@ function insertSampleData() {
   // Cols: MtgID, Dist, EmpName, Post, Email, Date, Time, Duration,
   //       Type, StkName, StkPost, Purpose, Agenda, ColleagueName, ColleaguePost, Reason, CancelledAt
   var cancRows = [
-    ['MTG-S-H05','Hardoi','Uday Raj','District Impact Specialist','uday.raj@educategirls.ngo','2026-04-20','2:00 PM','1 hr','One-on-One','Vinod Sharma','CDO','Retention','Retention strategies for upper primary girls','','','Officer on leave — rescheduled','20/04/2026, 2:30:00 pm'],
+    ['MTG-S-H05','Hardoi','Uday Raj','District Impact Specialist','uday.raj@educategirls.ngo','2026-04-20','2:00 PM','1 hr','One-on-One','Vinod Sharma','CDO','Retention','Retention strategies for upper primary girls','','','Officer on leave - rescheduled','20/04/2026, 2:30:00 pm'],
     ['MTG-S-F05','Fatehpur','Shubham Yadav','District Impact Specialist','shubham.yadav@educategirls.ngo','2026-05-02','4:00 PM','30 min','One-on-One','Ajay Tripathi','CDO','Invitation','Invite CDO for EG annual review event','','','Event postponed by organizers','02/05/2026, 4:15:00 pm'],
-    ['MTG-S-G05','Gonda','Atul Pandey','District Impact Specialist','atul.pandey@educategirls.ngo','2026-05-08','2:00 PM','30 min','One-on-One','Hari Om Mishra','JD','Retention','Discuss retention challenges at upper primary level','','','Meeting cancelled by stakeholder — national duty','08/05/2026, 2:20:00 pm'],
+    ['MTG-S-G05','Gonda','Atul Pandey','District Impact Specialist','atul.pandey@educategirls.ngo','2026-05-08','2:00 PM','30 min','One-on-One','Hari Om Mishra','JD','Retention','Discuss retention challenges at upper primary level','','','Meeting cancelled by stakeholder - national duty','08/05/2026, 2:20:00 pm'],
     ['MTG-S-S05','Sitapur','Sumit Kumar','District Impact Specialist','sumit.kumar3@educategirls.ngo','2026-04-28','4:00 PM','30 min','One-on-One','Ajeet Singh','CDO','Courtesy Meeting','Courtesy visit and program update to CDO','','','CDO transferred to another district','28/04/2026, 4:10:00 pm'],
     ['MTG-S-B04','Bahraich','Balwant Singh','District Operational Lead','balwant.singh@educategirls.ngo','2026-04-30','2:00 PM','1 hr','One-on-One','Mohd. Azam Khan','District Collector','Introductory Meeting','Introductory meeting with new District Collector','','','New DC not yet joined charge','30/04/2026, 2:15:00 pm'],
-    ['MTG-S-SJ4','Shahjahanpur','Vikas Kumar Tiwari','District Operational Assistant Lead','vikash.tiwari@educategirls.ngo','2026-05-07','3:00 PM','45 min','One-on-One','Ashutosh Verma','District Collector','Retention','Retention drive support request from district administration','','','Meeting rescheduled to next month — DC tour','07/05/2026, 3:20:00 pm']
+    ['MTG-S-SJ4','Shahjahanpur','Vikas Kumar Tiwari','District Operational Assistant Lead','vikash.tiwari@educategirls.ngo','2026-05-07','3:00 PM','45 min','One-on-One','Ashutosh Verma','District Collector','Retention','Retention drive support request from district administration','','','Meeting rescheduled to next month - DC tour','07/05/2026, 3:20:00 pm']
   ];
 
   // ─── INSERT ROWS ──────────────────────────────────────────────
@@ -3016,7 +3016,7 @@ function getEmployeeByEmail(email) {
     var rowEmail = data[i][4] ? data[i][4].toString().trim().toLowerCase() : '';
     if (rowEmail === email) {
       var primaryDist = (data[i][0] || '').toString().trim();
-      // Col H (index 7) = "Additional Districts" — extra charge, comma/semicolon separated.
+      // Col H (index 7) = "Additional Districts" - extra charge, comma/semicolon separated.
       // districts[] = primary + any extras (deduped, case-insensitive). Empty col H → single district.
       var districts = [primaryDist];
       (data[i][7] || '').toString().split(/[,;]/).forEach(function(x) {
@@ -3043,7 +3043,7 @@ function getEmployeeByEmail(email) {
 }
 
 // ------------------------------------------------------------
-//  BULK UPDATE EMPLOYEE_DB — POST action: bulkUpdateEmployeeDB
+//  BULK UPDATE EMPLOYEE_DB - POST action: bulkUpdateEmployeeDB
 //  Accepts { rows: [[District,Block,Name,Designation,Email,Role], ...] }
 //  Clears existing data (except header) and writes new rows
 // ------------------------------------------------------------
@@ -3071,7 +3071,7 @@ function bulkUpdateEmployeeDB(rows) {
 }
 
 // ------------------------------------------------------------
-//  PEEK SOURCE SHEET — returns sheet names + first 3 data rows
+//  PEEK SOURCE SHEET - returns sheet names + first 3 data rows
 //  action=peekSourceSheet&sourceId=SPREADSHEET_ID&sheetIndex=0
 // ------------------------------------------------------------
 function peekSourceSheet(sourceId, sheetIndex) {
@@ -3151,7 +3151,7 @@ function importFromSource(sourceId, sheetIndex) {
       sourceSheet: srcWs.getName(),
       rowsImported: dataRows.length,
       columns: colCount,
-      message: 'Import complete — vacant rows skipped'
+      message: 'Import complete - vacant rows skipped'
     };
   } catch(err) {
     return { success: false, message: err.message };
@@ -3160,7 +3160,7 @@ function importFromSource(sourceId, sheetIndex) {
 
 
 // ------------------------------------------------------------
-//  CLEAR MY CACHE — call after role/data change to force refresh
+//  CLEAR MY CACHE - call after role/data change to force refresh
 //  action=clearMyCache&email=user@educategirls.ngo
 // ------------------------------------------------------------
 function clearMyCache(email) {
