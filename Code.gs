@@ -2439,7 +2439,7 @@ function getMonthlyReport(session, monthParam) {
     if (pending) recs.push({ h:'Close the ' + pending + ' pending follow-ups.', d:'Convert planned/postponed meetings before month-end.' });
     if (conducted.length && govtMom < conducted.length) recs.push({ h:'Push Govt MoM collection.', d:'Only ' + pct(govtMom, conducted.length) + '% of meetings have official minutes.' });
 
-    return {
+    var resp = {
       success: true,
       scope: { kind:scopeKind, label:scopeLabel, role:role, month:month, generatedAt:new Date().toISOString() },
       months: months,
@@ -2450,11 +2450,102 @@ function getMonthlyReport(session, monthParam) {
       breakdown: breakdown,
       byPurpose: byPurpose, byStakeholder: byStakeholder,
       zeroAreas: zeroAreas, attention: attention,
-      narrative: { summary:summary, highlights:highlights, recommendations:recs }
+      narrative: { ai:false, summary:summary, highlights:highlights, recommendations:recs }
     };
+
+    // ── AI narrative (Phase 2) - aggregated numbers only; cached; template fallback ──
+    try {
+      var aiKey = 'aiNarr_' + scopeKind + '_' + normDist_(scopeLabel).slice(0,40) + '_' + month.replace(/\s/g,'');
+      var cached = cGet(aiKey);
+      if (cached && cached.summary) {
+        resp.narrative = { ai:true, summary:cached.summary, highlights:cached.highlights, recommendations:cached.recommendations };
+      } else {
+        var ai = aiReportNarrative(resp);
+        if (ai && ai.summary) {
+          resp.narrative = { ai:true, summary:ai.summary, highlights:ai.highlights, recommendations:ai.recommendations };
+          cPut(aiKey, ai, 21600);   // 6 h - regenerated a few times/day at most
+        }
+      }
+    } catch (aiErr) { /* keep template narrative */ }
+
+    return resp;
   } catch (err) {
     return { success:false, message: err.message };
   }
+}
+
+// ------------------------------------------------------------
+//  AI NARRATIVE - Mistral (primary) → Gemini (fallback) → null.
+//  Keys live in Script Properties (MISTRAL_KEY / GEMINI_KEY), never in code.
+//  Prompt contains ONLY aggregated numbers + area/purpose names (no person
+//  names, no meeting notes) - the agreed privacy stance.
+// ------------------------------------------------------------
+function callLLM(prompt) {
+  var props = PropertiesService.getScriptProperties();
+  // 1) Mistral (proven reliable for English report prose)
+  var mk = props.getProperty('MISTRAL_KEY');
+  if (mk) {
+    try {
+      var r = UrlFetchApp.fetch('https://api.mistral.ai/v1/chat/completions', {
+        method:'post', contentType:'application/json', muteHttpExceptions:true,
+        headers:{ Authorization:'Bearer ' + mk },
+        payload: JSON.stringify({ model:'mistral-small-latest', messages:[{role:'user', content:prompt}], max_tokens:900, temperature:0.3 })
+      });
+      if (r.getResponseCode() === 200) {
+        var j = JSON.parse(r.getContentText());
+        var t = j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+        if (t) return t;
+      }
+    } catch(e) {}
+  }
+  // 2) Gemini (fallback)
+  var gk = props.getProperty('GEMINI_KEY');
+  if (gk) {
+    try {
+      var r2 = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=' + encodeURIComponent(gk), {
+        method:'post', contentType:'application/json', muteHttpExceptions:true,
+        payload: JSON.stringify({ contents:[{parts:[{text:prompt}]}], generationConfig:{ maxOutputTokens:3000, temperature:0.3 } })
+      });
+      if (r2.getResponseCode() === 200) {
+        var j2 = JSON.parse(r2.getContentText());
+        var t2 = j2 && j2.candidates && j2.candidates[0] && j2.candidates[0].content && j2.candidates[0].content.parts && j2.candidates[0].content.parts[0] && j2.candidates[0].content.parts[0].text;
+        if (t2) return t2;
+      }
+    } catch(e) {}
+  }
+  return '';
+}
+
+function buildReportPrompt(r) {
+  var k = r.kpis, sc = r.scope, b = r.breakdown, L = [];
+  L.push('Scope: ' + sc.label + ' (' + sc.kind + ' level), Month: ' + sc.month);
+  L.push('Meetings: ' + k.total + ' planned, ' + k.conducted + ' conducted, ' + k.success + '% success rate');
+  L.push('Staff participation: ' + k.activeStaff + ' active of ' + k.totalStaff + ' (' + k.participation + '%)');
+  var byLabel = { zone:'zone', district:'district', block:'block' }[b.by] || 'area';
+  if (b.rows && b.rows.length) L.push('By ' + byLabel + ': ' + b.rows.slice(0,12).map(function(x){ return x.name + ' ' + x.planned + '/' + x.conducted + '/' + x.pct + '%'; }).join('; '));
+  if (b.leaderboard && b.leaderboard.length) L.push('Top districts by conducted: ' + b.leaderboard.slice(0,5).map(function(x){ return x.name + ' ' + x.conducted + ' (' + x.pct + '%)'; }).join(', '));
+  if (r.byPurpose && r.byPurpose.length) L.push('Meeting purposes: ' + r.byPurpose.map(function(x){ return x.name + ' ' + x.count; }).join(', '));
+  if (r.byStakeholder && r.byStakeholder.length) L.push('Stakeholder types met: ' + r.byStakeholder.map(function(x){ return x.name + ' ' + x.count; }).join(', '));
+  var att = [];
+  if (r.zeroAreas && r.zeroAreas.length) att.push(r.zeroAreas.length + ' ' + byLabel + 's with no activity');
+  att.push(k.pending + ' follow-ups pending');
+  att.push('Govt MoM received on ' + k.govtMom + ' of ' + k.conducted + ' conducted');
+  L.push('Attention: ' + att.join('; '));
+  return "You are writing a concise monthly report for Educate Girls' government-relations meeting tracker. Use ONLY the data below. Write in professional Indian English. Do not invent numbers or names. Do not use em dashes; use commas or hyphens. Return STRICT JSON only (no markdown fences), exactly this shape: {\"summary\":\"2 to 3 sentences\",\"highlights\":[{\"h\":\"short headline\",\"d\":\"one detail sentence\"}],\"recommendations\":[{\"h\":\"action\",\"d\":\"why or how\"}]}. Give 2 to 3 highlights and 2 to 3 recommendations.\nDATA:\n" + L.join('\n');
+}
+
+function aiReportNarrative(r) {
+  var raw = callLLM(buildReportPrompt(r));
+  if (!raw) return null;
+  raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+  var s = raw.indexOf('{'), e = raw.lastIndexOf('}');
+  if (s < 0 || e < 0) return null;
+  try {
+    var o = JSON.parse(raw.slice(s, e + 1));
+    if (!o || !o.summary) return null;
+    function norm(a){ return (a||[]).map(function(x){ return (typeof x === 'string') ? { h:x, d:'' } : { h:(x.h||''), d:(x.d||'') }; }).filter(function(x){ return x.h; }); }
+    return { summary: String(o.summary), highlights: norm(o.highlights), recommendations: norm(o.recommendations) };
+  } catch(e) { return null; }
 }
 
 // ------------------------------------------------------------

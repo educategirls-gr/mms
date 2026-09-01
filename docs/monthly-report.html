@@ -165,6 +165,7 @@
 
   function render(j){
     var k=j.kpis, sc=j.scope, EG='var(--brand-ink)';
+    var narrTag = (j.narrative && j.narrative.ai) ? 'AI-written' : 'Auto-summary';
     document.getElementById('bar').style.display='flex';
     // month picker
     var msel=document.getElementById('month-sel');
@@ -183,7 +184,7 @@
       '<div class="meta">Reporting period &middot; <b>'+esc(sc.month)+'</b><br>Scope &middot; <b>'+roleLabel+'</b><br>Prepared for &middot; <b>'+esc(SESSION.name||'-')+'</b><br>Generated &middot; <b>'+gen+'</b></div></header>';
 
     // Executive summary (template - tagged Auto-summary in Phase 1)
-    html+=sec('Executive Summary','ai','Auto-summary')+
+    html+=sec('Executive Summary','ai',narrTag)+
       '<div class="summary"><p>'+esc(j.narrative.summary)+'</p></div></section>';
 
     // KPIs
@@ -241,13 +242,13 @@
     }
     // Highlights
     if(j.narrative.highlights && j.narrative.highlights.length){
-      html+=sec('Highlights','ai','Auto-summary')+'<ul class="clean">';
+      html+=sec('Highlights','ai',narrTag)+'<ul class="clean">';
       j.narrative.highlights.forEach(function(h){ html+='<li><span class="dot brand"></span><div><div class="h">'+esc(h.h)+'</div><div class="d">'+esc(h.d||'')+'</div></div></li>'; });
       html+='</ul></section>';
     }
     // Recommendations
     if(j.narrative.recommendations && j.narrative.recommendations.length){
-      html+=sec('Recommendations','ai','Auto-summary')+'<ol class="recs">';
+      html+=sec('Recommendations','ai',narrTag)+'<ol class="recs">';
       j.narrative.recommendations.forEach(function(r){ html+='<li><span class="h">'+esc(r.h)+'</span> <span class="d">'+esc(r.d||'')+'</span></li>'; });
       html+='</ol></section>';
     }
