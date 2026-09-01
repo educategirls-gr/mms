@@ -2395,12 +2395,11 @@ function getMonthlyReport(session, monthParam) {
         var uz = zg['State'];
         breakdown.rows.push({ name:'State', districts:1, planned:uz.planned, conducted:uz.conducted, pct:pct(uz.conducted,uz.planned), activeStaff:activeIn(uz.list) });
       }
-      // district leaderboard (top 8) + always include state-level districts like Lucknow
-      var lbAll = groupBy(function(m){ return m.district || '-'; })
+      // district leaderboard: full list of districts with any conducted meeting (zero-conducted go to Attention Needed)
+      breakdown.leaderboard = groupBy(function(m){ return m.district || '-'; })
         .map(function(r){ r.zone = districtToZone_(r.name) || 'State'; return r; })
+        .filter(function(r){ return r.conducted > 0 && r.name !== '-'; })
         .sort(function(a,b){ return b.conducted - a.conducted; });
-      breakdown.leaderboard = lbAll.slice(0, 8);
-      lbAll.forEach(function(r){ if (r.zone === 'State' && r.name !== '-' && breakdown.leaderboard.indexOf(r) === -1) breakdown.leaderboard.push(r); });
     } else if (scopeKind === 'zone') {
       breakdown.by = 'district';
       breakdown.rows = groupBy(function(m){ return m.district || '-'; }).sort(function(a,b){ return b.conducted - a.conducted; });
@@ -3024,7 +3023,7 @@ function buildReportEmailHtml(rep, recipientName) {
     var lrows = b.leaderboard.map(function(x,i){
       return '<tr style="border-top:1px solid #f0ebe5;"><td style="padding:10px 12px;color:#a8a29e;font-weight:700;">'+(i+1)+'</td><td style="padding:10px 12px;font-weight:700;">'+_emailEsc(x.name)+'</td><td style="padding:10px 12px;color:#6b7280;">'+_emailEsc((x.zone||'').replace('UP ',''))+'</td><td align="right" style="padding:10px 12px;">'+x.conducted+'</td><td align="right" style="padding:10px 12px;color:'+_pctColor(x.pct)+';font-weight:700;">'+x.pct+'%</td></tr>';
     }).join('');
-    lb = sec(sech('District Leaderboard','Top '+b.leaderboard.length,'calc')+
+    lb = sec(sech('District Leaderboard',b.leaderboard.length+' active','calc')+
       '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px;border:1px solid #e5e7eb;border-radius:8px;">'+
       '<tr style="background:#f7f2ee;color:#6b7280;font-size:11px;text-transform:uppercase;"><th align="left" style="padding:10px 12px;">#</th><th align="left" style="padding:10px 12px;">District</th><th align="left" style="padding:10px 12px;">Zone</th><th align="right" style="padding:10px 12px;">Conducted</th><th align="right" style="padding:10px 12px;">Success</th></tr>'+
       lrows + '</table>');
