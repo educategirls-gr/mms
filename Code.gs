@@ -2316,6 +2316,8 @@ function monthKeyOf_(m) {
   return p.length >= 3 ? (p[1] + ' ' + p[2]) : '';
 }
 function monthSortVal_(k) { var p = (k||'').split(' '); return (parseInt(p[1], 10) || 0) * 12 + _RPT_MONTHS.indexOf(p[0]); }
+// The just-completed calendar month, e.g. run on 1 Sep -> "Aug 2026".
+function prevMonthKey_() { var d = new Date(); d.setDate(1); d.setDate(0); return _RPT_MONTHS[d.getMonth()] + ' ' + d.getFullYear(); }
 
 function getMonthlyReport(session, monthParam) {
   try {
@@ -2629,7 +2631,7 @@ function buildReportEmailHtml(rep, recipientName) {
 function sendMonthlyReports(mode, monthOverride) {
   mode = mode || 'test';
   var recips = getReportRecipients();
-  var month = monthOverride || '';
+  var month = monthOverride || prevMonthKey_();   // default: the just-completed month (Aug on 1 Sep)
   var sent = [], failed = [];
   recips.forEach(function(r){
     try {
@@ -2647,7 +2649,7 @@ function sendMonthlyReports(mode, monthOverride) {
   return { success:true, mode:mode, sentCount:sent.length, failedCount:failed.length, sent:sent, failed:failed };
 }
 
-function monthlyReportJob() { return sendMonthlyReports('live', ''); }
+function monthlyReportJob() { return sendMonthlyReports('live'); }   // uses prevMonthKey_() = just-completed month
 
 // ---- Run these from the editor, in order ----
 function REPORT_step1_TEST()        { return sendMonthlyReports('test'); }   // all reports to admin only (review)
