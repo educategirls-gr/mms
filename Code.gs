@@ -2592,7 +2592,7 @@ function tagOneMeeting_(d) {
   var out = { priority:'', flag:'', nextAction:'', escalate:false, category:'None', momSummary:'' };
   if (note) {
     var prompt = 'You are tagging a government-relations field meeting note (may be Hindi, English or mixed). Return STRICT JSON only, no markdown: '+
-      '{"priority":"High|Medium|Low","flag":"Follow-up needed|Resolved|Blocked","nextAction":"one short line in the same language as the note","escalate":true|false,"category":"Document/Data request|Quality issue|Blocker|Resource needed|Commitment|None"}. '+
+      '{"priority":"High|Medium|Low","flag":"Follow-up needed|Resolved|Blocked","nextAction":"one short action line in English","escalate":true|false,"category":"Document/Data request|Quality issue|Blocker|Resource needed|Commitment|None"}. '+
       "Escalate true only for a real ask, request, quality issue, complaint, blocker or problem needing a senior's attention; a positive or normal update is false. Do not use em dashes.\n"+
       'NOTE: '+note+'\n(Purpose: '+(d.purpose||'')+'; Stakeholder: '+(d.stakeholder||'')+'; Type: '+(d.type||'')+')';
     var o = _parseJson_(callLLM(prompt));
@@ -2693,7 +2693,7 @@ function buildEscalationEmail_(o) {
       '<h1 style="font-family:Georgia,serif;font-size:20px;margin:8px 0 3px;color:#1f2937;">'+_emailEsc(o.category||'Follow-up needed')+'</h1>'+
       '<div style="font-size:13px;color:#6b7280;">'+_emailEsc(o.district)+' &middot; '+_emailEsc(o.conductDate)+'</div></td></tr>'+
     '<tr><td style="padding:16px 28px 0;font-size:14px;line-height:1.6;">'+
-      'Namaste <b>'+_emailEsc(o.officerName)+'</b>, aapki ek meeting me action chahiye (senior CC me hain for support).'+
+      'Dear <b>'+_emailEsc(o.officerName)+'</b>, one of your meetings needs attention.'+
       '<div style="background:#f7f2ee;border:1px solid #e5e7eb;border-radius:8px;padding:12px 16px;margin-top:12px;font-size:13.5px;">'+
         '<b>Meeting:</b> '+_emailEsc(o.stakeholder)+(o.purpose?' &middot; '+_emailEsc(o.purpose):'')+'<br>'+
         '<b>Priority:</b> <span style="color:'+pc+';font-weight:700;">'+_emailEsc(o.priority||'-')+'</span> &nbsp; <b>Status:</b> '+_emailEsc(o.flag||'-')+'<br>'+
