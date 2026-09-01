@@ -2390,10 +2390,17 @@ function getMonthlyReport(session, monthParam) {
         var dcount = (ZONE_DISTRICTS[z] ? ZONE_DISTRICTS[z].length : 0);
         return { name:z, districts:dcount, planned:r.planned, conducted:r.conducted, pct:pct(r.conducted,r.planned), activeStaff:activeIn(r.list) };
       }).sort(function(a,b){ return b.conducted - a.conducted; });
-      // district leaderboard (top 8)
-      breakdown.leaderboard = groupBy(function(m){ return m.district || '-'; })
-        .map(function(r){ r.zone = districtToZone_(r.name) || '-'; return r; })
-        .sort(function(a,b){ return b.conducted - a.conducted; }).slice(0, 8);
+      // un-zoned row (e.g. Lucknow), shown only when present
+      if (zg['Unzoned']) {
+        var uz = zg['Unzoned'];
+        breakdown.rows.push({ name:'Unzoned', districts:1, planned:uz.planned, conducted:uz.conducted, pct:pct(uz.conducted,uz.planned), activeStaff:activeIn(uz.list) });
+      }
+      // district leaderboard (top 8) + always include un-zoned districts like Lucknow
+      var lbAll = groupBy(function(m){ return m.district || '-'; })
+        .map(function(r){ r.zone = districtToZone_(r.name) || 'Unzoned'; return r; })
+        .sort(function(a,b){ return b.conducted - a.conducted; });
+      breakdown.leaderboard = lbAll.slice(0, 8);
+      lbAll.forEach(function(r){ if (r.zone === 'Unzoned' && r.name !== '-' && breakdown.leaderboard.indexOf(r) === -1) breakdown.leaderboard.push(r); });
     } else if (scopeKind === 'zone') {
       breakdown.by = 'district';
       breakdown.rows = groupBy(function(m){ return m.district || '-'; }).sort(function(a,b){ return b.conducted - a.conducted; });
