@@ -2642,7 +2642,7 @@ function tagUntaggedMeetings(limit) {
 function ensureTagHeaders() {
   var sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(CONDUCTED_SHEET);
   if (!sh) return 'no sheet';
-  var hdr = ['Priority','Flag','Next Action','Escalate','Category','Govt MoM Summary','Tagged At'];
+  var hdr = ['Priority','Flag','Next Action','Escalate','Category','Govt MoM Summary','Tagged At','Escalation Sent At'];
   sh.getRange(1, COL_TAG_PRIORITY, 1, hdr.length).setValues([hdr]);
   return 'headers set';
 }
@@ -2657,6 +2657,105 @@ function installTaggingTrigger() {
 // ---- Run from the editor ----
 function TAG_run()         { ensureTagHeaders(); return tagUntaggedMeetings(20); }   // manual test (tags up to 20)
 function TAG_installAuto() { ensureTagHeaders(); return installTaggingTrigger(); }   // hourly auto-tagging
+
+// ============================================================
+//  TIER 2 - ESCALATION EMAILS (senior CC by hierarchy)
+//  When a conducted meeting is Escalate=Yes / High / Blocked, email the
+//  officer and CC their senior (Field->District lead, District->Zone lead,
+//  Zone->State lead). Sent once per meeting (tracked in col AD).
+// ============================================================
+var COL_ESC_SENT = 30;   // AD = Escalation Sent At
+
+// Senior email(s) one level up, from the officer's role + geography.
+function findSenior_(emp, recips) {
+  var role = (emp && emp.role) || '', me = ((emp && emp.email)||'').toLowerCase(), out = [];
+  function push(r){ if (r.email && r.email.toLowerCase() !== me && out.indexOf(r.email) === -1) out.push(r.email); }
+  if (role === 'Field') {
+    var dists = (emp.districts && emp.districts.length) ? emp.districts : [emp.district];
+    recips.forEach(function(r){ if (r.role==='District' && dists.some(function(d){ return normDist_(d)===normDist_(r.district); })) push(r); });
+    if (!out.length) { var zk=districtToZone_(emp.district); recips.forEach(function(r){ if(r.role==='Zone'&&findZoneKey_(r.zone)===zk) push(r); }); }
+  } else if (role === 'District') {
+    var zk2 = districtToZone_(emp.district);
+    recips.forEach(function(r){ if (r.role==='Zone' && findZoneKey_(r.zone)===zk2) push(r); });
+    if (!out.length) recips.forEach(function(r){ if (r.role==='State') push(r); });
+  } else if (role === 'Zone') {
+    recips.forEach(function(r){ if (r.role==='State') push(r); });
+  }
+  return out;
+}
+
+function buildEscalationEmail_(o) {
+  var pc = o.priority==='High' ? '#B91C1C' : '#9a5b0e';
+  return '<div style="margin:0;padding:20px 12px;background:#f4f2ef;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">'+
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:620px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:12px;">'+
+    '<tr><td style="padding:22px 28px 14px;border-bottom:2px solid '+pc+';">'+
+      '<div style="font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:'+pc+';">Escalation - Needs attention</div>'+
+      '<h1 style="font-family:Georgia,serif;font-size:20px;margin:8px 0 3px;color:#1f2937;">'+_emailEsc(o.category||'Follow-up needed')+'</h1>'+
+      '<div style="font-size:13px;color:#6b7280;">'+_emailEsc(o.district)+' &middot; '+_emailEsc(o.conductDate)+'</div></td></tr>'+
+    '<tr><td style="padding:16px 28px 0;font-size:14px;line-height:1.6;">'+
+      'Namaste <b>'+_emailEsc(o.officerName)+'</b>, aapki ek meeting me action chahiye (senior CC me hain for support).'+
+      '<div style="background:#f7f2ee;border:1px solid #e5e7eb;border-radius:8px;padding:12px 16px;margin-top:12px;font-size:13.5px;">'+
+        '<b>Meeting:</b> '+_emailEsc(o.stakeholder)+(o.purpose?' &middot; '+_emailEsc(o.purpose):'')+'<br>'+
+        '<b>Priority:</b> <span style="color:'+pc+';font-weight:700;">'+_emailEsc(o.priority||'-')+'</span> &nbsp; <b>Status:</b> '+_emailEsc(o.flag||'-')+'<br>'+
+        '<b>Next action:</b> '+_emailEsc(o.nextAction||'-')+
+      '</div>'+
+      (o.keyPoints?'<div style="font-size:12.5px;color:#6b7280;margin-top:10px;"><b style="color:#1f2937;">Note:</b> '+_emailEsc(o.keyPoints.slice(0,300))+'</div>':'')+
+    '</td></tr>'+
+    '<tr><td style="padding:18px 28px 24px;"><div style="border-top:1px solid #e5e7eb;padding-top:12px;font-size:11px;color:#9ca3af;">Auto-flagged by EG-MMS from the meeting note. dataimpact.in</div></td></tr>'+
+    '</table></div>';
+}
+
+// mode 'test' sends all to REPORT_TEST_EMAIL; 'live' emails the officer + CC senior.
+function sendEscalations(mode, limit) {
+  mode = mode || 'test'; limit = limit || 25;
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID), sh = ss.getSheetByName(CONDUCTED_SHEET);
+  if (!sh) return { success:false, message:'no sheet' };
+  var data = sh.getDataRange().getValues();
+  var recips = getReportRecipients();
+  var done = 0, out = [];
+  for (var i = 1; i < data.length && done < limit; i++) {
+    if (!data[i][0]) continue;
+    if (!(data[i][COL_TAG_AT-1]||'').toString().trim()) continue;                 // not tagged
+    if ((data[i][COL_ESC_SENT-1]||'').toString().trim()) continue;                // already escalated
+    var esc = (data[i][22]||'')==='High' || (data[i][23]||'')==='Blocked' || (data[i][25]||'')==='Yes';
+    if (!esc) continue;
+    var email = (data[i][4]||'').toString().trim();
+    if (!email) continue;
+    var emp = getEmployeeByEmail(email.toLowerCase());
+    if (!emp) continue;
+    var seniors = findSenior_(emp, recips);
+    var html = buildEscalationEmail_({
+      officerName:(data[i][2]||'').toString(), district:(data[i][1]||'').toString(),
+      stakeholder:(data[i][9]||'').toString(), purpose:(data[i][11]||'').toString(),
+      conductDate:fmtDateVal(data[i][13]), meetingType:(data[i][8]||'').toString(),
+      priority:(data[i][22]||'').toString(), flag:(data[i][23]||'').toString(),
+      category:(data[i][26]||'').toString(), nextAction:(data[i][24]||'').toString(),
+      keyPoints:(data[i][15]||'').toString()
+    });
+    var to = (mode==='live') ? email : REPORT_TEST_EMAIL;
+    var cc = (mode==='live') ? seniors.join(',') : '';
+    var opts = { to:to, subject:'Escalation: '+(data[i][26]||'Follow-up')+' - '+(data[i][1]||'')+' meeting', htmlBody:html, name:'EG-MMS Alerts' };
+    if (cc) opts.cc = cc;
+    try {
+      MailApp.sendEmail(opts);
+      sh.getRange(i+1, COL_ESC_SENT).setValue(new Date());
+      done++; out.push(to + (cc?(' cc '+cc):'') + ' [' + (data[i][26]||'') + ']');
+    } catch(e){ out.push('FAIL '+email+' '+e.message); }
+  }
+  Logger.log('Escalations sent: '+done); Logger.log(out.join('\n'));
+  return { success:true, mode:mode, sent:done, details:out };
+}
+
+function escalationJob() { return sendEscalations('live', 40); }
+function installEscalationTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function(t){ if (t.getHandlerFunction()==='escalationJob') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('escalationJob').timeBased().everyHours(1).create();
+  return 'Escalation trigger installed: escalationJob runs hourly.';
+}
+// ---- Run from the editor ----
+function ESC_step1_TEST()      { return sendEscalations('test', 25); }   // all to admin (review)
+function ESC_step2_LIVE()      { return sendEscalations('live', 40); }   // officer + senior CC
+function ESC_installAuto()     { return installEscalationTrigger(); }    // hourly auto
 
 // ============================================================
 //  MONTHLY REPORT EMAIL DELIVERY
