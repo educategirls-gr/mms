@@ -2647,8 +2647,16 @@ function ensureTagHeaders() {
   return 'headers set';
 }
 
+function taggingJob() { return tagUntaggedMeetings(30); }
+function installTaggingTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function(t){ if (t.getHandlerFunction()==='taggingJob') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('taggingJob').timeBased().everyHours(1).create();
+  return 'Tagging trigger installed: taggingJob runs hourly and tags newly conducted meetings.';
+}
+
 // ---- Run from the editor ----
-function TAG_run() { ensureTagHeaders(); return tagUntaggedMeetings(20); }
+function TAG_run()         { ensureTagHeaders(); return tagUntaggedMeetings(20); }   // manual test (tags up to 20)
+function TAG_installAuto() { ensureTagHeaders(); return installTaggingTrigger(); }   // hourly auto-tagging
 
 // ============================================================
 //  MONTHLY REPORT EMAIL DELIVERY
