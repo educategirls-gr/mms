@@ -2648,10 +2648,13 @@ function sendMonthlyReports(mode, monthOverride) {
       if (!rep || !rep.success) { failed.push(r.email + ' (no report)'); return; }
       var html = buildReportEmailHtml(rep, r.name);
       var to = (mode === 'live') ? r.email : REPORT_TEST_EMAIL;
-      var pdf = Utilities.newBlob('<html><head><meta charset="utf-8"></head><body>' + html + '</body></html>', 'text/html', 'report.html')
-                  .getAs('application/pdf')
-                  .setName('GR-Report-' + rep.scope.label.replace(/[^A-Za-z0-9]+/g,'-') + '-' + rep.scope.month.replace(/\s/g,'') + '.pdf');
-      MailApp.sendEmail({ to:to, subject:'Monthly GR Report - ' + rep.scope.label + ' - ' + rep.scope.month, htmlBody:html, name:'EG-MMS Reports', attachments:[pdf] });
+      var attach = [];
+      try {
+        attach.push(Utilities.newBlob('<html><head><meta charset="utf-8"></head><body>' + html + '</body></html>', 'text/html', 'report.html')
+          .getAs('application/pdf')
+          .setName('GR-Report-' + rep.scope.label.replace(/[^A-Za-z0-9]+/g,'-') + '-' + rep.scope.month.replace(/\s/g,'') + '.pdf'));
+      } catch(pe) { /* PDF optional - send without it if conversion fails */ }
+      MailApp.sendEmail({ to:to, subject:'Monthly GR Report - ' + rep.scope.label + ' - ' + rep.scope.month, htmlBody:html, name:'EG-MMS Reports', attachments:attach });
       sent.push(to + ' [' + r.role + ': ' + (r.role==='State'?'UP':r.role==='Zone'?r.zone:r.district) + ']');
     } catch(e){ failed.push(r.email + ' ' + e.message); }
   });
