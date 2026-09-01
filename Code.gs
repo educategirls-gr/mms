@@ -2548,6 +2548,119 @@ function aiReportNarrative(r) {
   } catch(e) { return null; }
 }
 
+// ============================================================
+//  MONTHLY REPORT EMAIL DELIVERY
+//  Recipients = State / Zone / District leads (each their own scope).
+//  Sent from gr@educategirls.ngo via MailApp. Run installMonthlyTrigger()
+//  once to schedule for the 1st of each month.
+// ============================================================
+var REPORT_TEST_EMAIL = 'alok.mohan@educategirls.ngo';   // used by mode 'test'
+
+function getReportRecipients() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sh = ss.getSheetByName(EMPLOYEE_SHEET);
+  var data = sh.getDataRange().getValues(), out = [];
+  for (var i = 1; i < data.length; i++) {
+    var email = (data[i][4] || '').toString().trim();
+    if (!email) continue;
+    var role = normalizeRole_(data[i][5]);
+    if (role !== 'State' && role !== 'Zone' && role !== 'District') continue;
+    var district = (data[i][0] || '').toString().trim();
+    var districts = [district];
+    (data[i][7] || '').toString().split(/[,;]/).forEach(function(x){
+      var d = x.trim();
+      if (d && districts.map(function(z){ return z.toLowerCase(); }).indexOf(d.toLowerCase()) === -1) districts.push(d);
+    });
+    out.push({ name:(data[i][2]||'').toString().trim(), email:email, role:role,
+               zone:(data[i][6]||'').toString().trim(), district:district, districts:districts });
+  }
+  return out;
+}
+
+// Preview who would receive the monthly email (names/roles/emails). Admin only.
+function previewReportRecipients() {
+  var r = getReportRecipients();
+  return { success:true, count:r.length,
+    recipients: r.map(function(x){ return { name:x.name, email:x.email, role:x.role, scope:(x.role==='State'?'Uttar Pradesh':x.role==='Zone'?x.zone:x.districts.join(', ')) }; }) };
+}
+
+function _emailEsc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function _pctColor(p){ return p>=80?'#166534':p>=50?'#166534':p>=30?'#9a5b0e':'#991b1b'; }
+
+function buildReportEmailHtml(rep, recipientName) {
+  var k = rep.kpis, sc = rep.scope, b = rep.breakdown;
+  var byLabel = { zone:'Zone', district:'District', block:'Block' }[b.by] || 'Area';
+  function tile(lbl, val, color){ return '<td width="33%" style="background:#fafafa;border:1px solid #e5e7eb;border-radius:8px;padding:11px 13px;"><div style="font-size:10px;font-weight:bold;text-transform:uppercase;color:#6b7280;letter-spacing:.5px;">'+lbl+'</div><div style="font-family:Georgia,serif;font-size:22px;font-weight:bold;color:'+(color||'#1f2937')+';">'+val+'</div></td>'; }
+  var rows = (b.rows||[]).slice(0,15).map(function(r){
+    return '<tr style="border-top:1px solid #eee;"><td style="padding:9px 12px;font-weight:bold;">'+_emailEsc(r.name)+'</td>'+
+      (b.by==='zone'?'<td align="right" style="padding:9px 12px;">'+(r.districts||0)+'</td>':'')+
+      '<td align="right" style="padding:9px 12px;">'+r.planned+'</td><td align="right" style="padding:9px 12px;">'+r.conducted+'</td>'+
+      '<td align="right" style="padding:9px 12px;color:'+_pctColor(r.pct)+';font-weight:bold;">'+(r.planned?r.pct+'%':'-')+'</td></tr>';
+  }).join('');
+  var lead = (b.leaderboard||[]).slice(0,5).map(function(x){ return _emailEsc(x.name)+' '+x.conducted+' ('+x.pct+'%)'; }).join(', ');
+  var att = (rep.attention||[]).slice(0,3).map(function(a){ return '&bull; <b>'+_emailEsc(a.title)+'</b>'+(a.detail?' - '+_emailEsc(a.detail):''); }).join('<br>');
+  var recs = (rep.narrative&&rep.narrative.recommendations||[]).map(function(x,i){ return '<b>'+(i+1)+'.</b> '+_emailEsc(x.h)+(x.d?' '+_emailEsc(x.d):''); }).join('<br>');
+  var hi = (rep.narrative&&rep.narrative.highlights||[]).map(function(x){ return '&bull; <b>'+_emailEsc(x.h)+'</b>'+(x.d?' - '+_emailEsc(x.d):''); }).join('<br>');
+
+  return '<div style="margin:0;padding:24px 12px;background:#f4f2ef;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">'+
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:660px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;">'+
+    '<tr><td style="padding:26px 30px 16px;border-bottom:2px solid #7B1010;">'+
+      '<div style="font-size:11px;font-weight:bold;letter-spacing:1.4px;text-transform:uppercase;color:#7B1010;">Educate Girls &middot; Government Relations</div>'+
+      '<h1 style="font-family:Georgia,serif;font-size:23px;line-height:1.15;margin:8px 0 5px;color:#1f2937;">Monthly GR Meetings Report</h1>'+
+      '<div style="font-size:14px;color:#6b7280;"><b style="color:#1f2937;">'+_emailEsc(sc.label)+'</b> &middot; '+_emailEsc(sc.month)+'</div></td></tr>'+
+    '<tr><td style="padding:18px 30px 0;font-size:13px;color:#6b7280;">Dear '+_emailEsc(recipientName||'Colleague')+', here is your '+_emailEsc(sc.kind)+'-level summary for '+_emailEsc(sc.month)+'.</td></tr>'+
+    '<tr><td style="padding:14px 30px 0;"><div style="background:#f7f2ee;border:1px solid #e5e7eb;border-left:3px solid #7B1010;border-radius:8px;padding:14px 18px;font-size:14px;line-height:1.6;">'+_emailEsc(rep.narrative.summary)+'</div></td></tr>'+
+    '<tr><td style="padding:20px 30px 0;"><div style="font-family:Georgia,serif;font-size:16px;font-weight:bold;margin-bottom:6px;">At a Glance</div>'+
+      '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:8px;">'+
+      '<tr>'+tile('Total',k.total)+tile('Conducted',k.conducted,'#166534')+tile('Success',k.success+'%','#7B1010')+'</tr>'+
+      '<tr>'+tile('Active Staff',k.activeStaff+' / '+k.totalStaff)+tile('Pending',k.pending,'#9a5b0e')+tile('Govt MoM',k.govtMom+' / '+k.conducted)+'</tr></table></td></tr>'+
+    '<tr><td style="padding:20px 30px 0;"><div style="font-family:Georgia,serif;font-size:16px;font-weight:bold;margin-bottom:8px;">Performance by '+byLabel+'</div>'+
+      '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px;border:1px solid #e5e7eb;">'+
+      '<tr style="background:#f7f2ee;color:#6b7280;font-size:11px;text-transform:uppercase;"><th align="left" style="padding:9px 12px;">'+byLabel+'</th>'+(b.by==='zone'?'<th align="right" style="padding:9px 12px;">Dist</th>':'')+'<th align="right" style="padding:9px 12px;">Planned</th><th align="right" style="padding:9px 12px;">Conducted</th><th align="right" style="padding:9px 12px;">Success</th></tr>'+
+      rows + '</table>'+ (lead?'<div style="font-size:12.5px;color:#6b7280;margin-top:8px;"><b style="color:#1f2937;">Top districts:</b> '+lead+'</div>':'') +'</td></tr>'+
+    (att?'<tr><td style="padding:20px 30px 0;"><div style="font-family:Georgia,serif;font-size:16px;font-weight:bold;margin-bottom:6px;">Attention Needed</div><div style="font-size:13.5px;line-height:1.7;">'+att+'</div></td></tr>':'')+
+    (hi?'<tr><td style="padding:18px 30px 0;"><div style="font-family:Georgia,serif;font-size:16px;font-weight:bold;margin-bottom:6px;">Highlights</div><div style="font-size:13.5px;line-height:1.7;">'+hi+'</div></td></tr>':'')+
+    (recs?'<tr><td style="padding:18px 30px 0;"><div style="font-family:Georgia,serif;font-size:16px;font-weight:bold;margin-bottom:6px;">Recommendations</div><div style="font-size:13.5px;line-height:1.7;">'+recs+'</div></td></tr>':'')+
+    '<tr><td style="padding:22px 30px 26px;"><div style="border-top:1px solid #e5e7eb;padding-top:14px;font-size:11px;color:#9ca3af;line-height:1.6;">Numbers computed from records; summary written by AI. Full portal: dataimpact.in (login required).<br>EG-MMS &middot; automated monthly report.</div></td></tr>'+
+    '</table></div>';
+}
+
+// mode: 'test' sends every report to REPORT_TEST_EMAIL; 'live' sends to each lead.
+function sendMonthlyReports(mode, monthOverride) {
+  mode = mode || 'test';
+  var recips = getReportRecipients();
+  var month = monthOverride || '';
+  var sent = [], failed = [];
+  recips.forEach(function(r){
+    try {
+      var rep = getMonthlyReport({ role:r.role, zone:r.zone, district:r.district, districts:r.districts, email:r.email, name:r.name }, month);
+      if (!rep || !rep.success) { failed.push(r.email + ' (no report)'); return; }
+      var html = buildReportEmailHtml(rep, r.name);
+      var to = (mode === 'live') ? r.email : REPORT_TEST_EMAIL;
+      MailApp.sendEmail({ to:to, subject:'Monthly GR Report - ' + rep.scope.label + ' - ' + rep.scope.month, htmlBody:html, name:'EG-MMS Reports' });
+      sent.push(to + ' [' + r.role + ': ' + (r.role==='State'?'UP':r.role==='Zone'?r.zone:r.district) + ']');
+    } catch(e){ failed.push(r.email + ' ' + e.message); }
+  });
+  Logger.log('MODE=' + mode + ' | sent=' + sent.length + ' failed=' + failed.length);
+  Logger.log(sent.join('\n'));
+  if (failed.length) Logger.log('FAILED:\n' + failed.join('\n'));
+  return { success:true, mode:mode, sentCount:sent.length, failedCount:failed.length, sent:sent, failed:failed };
+}
+
+function monthlyReportJob() { return sendMonthlyReports('live', ''); }
+
+function installMonthlyTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function(t){ if (t.getHandlerFunction() === 'monthlyReportJob') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('monthlyReportJob').timeBased().onMonthDay(1).atHour(7).create();
+  return 'Monthly trigger installed: monthlyReportJob runs on the 1st of every month at ~7am, sending live reports to all leads.';
+}
+
+function removeMonthlyTrigger() {
+  var n = 0;
+  ScriptApp.getProjectTriggers().forEach(function(t){ if (t.getHandlerFunction() === 'monthlyReportJob') { ScriptApp.deleteTrigger(t); n++; } });
+  return 'Removed ' + n + ' monthly trigger(s).';
+}
+
 // ------------------------------------------------------------
 //  EMPLOYEE MASTER (public) - name/designation/district/block only
 //  (no email/role). Powers the coverage & active/inactive reports.
