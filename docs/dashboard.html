@@ -1493,6 +1493,21 @@
   }
 
   // ── Govt MoM (official, PDF) - conductor uploads to their own conducted meeting ──
+  function tagBadge(r) {
+    if (!r.priority && !r.flag) return '';
+    function chip(txt, color, bg){ return '<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;color:'+color+';background:'+bg+';margin-right:5px;">'+esc(txt)+'</span>'; }
+    var h = '<div style="margin:2px 0 4px;">';
+    if (r.priority === 'High')   h += chip('High', '#B91C1C', '#FEE2E2');
+    else if (r.priority === 'Medium') h += chip('Medium', '#92400E', '#FEF3C7');
+    else if (r.priority) h += chip(r.priority, '#166534', '#D1FAE5');
+    if (r.flag === 'Blocked') h += chip('Blocked', '#B91C1C', '#FEE2E2');
+    else if (r.flag === 'Follow-up needed') h += chip('Follow-up needed', '#92400E', '#FEF3C7');
+    else if (r.flag) h += chip(r.flag, '#166534', '#D1FAE5');
+    if (r.escalate === 'Yes') h += chip('Escalated' + (r.category && r.category !== 'None' ? ': ' + r.category : ''), '#7C2D12', '#FFEDD5');
+    h += '</div>';
+    if (r.nextAction) h += '<div style="font-size:11px;color:#4338CA;margin-bottom:3px;"><b>Next:</b> ' + esc(r.nextAction) + '</div>';
+    return h;
+  }
   function govtMomHtml(r) {
     var gm = (r.govtMom || '').split(/\s*,\s*/).filter(function(u){ return u; });
     var links = gm.map(function(u, gi){
@@ -1643,6 +1658,7 @@
 
       var details = '';
       if (st === 'Conducted') {
+        details += tagBadge(r);
         if (r.keyPoints) details += '<div style="color:#374151;">' + esc(r.keyPoints) + '</div>';
         var links = '';
         if (r.momLink)   links += '<a href="' + esc(r.momLink)   + '" target="_blank" class="rep-link rep-link-mom" style="margin-right:4px;">MoM</a>';

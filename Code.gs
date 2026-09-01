@@ -1647,6 +1647,12 @@ function getAllMyMeetings(email) {
           photoLink:    (cd[j][16] || '').toString(),
           momLink:      (cd[j][17] || '').toString(),
           govtMom:      (cd[j][21] || '').toString(),   // V = Govt MoM (comma-separated PDF urls)
+          priority:     (cd[j][22] || '').toString(),   // W..AB = AI tags
+          flag:         (cd[j][23] || '').toString(),
+          nextAction:   (cd[j][24] || '').toString(),
+          escalate:     (cd[j][25] || '').toString(),
+          category:     (cd[j][26] || '').toString(),
+          momSummary:   (cd[j][27] || '').toString(),
           colleagueName:(cd[j][18] || '').toString(),
           colleaguePost:(cd[j][19] || '').toString(),
           reason: '', parentMeetingId: ''
@@ -2551,6 +2557,100 @@ function aiReportNarrative(r) {
 }
 
 // ============================================================
+//  TIER 2 - AI MEETING TAGGING (notes + Govt MoM)
+//  Reads each conducted meeting's key-points (and Govt MoM PDF) and writes
+//  Priority / Flag / Next Action / Escalate / Category / MoM-summary into
+//  the Conducted sheet. Free (Mistral for text, Gemini for the PDF).
+//  Conducted sheet new columns (1-based): W..AC = 23..29.
+// ============================================================
+var COL_TAG_PRIORITY=23, COL_TAG_FLAG=24, COL_TAG_NEXT=25, COL_TAG_ESC=26, COL_TAG_CAT=27, COL_TAG_MOMSUM=28, COL_TAG_AT=29;
+
+function _parseJson_(raw){ if(!raw) return null; raw=raw.replace(/```json/gi,'').replace(/```/g,'').trim(); var s=raw.indexOf('{'),e=raw.lastIndexOf('}'); if(s<0||e<0)return null; try{return JSON.parse(raw.slice(s,e+1));}catch(err){return null;} }
+
+// Read a Govt MoM PDF from Drive with Gemini (multimodal). Returns a short summary or ''.
+function readGovtMomPdf_(url) {
+  try {
+    var m = (url||'').toString().match(/[-\w]{25,}/); if (!m) return '';
+    var gk = PropertiesService.getScriptProperties().getProperty('GEMINI_KEY'); if (!gk) return '';
+    var b64 = Utilities.base64Encode(DriveApp.getFileById(m[0]).getBlob().getBytes());
+    var prompt = 'This is an official Government Minutes of Meeting, possibly Hindi, English, scanned or handwritten. In 2 short lines plus up to 3 action items with any deadlines, summarize the key government commitments. Plain text, do not use em dashes.';
+    var res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key='+encodeURIComponent(gk), {
+      method:'post', contentType:'application/json', muteHttpExceptions:true,
+      payload: JSON.stringify({ contents:[{parts:[{text:prompt},{inline_data:{mime_type:'application/pdf',data:b64}}]}], generationConfig:{maxOutputTokens:2000,temperature:0.2} })
+    });
+    if (res.getResponseCode()===200) {
+      var j=JSON.parse(res.getContentText());
+      var t=j&&j.candidates&&j.candidates[0]&&j.candidates[0].content&&j.candidates[0].content.parts&&j.candidates[0].content.parts[0]&&j.candidates[0].content.parts[0].text;
+      return (t||'').trim();
+    }
+  } catch(e){}
+  return '';
+}
+
+function tagOneMeeting_(d) {
+  var note = (d.keyPoints||'').toString().trim();
+  var out = { priority:'', flag:'', nextAction:'', escalate:false, category:'None', momSummary:'' };
+  if (note) {
+    var prompt = 'You are tagging a government-relations field meeting note (may be Hindi, English or mixed). Return STRICT JSON only, no markdown: '+
+      '{"priority":"High|Medium|Low","flag":"Follow-up needed|Resolved|Blocked","nextAction":"one short line in the same language as the note","escalate":true|false,"category":"Document/Data request|Quality issue|Blocker|Resource needed|Commitment|None"}. '+
+      "Escalate true only for a real ask, request, quality issue, complaint, blocker or problem needing a senior's attention; a positive or normal update is false. Do not use em dashes.\n"+
+      'NOTE: '+note+'\n(Purpose: '+(d.purpose||'')+'; Stakeholder: '+(d.stakeholder||'')+'; Type: '+(d.type||'')+')';
+    var o = _parseJson_(callLLM(prompt));
+    if (o) {
+      out.priority=(o.priority||''); out.flag=(o.flag||''); out.nextAction=(o.nextAction||'');
+      out.escalate=(o.escalate===true||o.escalate==='true'); out.category=(o.category||'None');
+    }
+  }
+  if (d.govtMom && d.govtMom.toString().trim()) {
+    out.momSummary = readGovtMomPdf_(d.govtMom.toString().split(/\s*,\s*/)[0]);
+  }
+  return out;
+}
+
+// Batch: tag conducted meetings that have no tag yet (limit per run to fit the 6-min cap).
+function tagUntaggedMeetings(limit) {
+  limit = limit || 15;
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID), sh = ss.getSheetByName(CONDUCTED_SHEET);
+  if (!sh) return { success:false, message:'No conducted sheet' };
+  var data = sh.getDataRange().getValues();
+  var done = 0, results = [];
+  for (var i = 1; i < data.length && done < limit; i++) {
+    if (!data[i][0]) continue;                                  // no meeting id
+    if ((data[i][COL_TAG_AT-1]||'').toString().trim()) continue; // already tagged
+    var keyPoints = (data[i][15]||'').toString().trim();
+    var govtMom   = (data[i][21]||'').toString().trim();
+    if (!keyPoints && !govtMom) continue;                       // nothing to read
+    var t = tagOneMeeting_({ keyPoints:keyPoints, purpose:data[i][11], stakeholder:data[i][10], type:data[i][8], govtMom:govtMom });
+    var r = i + 1;
+    sh.getRange(r, COL_TAG_PRIORITY).setValue(t.priority);
+    sh.getRange(r, COL_TAG_FLAG).setValue(t.flag);
+    sh.getRange(r, COL_TAG_NEXT).setValue(t.nextAction);
+    sh.getRange(r, COL_TAG_ESC).setValue(t.escalate ? 'Yes' : 'No');
+    sh.getRange(r, COL_TAG_CAT).setValue(t.category);
+    sh.getRange(r, COL_TAG_MOMSUM).setValue(t.momSummary);
+    sh.getRange(r, COL_TAG_AT).setValue(new Date());
+    done++;
+    results.push(data[i][0] + ': ' + t.priority + '/' + t.flag + (t.escalate ? ' [ESCALATE: ' + t.category + ']' : '') + (t.momSummary ? ' +MoM' : ''));
+  }
+  try { cDel('reportData'); } catch(e){}
+  Logger.log('Tagged ' + done + ' meeting(s).');
+  Logger.log(results.join('\n'));
+  return { success:true, tagged:done, details:results };
+}
+
+// Ensure the Conducted sheet has the tag column headers (run once; also safe to re-run).
+function ensureTagHeaders() {
+  var sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(CONDUCTED_SHEET);
+  if (!sh) return 'no sheet';
+  var hdr = ['Priority','Flag','Next Action','Escalate','Category','Govt MoM Summary','Tagged At'];
+  sh.getRange(1, COL_TAG_PRIORITY, 1, hdr.length).setValues([hdr]);
+  return 'headers set';
+}
+
+// ---- Run from the editor ----
+function TAG_run() { ensureTagHeaders(); return tagUntaggedMeetings(20); }
+
+// ============================================================
 //  MONTHLY REPORT EMAIL DELIVERY
 //  Recipients = State / Zone / District leads (each their own scope).
 //  Sent from gr@educategirls.ngo via MailApp. Run installMonthlyTrigger()
@@ -2831,6 +2931,8 @@ function getReportData() {
           stakeholderPost:(cd[b][10]||'').toString(), purpose:(cd[b][11]||'').toString(),
           momUrl:(cd[b][17]||'').toString(), photoUrl:(cd[b][16]||'').toString(),
           govtMom:(cd[b][21]||'').toString(),
+          priority:(cd[b][22]||'').toString(), flag:(cd[b][23]||'').toString(), nextAction:(cd[b][24]||'').toString(),
+          escalate:(cd[b][25]||'').toString(), category:(cd[b][26]||'').toString(),
           colleagueName:(cd[b][18]||'').toString()
         });
       }
