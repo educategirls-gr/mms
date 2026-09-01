@@ -2740,7 +2740,7 @@ function sendEscalations(mode, limit) {
     if (cc) opts.cc = cc;
     try {
       MailApp.sendEmail(opts);
-      sh.getRange(i+1, COL_ESC_SENT).setValue(new Date());
+      if (mode === 'live') sh.getRange(i+1, COL_ESC_SENT).setValue(new Date());   // test never marks
       done++; out.push(to + (cc?(' cc '+cc):'') + ' [' + (data[i][26]||'') + ']');
     } catch(e){ out.push('FAIL '+email+' '+e.message); }
   }
@@ -2758,6 +2758,7 @@ function installEscalationTrigger() {
 function ESC_step1_TEST()      { return sendEscalations('test', 25); }   // all to admin (review)
 function ESC_step2_LIVE()      { return sendEscalations('live', 40); }   // officer + senior CC
 function ESC_installAuto()     { return installEscalationTrigger(); }    // hourly auto
+function ESC_reset()           { var sh=SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(CONDUCTED_SHEET); var n=sh.getLastRow(); if(n>1) sh.getRange(2,COL_ESC_SENT,n-1,1).clearContent(); return 'Cleared escalation-sent flags on '+(n-1)+' rows.'; }
 
 // ============================================================
 //  MONTHLY REPORT EMAIL DELIVERY
