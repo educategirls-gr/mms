@@ -219,8 +219,8 @@
     // Leaderboard (state)
     if(b.leaderboard && b.leaderboard.length){
       html+=sec('District Leaderboard','calc',b.leaderboard.length+' active');
-      html+='<div class="tbl-wrap"><table><thead><tr><th>#</th><th>District</th><th>Zone</th><th class="r">Conducted</th><th class="r">Success</th><th class="r">Active Staff</th></tr></thead><tbody class="num">';
-      b.leaderboard.forEach(function(r,i){ html+='<tr><td class="rank">'+(i+1)+'</td><td class="name">'+esc(r.name)+'</td><td>'+esc((r.zone||'').replace('UP ','')) +'</td><td class="r">'+r.conducted+'</td><td class="r">'+r.pct+'%</td><td class="r">'+(r.activeStaff||0)+'</td></tr>'; });
+      html+='<div class="tbl-wrap"><table><thead><tr><th>#</th><th>District</th><th>Zone</th><th class="r">Planned</th><th class="r">Conducted</th><th class="r">Success</th></tr></thead><tbody class="num">';
+      b.leaderboard.forEach(function(r,i){ html+='<tr><td class="rank">'+(i+1)+'</td><td class="name">'+esc(r.name)+'</td><td>'+esc((r.zone||'').replace('UP ','')) +'</td><td class="r">'+r.planned+'</td><td class="r">'+r.conducted+'</td><td class="r">'+r.pct+'%</td></tr>'; });
       html+='</tbody></table></div></section>';
     }
 
