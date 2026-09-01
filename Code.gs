@@ -2734,7 +2734,9 @@ function sendEscalations(mode, limit) {
     });
     var to = (mode==='live') ? email : REPORT_TEST_EMAIL;
     var cc = (mode==='live') ? seniors.join(',') : '';
-    var opts = { to:to, subject:'Escalation: '+(data[i][26]||'Follow-up')+' - '+(data[i][1]||'')+' meeting', htmlBody:html, name:'EG-MMS Alerts' };
+    var subj = 'Escalation: '+(data[i][26]||'Follow-up')+' - '+(data[i][1]||'')+' meeting';
+    if (mode !== 'live') subj = '[TEST -> officer:'+email+' | CC senior:'+(seniors.join(',')||'NONE FOUND')+'] '+subj;
+    var opts = { to:to, subject:subj, htmlBody:html, name:'EG-MMS Alerts' };
     if (cc) opts.cc = cc;
     try {
       MailApp.sendEmail(opts);
