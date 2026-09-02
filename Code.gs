@@ -2800,7 +2800,9 @@ function syncCalendarEvents(mode, limit) {
     var status = (data[i][13]||'Planned').toString();
     if (status !== 'Planned' && status !== 'Follow-up') continue;
     if ((data[i][COL_CAL_EVENT-1]||'').toString().trim()) continue;   // already synced
-    var start = parseStart_(fmtDateVal(data[i][5]), (data[i][6]||'').toString());
+    var timeStr = (data[i][6]||'').toString();
+    var hasTime = /(\d{1,2}):(\d{2})/.test(timeStr);                  // no time -> all-day event, never a fake 10am
+    var start = parseStart_(fmtDateVal(data[i][5]), timeStr);
     if (!start) continue;
     if (start.getTime() < now - 3600000) continue;                    // skip past meetings
     var end = new Date(start.getTime() + durMin_(data[i][7]) * 60000);
@@ -2811,7 +2813,9 @@ function syncCalendarEvents(mode, limit) {
                '\nType: ' + (data[i][8]||'') + (data[i][17] ? '\nColleague: ' + data[i][17] : '') + '\nvia EG-MMS';
     var guests = (mode==='live') ? officer : REPORT_TEST_EMAIL;
     try {
-      var ev = cal.createEvent(title, start, end, { description:desc, location:(data[i][1]||'').toString(), guests:guests, sendInvites:true });
+      var opts = { description:desc + (hasTime ? '' : '\nTime not specified when planned'), location:(data[i][1]||'').toString(), guests:guests, sendInvites:true };
+      var ev = hasTime ? cal.createEvent(title, start, end, opts)
+                       : cal.createAllDayEvent(title, start, opts);
       if (mode==='live') sh.getRange(i+1, COL_CAL_EVENT).setValue(ev.getId());
       done++; out.push(title + ' @ ' + start + ' -> ' + guests);
     } catch(e){ out.push('FAIL ' + data[i][0] + ' ' + e.message); }
