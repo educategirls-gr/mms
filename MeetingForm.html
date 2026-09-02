@@ -512,13 +512,13 @@
     <div class="profile-top">
       <div class="profile-avatar" id="p-avatar">AM</div>
       <div>
-        <div class="profile-name" id="p-name">—</div>
-        <div class="profile-role" id="p-post">—</div>
+        <div class="profile-name" id="p-name">-</div>
+        <div class="profile-role" id="p-post">-</div>
       </div>
     </div>
-    <div class="profile-row"><span class="pi">📍</span><span id="p-district">—</span></div>
+    <div class="profile-row"><span class="pi">📍</span><span id="p-district">-</span></div>
     <div class="profile-row" id="p-block-row" style="display:none">
-      <span class="pi">🏘</span><span id="p-block">—</span>
+      <span class="pi">🏘</span><span id="p-block">-</span>
     </div>
   </div>
 
@@ -620,7 +620,7 @@
           <div class="field">
             <label>Stakeholder Post <span class="req">*</span></label>
             <select id="adhikariPost" onchange="onPostChange()">
-              <option value="">— Loading... —</option>
+              <option value="">- Loading... -</option>
             </select>
           </div>
           <div class="field">
@@ -630,7 +630,7 @@
         </div>
         <div class="form-row" id="row-other-post" style="display:none;">
           <div class="field full">
-            <label>Other — Specify Post <span class="req">*</span></label>
+            <label>Other - Specify Post <span class="req">*</span></label>
             <input type="text" id="otherPost" placeholder="Enter stakeholder's designation...">
           </div>
         </div>
@@ -638,13 +638,13 @@
           <div class="field">
             <label>Meeting Purpose <span class="req">*</span></label>
             <select id="meetingPurpose" onchange="onPurposeChange()">
-              <option value="">— Loading... —</option>
+              <option value="">- Loading... -</option>
             </select>
           </div>
         </div>
         <div class="form-row" id="row-other-purpose" style="display:none;">
           <div class="field full">
-            <label>Other — Specify Purpose <span class="req">*</span></label>
+            <label>Other - Specify Purpose <span class="req">*</span></label>
             <input type="text" id="otherPurpose" placeholder="Describe the meeting purpose...">
           </div>
         </div>
@@ -956,8 +956,8 @@
     google.script.run
       .withSuccessHandler(populateDropdowns)
       .withFailureHandler(function() {
-        document.getElementById('adhikariPost').innerHTML   = '<option value="">— Error loading —</option>';
-        document.getElementById('meetingPurpose').innerHTML = '<option value="">— Error loading —</option>';
+        document.getElementById('adhikariPost').innerHTML   = '<option value="">- Error loading -</option>';
+        document.getElementById('meetingPurpose').innerHTML = '<option value="">- Error loading -</option>';
       })
       .getDropdownData(SESSION.email);
   };
@@ -1370,7 +1370,7 @@
         if (m.photoLink) extra += '<a href="' + esc(m.photoLink) + '" target="_blank" style="display:inline-block;padding:3px 10px;background:#0F766E;color:#fff;border-radius:5px;font-size:11px;font-weight:600;text-decoration:none;">📷 Photos</a>';
         if (!m.momLink && !m.photoLink) extra += '<span style="font-size:11px;color:#9CA3AF;">-</span>';
       } else if (m.status === 'Cancelled') {
-        extra = '<span style="font-size:11px;color:#991B1B;">❌ Reason: ' + esc(m.reason || '—') + '</span>';
+        extra = '<span style="font-size:11px;color:#991B1B;">❌ Reason: ' + esc(m.reason || '-') + '</span>';
       } else if (m.status === 'Follow-up') {
         extra = '<span style="font-size:11px;color:#5B21B6;">🔁 Follow-up meeting</span>' +
                 (m.parentMeetingId ? '<br><span style="font-size:10px;color:#9CA3AF;">Parent: ' + esc(m.parentMeetingId) + '</span>' : '');
@@ -1405,19 +1405,19 @@
       return;
     }
     var postSel = document.getElementById('adhikariPost');
-    postSel.innerHTML = '<option value="">— Select Post —</option>';
+    postSel.innerHTML = '<option value="">- Select Post -</option>';
     (data.stakeholders || []).forEach(function(s) {
       var o = document.createElement('option'); o.value = s; o.textContent = s;
       postSel.appendChild(o);
     });
     var purpSel = document.getElementById('meetingPurpose');
-    purpSel.innerHTML = '<option value="">— Select Purpose —</option>';
+    purpSel.innerHTML = '<option value="">- Select Purpose -</option>';
     (data.purposes || []).forEach(function(p) {
       var o = document.createElement('option'); o.value = p; o.textContent = p;
       purpSel.appendChild(o);
     });
     var other = document.createElement('option');
-    other.value = 'Other'; other.textContent = 'Other — Specify';
+    other.value = 'Other'; other.textContent = 'Other - Specify';
     purpSel.appendChild(other);
   }
 
@@ -1618,7 +1618,7 @@
     var isMob = /Mobi|Android|iPhone|iPad|iPod|webOS/i.test(navigator.userAgent) || screen.width < 901;
     if (!isMob) return;
 
-    // Inject CSS — appended last so it wins the cascade
+    // Inject CSS - appended last so it wins the cascade
     var css = document.createElement('style');
     css.textContent =
       'body{flex-direction:column!important}' +
