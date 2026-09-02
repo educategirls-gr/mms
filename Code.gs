@@ -2841,6 +2841,34 @@ function TRIGGER_status() {
   return out;
 }
 
+// Full picture: is the hourly job on, which calendar do events land on,
+// and which upcoming meetings are still unsynced?
+function CAL_status() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID), sh = ss.getSheetByName(MEETINGS_SHEET);
+  if (!sh) return { error:'no plan sheet' };
+  var data = sh.getDataRange().getValues(), now = Date.now(), up = [];
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    var status = (data[i][13]||'Planned').toString();
+    if (status !== 'Planned' && status !== 'Follow-up') continue;
+    var timeStr = (data[i][6]||'').toString();
+    var start = parseStart_(fmtDateVal(data[i][5]), timeStr);
+    if (!start || start.getTime() < now - 3600000) continue;          // upcoming only
+    up.push({ id:data[i][0], date:fmtDateVal(data[i][5]), time:timeStr || '(no time)',
+              officer:(data[i][4]||'').toString(),
+              synced:(data[i][COL_CAL_EVENT-1]||'').toString().trim() ? 'YES' : 'NO' });
+  }
+  var trig = ScriptApp.getProjectTriggers().map(function(t){ return t.getHandlerFunction(); });
+  var res = {
+    hourlyTrigger: trig.indexOf('calendarJob') >= 0 ? 'INSTALLED' : 'NOT INSTALLED',
+    eventsLandOnCalendar: CalendarApp.getDefaultCalendar().getName(),
+    upcomingCount: up.length,
+    upcoming: up
+  };
+  Logger.log(JSON.stringify(res, null, 2));
+  return res;
+}
+
 function CAL_test()        { return syncCalendarEvents('test', 5); }    // 5 events, invite admin only (review)
 function CAL_live()        { return syncCalendarEvents('live', 30); }   // invite officers, store ids
 function CAL_installAuto() { return installCalendarTrigger(); }         // hourly auto
