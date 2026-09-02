@@ -491,7 +491,7 @@
             <input type="date" id="meetingDate">
           </div>
           <div class="field">
-            <label>Meeting Time <span style="color:#9CA3AF;font-weight:400">(optional)</span></label>
+            <label>Meeting Time <span class="req">*</span> <span style="color:#9CA3AF;font-weight:400">(Approx)</span></label>
             <div style="display:flex;align-items:center;gap:6px;">
               <select id="mt-h" style="width:66px;"><option value="">HH</option></select>
               <span style="font-weight:700;font-size:15px;color:#374151;">:</span>
@@ -2458,7 +2458,7 @@
     var purpose2 = purpose === 'Other' ? v('otherPurpose') : purpose;
     var agenda   = v('meetingAgenda');
     if (!selectedMeetingType) { err('Please select a meeting type.'); return; }
-    if (!date || !aname || !apost || !purpose2 || !agenda) { err('Please fill all required fields.'); return; }
+    if (!date || !time || !aname || !apost || !purpose2 || !agenda) { err('Please fill all required fields.'); return; }
     // State/Zone pick the meeting's district; District/Field use their active/charge district
     var mtgDistrict = ACTIVE_DISTRICT;
     var _pdRow = document.getElementById('plan-district-row');
