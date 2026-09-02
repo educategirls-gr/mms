@@ -2830,6 +2830,17 @@ function installCalendarTrigger() {
   return 'Calendar trigger installed: calendarJob runs hourly.';
 }
 // ---- Run from the editor ----
+// Which automatic triggers are actually installed right now?
+function TRIGGER_status() {
+  var t = ScriptApp.getProjectTriggers().map(function(x){ return x.getHandlerFunction(); });
+  var want = ['monthlyReportJob','taggingJob','escalationJob','calendarJob','nudgeJob'];
+  var out = {};
+  want.forEach(function(w){ out[w] = t.indexOf(w) >= 0 ? 'INSTALLED' : 'not installed'; });
+  out._allTriggers = t;
+  Logger.log(JSON.stringify(out, null, 2));
+  return out;
+}
+
 function CAL_test()        { return syncCalendarEvents('test', 5); }    // 5 events, invite admin only (review)
 function CAL_live()        { return syncCalendarEvents('live', 30); }   // invite officers, store ids
 function CAL_installAuto() { return installCalendarTrigger(); }         // hourly auto
