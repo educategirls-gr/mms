@@ -934,6 +934,21 @@
   }
 
   // ── API helpers ──────────────────────────────────────────────
+  // A busy or just-redeployed Apps Script can answer with an HTML error page
+  // instead of JSON. Read as text first so that surfaces as a clear message
+  // rather than a raw "Unexpected token '<'" parse error.
+  function parseGasJson(r) {
+    return r.text().then(function(t) {
+      try { return JSON.parse(t); }
+      catch (e) { var busy = new Error('SERVER_BUSY'); busy.serverBusy = true; throw busy; }
+    });
+  }
+  function gasErrText(e) {
+    return (e && e.serverBusy)
+      ? 'Server abhi busy hai. Thodi der baad dobara koshish karein.'
+      : 'Server error: ' + ((e && e.message) ? e.message : e);
+  }
+
   function gasFetch(action, params, onSuccess, onFail) {
     var url = GAS_URL + '?action=' + encodeURIComponent(action);
     if (SESSION && SESSION.token) url += '&token=' + encodeURIComponent(SESSION.token);
@@ -942,12 +957,22 @@
         if (params.hasOwnProperty(k)) url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(params[k] != null ? params[k] : '');
       }
     }
-    fetch(url)
-      .then(function(r) { return r.json(); })
-      .then(function(res){ if (res && res.message === 'AUTH_REQUIRED') { logout(); return; } onSuccess(res); })
-      .catch(onFail || function(e) { err('Server error: ' + e.message); });
+    // Reads are safe to retry once: a transient HTML page then costs nothing.
+    function attempt(retriesLeft) {
+      fetch(url)
+        .then(parseGasJson)
+        .then(function(res){ if (res && res.message === 'AUTH_REQUIRED') { logout(); return; } onSuccess(res); })
+        .catch(function(e){
+          if (e && e.serverBusy && retriesLeft > 0) { setTimeout(function(){ attempt(retriesLeft - 1); }, 1200); return; }
+          (onFail || function(e2) { err(gasErrText(e2)); })(e);
+        });
+    }
+    attempt(1);
   }
 
+  // No auto-retry here on purpose: these actions write (save/delete/conduct),
+  // and the write may well have succeeded before the HTML page came back.
+  // Retrying could duplicate the meeting, so ask the user to refresh instead.
   function gasPost(action, data, onSuccess, onFail) {
     var url = GAS_URL + '?action=' + encodeURIComponent(action);
     if (SESSION && SESSION.token) url += '&token=' + encodeURIComponent(SESSION.token);
@@ -956,9 +981,13 @@
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify(data)
     })
-      .then(function(r) { return r.json(); })
+      .then(parseGasJson)
       .then(function(res){ if (res && res.message === 'AUTH_REQUIRED') { logout(); return; } onSuccess(res); })
-      .catch(onFail || function(e) { err('Server error: ' + e.message); });
+      .catch(onFail || function(e) {
+        err(e && e.serverBusy
+          ? 'Server busy tha. Page refresh karke check karein ki kaam hua ya nahi.'
+          : gasErrText(e));
+      });
   }
 
   var selectedMeetingType = '';

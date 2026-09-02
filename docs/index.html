@@ -272,7 +272,7 @@
         <div id="alert-otp" class="alert alert-error"></div>
         <label class="form-label">Enter 6-digit OTP <span class="req">*</span></label>
         <input id="otp-input" type="tel" class="form-input" maxlength="6"
-               placeholder="——————"
+               placeholder="------"
                oninput="onOtpInput(this)"
                onkeydown="if(event.key==='Enter') verifyOTP()"
                autocomplete="one-time-code"
@@ -351,7 +351,8 @@
       .then(function(res) {
         if (res.success) { startTimer(600); document.getElementById('otp-input').focus(); }
         else showAlert('otp', res.message);
-      });
+      })
+      .catch(function() { showAlert('otp', 'Network error. Please try again.'); });
   }
 
   function onOtpInput(el) {
