@@ -2495,6 +2495,43 @@ function getMonthlyReport(session, monthParam) {
 //  Prompt contains ONLY aggregated numbers + area/purpose names (no person
 //  names, no meeting notes) - the agreed privacy stance.
 // ------------------------------------------------------------
+// callLLM hides every failure on purpose so features degrade quietly. This does
+// the opposite: it sends a trivial prompt to each provider and reports exactly
+// what came back, so a dead key, a wrong model name or a quota block is visible.
+function LLM_probe() {
+  var props = PropertiesService.getScriptProperties(), out = {};
+
+  var mk = props.getProperty('MISTRAL_KEY');
+  out.mistral_key = mk ? ('present, length ' + mk.length) : 'MISSING';
+  if (mk) {
+    try {
+      var r = UrlFetchApp.fetch('https://api.mistral.ai/v1/chat/completions', {
+        method:'post', contentType:'application/json', muteHttpExceptions:true,
+        headers:{ Authorization:'Bearer ' + mk },
+        payload: JSON.stringify({ model:'mistral-small-latest', messages:[{role:'user', content:'Reply with the single word OK.'}], max_tokens:10 })
+      });
+      out.mistral_httpCode = r.getResponseCode();
+      out.mistral_reply    = r.getContentText().substring(0, 400);
+    } catch(e) { out.mistral_threw = e.message; }
+  }
+
+  var gk = props.getProperty('GEMINI_KEY');
+  out.gemini_key = gk ? ('present, length ' + gk.length) : 'MISSING';
+  if (gk) {
+    try {
+      var r2 = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=' + encodeURIComponent(gk), {
+        method:'post', contentType:'application/json', muteHttpExceptions:true,
+        payload: JSON.stringify({ contents:[{parts:[{text:'Reply with the single word OK.'}]}], generationConfig:{maxOutputTokens:10} })
+      });
+      out.gemini_httpCode = r2.getResponseCode();
+      out.gemini_reply    = r2.getContentText().substring(0, 400);
+    } catch(e) { out.gemini_threw = e.message; }
+  }
+
+  Logger.log(JSON.stringify(out, null, 2));
+  return out;
+}
+
 function callLLM(prompt) {
   var props = PropertiesService.getScriptProperties();
   // 1) Mistral (proven reliable for English report prose)
