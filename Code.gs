@@ -2532,11 +2532,16 @@ function LLM_probe() {
   return out;
 }
 
+// Both providers fail temporarily under load: Mistral answers 429 (free-tier
+// rate limit) and Gemini answers 503 (model busy). Both clear within seconds,
+// so try each provider, wait, and go round again before giving up.
 function callLLM(prompt) {
   var props = PropertiesService.getScriptProperties();
-  // 1) Mistral (proven reliable for English report prose)
   var mk = props.getProperty('MISTRAL_KEY');
-  if (mk) {
+  var gk = props.getProperty('GEMINI_KEY');
+
+  function mistral() {
+    if (!mk) return '';
     try {
       var r = UrlFetchApp.fetch('https://api.mistral.ai/v1/chat/completions', {
         method:'post', contentType:'application/json', muteHttpExceptions:true,
@@ -2549,10 +2554,11 @@ function callLLM(prompt) {
         if (t) return t;
       }
     } catch(e) {}
+    return '';
   }
-  // 2) Gemini (fallback)
-  var gk = props.getProperty('GEMINI_KEY');
-  if (gk) {
+
+  function gemini() {
+    if (!gk) return '';
     try {
       var r2 = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=' + encodeURIComponent(gk), {
         method:'post', contentType:'application/json', muteHttpExceptions:true,
@@ -2564,6 +2570,16 @@ function callLLM(prompt) {
         if (t2) return t2;
       }
     } catch(e) {}
+    return '';
+  }
+
+  // Two rounds only: enough to ride out a brief limit, bounded enough that a
+  // batch job cannot run into the 6 minute Apps Script ceiling.
+  var waits = [0, 2500];
+  for (var a = 0; a < waits.length; a++) {
+    if (waits[a]) Utilities.sleep(waits[a]);
+    var t = mistral(); if (t) return t;
+    var g = gemini();  if (g) return g;
   }
   return '';
 }
@@ -2669,6 +2685,7 @@ function tagUntaggedMeetings(limit) {
     var keyPoints = (data[i][15]||'').toString().trim();
     var govtMom   = (data[i][21]||'').toString().trim();
     if (!keyPoints && !govtMom) continue;                       // nothing to read
+    if (done) Utilities.sleep(1500);   // stay under the free-tier rate limit
     var t = tagOneMeeting_({ keyPoints:keyPoints, purpose:data[i][11], stakeholder:data[i][10], type:data[i][8], govtMom:govtMom });
     var r = i + 1;
     sh.getRange(r, COL_TAG_PRIORITY).setValue(t.priority);
@@ -2739,7 +2756,7 @@ function ensureTagHeaders() {
   return 'headers set';
 }
 
-function taggingJob() { return tagUntaggedMeetings(30); }
+function taggingJob() { return tagUntaggedMeetings(12); }   // small batch: sleeps + retries must fit in 6 min
 function installTaggingTrigger() {
   ScriptApp.getProjectTriggers().forEach(function(t){ if (t.getHandlerFunction()==='taggingJob') ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('taggingJob').timeBased().everyHours(1).create();
@@ -2747,7 +2764,7 @@ function installTaggingTrigger() {
 }
 
 // ---- Run from the editor ----
-function TAG_run()         { ensureTagHeaders(); return tagUntaggedMeetings(20); }   // manual test (tags up to 20)
+function TAG_run()         { ensureTagHeaders(); return tagUntaggedMeetings(10); }   // manual test (tags up to 10)
 function TAG_installAuto() { ensureTagHeaders(); return installTaggingTrigger(); }   // hourly auto-tagging
 
 // ============================================================
