@@ -2759,6 +2759,33 @@ function buildEscalationEmail_(o) {
     '</table></div>';
 }
 
+// Dry run: who WOULD get an escalation right now, and why every other row is
+// skipped. Sends nothing and writes nothing, so it is always safe to run.
+function ESC_preview() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID), sh = ss.getSheetByName(CONDUCTED_SHEET);
+  if (!sh) return { success:false, message:'no sheet' };
+  var data = sh.getDataRange().getValues();
+  var skip = { notTagged:0, alreadySent:0, resolved:0, nothingToEscalate:0 };
+  var list = [];
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    if (!(data[i][COL_TAG_AT-1]||'').toString().trim())   { skip.notTagged++;   continue; }
+    if ((data[i][COL_ESC_SENT-1]||'').toString().trim())  { skip.alreadySent++; continue; }
+    var prio = (data[i][COL_TAG_PRIORITY-1]||'').toString();
+    var flag = (data[i][COL_TAG_FLAG-1]||'').toString();
+    var escY = (data[i][COL_TAG_ESC-1]||'').toString();
+    if (flag === 'Resolved') { skip.resolved++; continue; }
+    if (!(prio === 'High' || flag === 'Blocked' || escY === 'Yes')) { skip.nothingToEscalate++; continue; }
+    list.push({ row:i+1, id:data[i][0], officer:(data[i][2]||'').toString(),
+                district:(data[i][1]||'').toString(), priority:prio, flag:flag, escalate:escY,
+                nextAction:(data[i][COL_TAG_NEXT-1]||'').toString(),
+                note:(data[i][15]||'').toString().substring(0,140) });
+  }
+  var res = { wouldSendNow:list.length, skipped:skip, rows:list };
+  Logger.log(JSON.stringify(res, null, 2));
+  return res;
+}
+
 // mode 'test' sends all to REPORT_TEST_EMAIL; 'live' emails the officer + CC senior.
 function sendEscalations(mode, limit) {
   mode = mode || 'test'; limit = limit || 25;
