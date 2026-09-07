@@ -2771,7 +2771,13 @@ function sendEscalations(mode, limit) {
     if (!data[i][0]) continue;
     if (!(data[i][COL_TAG_AT-1]||'').toString().trim()) continue;                 // not tagged
     if ((data[i][COL_ESC_SENT-1]||'').toString().trim()) continue;                // already escalated
-    var esc = (data[i][22]||'')==='High' || (data[i][23]||'')==='Blocked' || (data[i][25]||'')==='Yes';
+    var prio = (data[i][COL_TAG_PRIORITY-1]||'').toString();
+    var flag = (data[i][COL_TAG_FLAG-1]||'').toString();
+    var escY = (data[i][COL_TAG_ESC-1]||'').toString();
+    // Resolved means the work is already done. A finished item never needs a
+    // senior's attention, however high its priority was rated.
+    if (flag === 'Resolved') continue;
+    var esc = prio === 'High' || flag === 'Blocked' || escY === 'Yes';
     if (!esc) continue;
     var email = (data[i][4]||'').toString().trim();
     if (!email) continue;
