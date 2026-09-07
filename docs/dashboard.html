@@ -1305,9 +1305,6 @@
           body += prepList('Jo abhi baaki hai', '⏳', b.pending,       '#9a5b0e');
           body += prepList('Baat karne layak',  '💬', b.talkingPoints, '#1D4ED8');
         }
-        if (res.aiFailed) {
-          body += '<div style="font-size:12px;color:#9a5b0e;margin-bottom:10px;">AI saar abhi nahi ban paaya. Neeche purani meetings ki list hai.</div>';
-        }
         var c = res.counts || {};
         body += '<div style="border-top:1px solid #eee;margin-top:6px;padding-top:10px;">' +
           '<div style="font-size:11px;color:#9CA3AF;margin-bottom:6px;">Purani meetings: ' +

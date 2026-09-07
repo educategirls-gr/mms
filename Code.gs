@@ -2964,7 +2964,9 @@ function getMeetingPrep(session, meetingId) {
     res.rawLen = (rawLLM||'').length;              // 0 means the API call itself failed
     res.rawSample = (rawLLM||'').substring(0, 400); // what the model actually replied
   }
-  cPut(cacheKey, res, C_TTL_EMP);
+  // Only cache a brief that actually came out. Caching a failure would keep
+  // serving the same empty result for half an hour after the model recovers.
+  if (!res.aiFailed) cPut(cacheKey, res, C_TTL_EMP);
   return res;
 }
 
