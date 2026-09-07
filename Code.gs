@@ -2495,6 +2495,21 @@ function getMonthlyReport(session, monthParam) {
 //  Prompt contains ONLY aggregated numbers + area/purpose names (no person
 //  names, no meeting notes) - the agreed privacy stance.
 // ------------------------------------------------------------
+// Pull the answer out of a Gemini response. A thinking model can return parts
+// marked as thoughts, or an empty content block when it ran out of budget while
+// reasoning, so take the first real text part and never assume parts[0].
+function _geminiText_(j) {
+  try {
+    var c = j && j.candidates && j.candidates[0];
+    if (!c || !c.content || !c.content.parts) return '';
+    for (var i = 0; i < c.content.parts.length; i++) {
+      var p = c.content.parts[i];
+      if (p && p.text && !p.thought) return p.text;
+    }
+  } catch(e) {}
+  return '';
+}
+
 // callLLM hides every failure on purpose so features degrade quietly. This does
 // the opposite: it sends a trivial prompt to each provider and reports exactly
 // what came back, so a dead key, a wrong model name or a quota block is visible.
@@ -2521,10 +2536,12 @@ function LLM_probe() {
     try {
       var r2 = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=' + encodeURIComponent(gk), {
         method:'post', contentType:'application/json', muteHttpExceptions:true,
-        payload: JSON.stringify({ contents:[{parts:[{text:'Reply with the single word OK.'}]}], generationConfig:{maxOutputTokens:10} })
+        payload: JSON.stringify({ contents:[{parts:[{text:'Reply with the single word OK.'}]}],
+                                  generationConfig:{ maxOutputTokens:2000, temperature:0.2, thinkingConfig:{ thinkingBudget:0 } } })
       });
-      out.gemini_httpCode = r2.getResponseCode();
-      out.gemini_reply    = r2.getContentText().substring(0, 400);
+      out.gemini_httpCode    = r2.getResponseCode();
+      out.gemini_extractedText = _geminiText_(JSON.parse(r2.getContentText() || '{}')) || '(nothing extracted)';
+      out.gemini_reply       = r2.getContentText().substring(0, 400);
     } catch(e) { out.gemini_threw = e.message; }
   }
 
@@ -2559,18 +2576,27 @@ function callLLM(prompt) {
 
   function gemini() {
     if (!gk) return '';
-    try {
-      var r2 = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=' + encodeURIComponent(gk), {
-        method:'post', contentType:'application/json', muteHttpExceptions:true,
-        payload: JSON.stringify({ contents:[{parts:[{text:prompt}]}], generationConfig:{ maxOutputTokens:3000, temperature:0.3 } })
-      });
-      if (r2.getResponseCode() === 200) {
-        var j2 = JSON.parse(r2.getContentText());
-        var t2 = j2 && j2.candidates && j2.candidates[0] && j2.candidates[0].content && j2.candidates[0].content.parts && j2.candidates[0].content.parts[0] && j2.candidates[0].content.parts[0].text;
-        if (t2) return t2;
-      }
-    } catch(e) {}
-    return '';
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=' + encodeURIComponent(gk);
+    // gemini-3.6-flash reasons before it answers, and that reasoning is charged
+    // against maxOutputTokens. Left alone it can spend the whole budget thinking
+    // and return an empty content block with finishReason MAX_TOKENS, which is
+    // exactly why this fallback used to look dead. Turn thinking off and leave
+    // plenty of room for the answer itself.
+    function ask(useThinkingConfig) {
+      var cfg = { maxOutputTokens:8000, temperature:0.3 };
+      if (useThinkingConfig) cfg.thinkingConfig = { thinkingBudget: 0 };
+      try {
+        var r2 = UrlFetchApp.fetch(url, {
+          method:'post', contentType:'application/json', muteHttpExceptions:true,
+          payload: JSON.stringify({ contents:[{parts:[{text:prompt}]}], generationConfig:cfg })
+        });
+        if (r2.getResponseCode() !== 200) return null;   // null = try the other shape
+        return _geminiText_(JSON.parse(r2.getContentText()));
+      } catch(e) { return null; }
+    }
+    var t = ask(true);
+    if (t === null) t = ask(false);   // older API shape rejects thinkingConfig
+    return t || '';
   }
 
   // Two rounds only: enough to ride out a brief limit, bounded enough that a
@@ -2578,8 +2604,8 @@ function callLLM(prompt) {
   var waits = [0, 2500];
   for (var a = 0; a < waits.length; a++) {
     if (waits[a]) Utilities.sleep(waits[a]);
+    var g = gemini();  if (g) return g;   // Gemini first: Mistral's free tier runs out
     var t = mistral(); if (t) return t;
-    var g = gemini();  if (g) return g;
   }
   return '';
 }
