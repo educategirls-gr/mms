@@ -2599,6 +2599,8 @@ function tagOneMeeting_(d) {
   if (note) {
     var prompt = 'You are tagging a government-relations field meeting note (may be Hindi, English or mixed). Return STRICT JSON only, no markdown: '+
       '{"priority":"High|Medium|Low","flag":"Follow-up needed|Resolved|Blocked","nextAction":"one short action line in English","escalate":true|false,"category":"Document/Data request|Quality issue|Blocker|Resource needed|Commitment|None"}. '+
+      'GLOSSARY (India, important): "block" (also "khand", "vikas khand") is an administrative unit BELOW a district, and BEO, BDO, BRC, CRC, BSA are block level officers or offices. A note saying the meeting was held in a block, at block level, in a named block, or with a block officer is an ordinary LOCATION detail. It NEVER means the work is blocked. '+
+      'Use flag "Blocked" or category "Blocker" ONLY when the note actually describes work being stuck, refused, delayed, denied or obstructed. If in doubt, prefer "Follow-up needed".\n'+
       "Escalate true only for a real ask, request, quality issue, complaint, blocker or problem needing a senior's attention; a positive or normal update is false. Do not use em dashes.\n"+
       'NOTE: '+note+'\n(Purpose: '+(d.purpose||'')+'; Stakeholder: '+(d.stakeholder||'')+'; Type: '+(d.type||'')+')';
     var o = _parseJson_(callLLM(prompt));
@@ -2642,6 +2644,49 @@ function tagUntaggedMeetings(limit) {
   Logger.log('Tagged ' + done + ' meeting(s).');
   Logger.log(results.join('\n'));
   return { success:true, tagged:done, details:results };
+}
+
+// Which meetings are currently marked Blocked/Blocker, and does the note even
+// mention a block? The old prompt had no glossary, so an ordinary
+// "meeting in X block" note could be read as work being obstructed.
+function TAG_showBlocked() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID), sh = ss.getSheetByName(CONDUCTED_SHEET);
+  if (!sh) return { success:false, message:'No conducted sheet' };
+  var data = sh.getDataRange().getValues(), out = [];
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    var flag = (data[i][COL_TAG_FLAG-1]||'').toString();
+    var cat  = (data[i][COL_TAG_CAT-1]||'').toString();
+    if (flag !== 'Blocked' && cat !== 'Blocker') continue;
+    var note = (data[i][15]||'').toString();
+    out.push({ row:i+1, id:data[i][0], flag:flag, category:cat,
+               escalate:(data[i][COL_TAG_ESC-1]||'').toString(),
+               noteMentionsBlock:/block|khand/i.test(note) ? 'YES' : 'no',
+               note:note.substring(0,120) });
+  }
+  Logger.log(JSON.stringify(out, null, 2));
+  return { count:out.length, rows:out };
+}
+
+// Clear the tag columns on Blocked/Blocker rows so the hourly job re-tags them
+// with the corrected prompt. Does NOT touch the escalation-sent flag, so this
+// cannot trigger a fresh wave of escalation mails on its own.
+function TAG_recheckBlocked() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID), sh = ss.getSheetByName(CONDUCTED_SHEET);
+  if (!sh) return { success:false, message:'No conducted sheet' };
+  var data = sh.getDataRange().getValues(), n = 0, ids = [];
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    var flag = (data[i][COL_TAG_FLAG-1]||'').toString();
+    var cat  = (data[i][COL_TAG_CAT-1]||'').toString();
+    if (flag !== 'Blocked' && cat !== 'Blocker') continue;
+    sh.getRange(i+1, COL_TAG_AT).setValue('');                  // marks it untagged again
+    n++; ids.push(data[i][0]);
+  }
+  try { cDel('reportData'); } catch(e){}
+  Logger.log('Cleared ' + n + ' row(s) for re-tagging: ' + ids.join(', '));
+  return { success:true, cleared:n, ids:ids,
+           note:'Run TAG_run (or wait for the hourly job) to re-tag these with the corrected prompt.' };
 }
 
 // Ensure the Conducted sheet has the tag column headers (run once; also safe to re-run).
