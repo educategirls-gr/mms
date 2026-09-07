@@ -381,6 +381,7 @@ function apiResponse(e, method) {
         else if (action === 'getMyMeetings')        result = getMyMeetings(session.email);
         else if (action === 'getAllMyMeetings')     result = getAllMyMeetings(session.email);
         else if (action === 'getMonthlyReport')     result = getMonthlyReport(session, e.parameter.month || '');
+        else if (action === 'getMeetingPrep')       result = getMeetingPrep(session, e.parameter.meetingId || '');
         else if (action === 'getDistrictEmployees') result = getDistrictEmployees(resolveActiveDistrict_(session, e.parameter.district), session.email);
         else if (action === 'getAllEmployees')      result = getAllEmployees(session.email);
         else if (action === 'getZoneTeamEmployees') result = getZoneTeamEmployees(session.zone, session.email);
@@ -2757,6 +2758,130 @@ function buildEscalationEmail_(o) {
     '</td></tr>'+
     '<tr><td style="padding:18px 28px 24px;"><div style="border-top:1px solid #e5e7eb;padding-top:12px;font-size:11px;color:#9ca3af;">Auto-flagged by EG-MMS from the meeting note. dataimpact.in</div></td></tr>'+
     '</table></div>';
+}
+
+// ------------------------------------------------------------
+//  MEETING PREP BRIEF
+//  On demand only (officer taps "Prep"), so nothing here runs on page load
+//  and no existing path is touched. Result is cached for 30 min per meeting.
+// ------------------------------------------------------------
+
+// Officers type the stakeholder freehand, so compare loosely.
+function _prepNorm_(s) {
+  return (s||'').toString().toLowerCase()
+    .replace(/\b(shri|smt|mr|mrs|ms|dr|sir|madam|maam|ma'am|ji)\b/g, '')
+    .replace(/[^a-z0-9ऀ-ॿ]/g, '')
+    .trim();
+}
+
+function getMeetingPrep(session, meetingId) {
+  meetingId = (meetingId||'').toString().trim();
+  if (!meetingId) return { success:false, message:'No meeting id' };
+
+  var cacheKey = 'prep_' + meetingId;
+  var hit = cGet(cacheKey);
+  if (hit) { hit.cached = true; return hit; }
+
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var plan = ss.getSheetByName(MEETINGS_SHEET);
+  if (!plan) return { success:false, message:'No plan sheet' };
+
+  // 1. Find the planned meeting, and make sure it belongs to this officer.
+  var pd = plan.getDataRange().getValues(), me = null;
+  for (var i = 1; i < pd.length; i++) {
+    if ((pd[i][0]||'').toString().trim() !== meetingId) continue;
+    me = { district:(pd[i][1]||'').toString(), officer:(pd[i][2]||'').toString(),
+           email:(pd[i][4]||'').toString(), date:fmtDateVal(pd[i][5]),
+           time:(pd[i][6]||'').toString(), type:(pd[i][8]||'').toString(),
+           name:(pd[i][9]||'').toString(), post:(pd[i][10]||'').toString(),
+           purpose:(pd[i][11]||'').toString(), agenda:(pd[i][12]||'').toString() };
+    break;
+  }
+  if (!me) return { success:false, message:'Meeting not found' };
+  if (me.email.toLowerCase() !== (session.email||'').toLowerCase()) {
+    return { success:false, message:'This meeting belongs to another officer' };
+  }
+
+  // 2. Past conducted meetings in the same district, matched by person or by post.
+  var con = ss.getSheetByName(CONDUCTED_SHEET);
+  var cd = con ? con.getDataRange().getValues() : [];
+  var wantName = _prepNorm_(me.name), wantPost = _prepNorm_(me.post), wantDist = normDist_(me.district);
+  var byPerson = [], byPost = [], myNotes = [];
+  for (var j = 1; j < cd.length; j++) {
+    if (!cd[j][0]) continue;
+    var note = (cd[j][15]||'').toString().trim();
+    // language sample: this officer's own writing, from any meeting
+    if (note && (cd[j][4]||'').toString().toLowerCase() === me.email.toLowerCase()) myNotes.push(note);
+    if (normDist_((cd[j][1]||'').toString()) !== wantDist) continue;
+    var nm = _prepNorm_(cd[j][9]), pt = _prepNorm_(cd[j][10]);
+    var rec = { date:fmtDateVal(cd[j][13]), by:(cd[j][2]||'').toString(),
+                stakeholder:(cd[j][9]||'').toString(), post:(cd[j][10]||'').toString(),
+                purpose:(cd[j][11]||'').toString(), note:note,
+                flag:(cd[j][COL_TAG_FLAG-1]||'').toString(),
+                nextAction:(cd[j][COL_TAG_NEXT-1]||'').toString(),
+                category:(cd[j][COL_TAG_CAT-1]||'').toString() };
+    if (wantName && nm === wantName)      byPerson.push(rec);
+    else if (wantPost && pt === wantPost) byPost.push(rec);
+  }
+  byPerson.sort(function(a,b){ return monthSortVal_(b.date) - monthSortVal_(a.date); });
+  byPost.sort(function(a,b){ return monthSortVal_(b.date) - monthSortVal_(a.date); });
+
+  var hist = byPerson.concat(byPost).slice(0, 12);   // keep the prompt small
+  var res = {
+    success: true,
+    meeting: { id:meetingId, stakeholder:me.name, post:me.post, district:me.district,
+               date:me.date, time:me.time, purpose:me.purpose },
+    counts: { withPerson:byPerson.length, withPost:byPost.length },
+    history: hist.map(function(h){ return { date:h.date, by:h.by, purpose:h.purpose, flag:h.flag }; }),
+    brief: ''
+  };
+
+  if (!hist.length) {
+    res.brief = '';
+    res.firstMeeting = true;
+    cPut(cacheKey, res, C_TTL_EMP);
+    return res;
+  }
+
+  // 3. Ask the model for the brief, written in the officer's own language.
+  var sample = myNotes.slice(-6).join(' | ').substring(0, 900);
+  var lines = hist.map(function(h){
+    return '- ' + h.date + ' (by ' + h.by + '; purpose: ' + h.purpose + '; status: ' + (h.flag||'-') +
+           (h.nextAction ? '; next action noted: ' + h.nextAction : '') + '): ' + h.note.substring(0, 400);
+  }).join('\n');
+
+  var prompt =
+    'You are briefing a government-relations field officer who is about to meet a government official again. '+
+    'Write a SHORT prep brief from the past meeting records below.\n'+
+    'LANGUAGE (important): write the brief in the SAME language and script the officer himself uses in his own notes. '+
+    'If his notes are Roman-script Hinglish, reply in Roman-script Hinglish. If Devanagari Hindi, reply in Devanagari. '+
+    'If English, reply in English. Match his style, do not translate him into another language. '+
+    'Here is a sample of his own writing: "' + sample + '"\n'+
+    'METHOD: read each past record fully and judge from the whole sentence, never from a single keyword. '+
+    'Note that "block" (khand) is an administrative area in India, not an obstruction. '+
+    'Past tense like "kar diya", "submit ki", "ho gaya" means that thing is ALREADY DONE, so put it under done, not under pending.\n'+
+    'Return STRICT JSON only, no markdown: '+
+    '{"summary":"1 or 2 lines on the relationship so far","done":["things already achieved, short lines"],'+
+    '"pending":["things still open or promised but not delivered, short lines"],'+
+    '"talkingPoints":["2 to 4 things to raise in this meeting, short lines"]}. '+
+    'Use [] for any list with nothing to report. Keep every line under 20 words. Do not invent anything that is not in the records. Do not use em dashes.\n'+
+    'UPCOMING MEETING: ' + me.name + ' (' + me.post + '), ' + me.district + ', purpose: ' + me.purpose + '\n'+
+    'PAST RECORDS (newest first):\n' + lines;
+
+  var o = _parseJson_(callLLM(prompt));
+  if (o) {
+    res.brief = {
+      summary: (o.summary||'').toString(),
+      done: Array.isArray(o.done) ? o.done : [],
+      pending: Array.isArray(o.pending) ? o.pending : [],
+      talkingPoints: Array.isArray(o.talkingPoints) ? o.talkingPoints : []
+    };
+  } else {
+    res.brief = '';
+    res.aiFailed = true;    // the raw history is still returned, so the popup is never empty
+  }
+  cPut(cacheKey, res, C_TTL_EMP);
+  return res;
 }
 
 // Dry run: who WOULD get an escalation right now, and why every other row is

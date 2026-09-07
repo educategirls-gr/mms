@@ -1234,15 +1234,92 @@
         '</td>' +
         '<td><span class="badge ' + bc + '">' + esc(m.status || 'Planned') + '</span></td>' +
         '<td>' + (showAction
-          ? '<button class="btn-action" data-idx="' + idx + '">⚡ Action</button>'
+          ? '<button class="btn-prep" data-idx="' + idx + '" style="padding:6px 10px;background:#fff;color:#7B1010;border:1px solid #7B1010;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;margin-right:6px;white-space:nowrap;">📋 Prep</button>' +
+            '<button class="btn-action" data-idx="' + idx + '">⚡ Action</button>'
           : '<span style="color:#9CA3AF;font-size:12px">Done</span>') +
         '</td></tr>';
     });
     html += '</tbody></table></div>';
     document.getElementById('manage-content').innerHTML = html;
     document.getElementById('manage-content').addEventListener('click', function(e) {
+      var prep = e.target.closest('.btn-prep');
+      if (prep) { openPrepModal(parseInt(prep.dataset.idx)); return; }
       var btn = e.target.closest('.btn-action');
       if (btn) openActionModal(parseInt(btn.dataset.idx));
+    });
+  }
+
+  // ── Meeting Prep Brief ───────────────────────────────────────
+  // Runs only when the officer taps Prep, so nothing else gets slower.
+  function closePrepModal() {
+    var el = document.getElementById('prep-modal');
+    if (el) el.style.display = 'none';
+  }
+  function prepList(title, icon, items, color) {
+    if (!items || !items.length) return '';
+    return '<div style="margin-bottom:14px;">' +
+      '<div style="font-size:12px;font-weight:700;color:' + color + ';margin-bottom:6px;">' + icon + ' ' + title + '</div>' +
+      '<ul style="margin:0;padding-left:18px;color:#374151;font-size:13px;line-height:1.6;">' +
+      items.map(function(t){ return '<li>' + esc(t) + '</li>'; }).join('') + '</ul></div>';
+  }
+  function openPrepModal(idx) {
+    var m = _manageMeetings[idx];
+    if (!m) return;
+    var el = document.getElementById('prep-modal');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'prep-modal';
+      el.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;padding:16px;';
+      el.addEventListener('click', function(ev){ if (ev.target === el) closePrepModal(); });
+      document.body.appendChild(el);
+    }
+    function shell(inner) {
+      return '<div style="background:#fff;border-radius:12px;max-width:520px;width:100%;max-height:86vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,.25);">' +
+        '<div style="padding:14px 18px;background:#7B1010;color:#fff;border-radius:12px 12px 0 0;">' +
+          '<div style="font-size:15px;font-weight:700;">📋 Meeting Prep</div>' +
+          '<div style="font-size:12px;opacity:.9;margin-top:2px;">' + esc(m.adhikariName) + (m.adhikariPost ? ' · ' + esc(m.adhikariPost) : '') + '</div>' +
+        '</div>' +
+        '<div style="padding:18px;">' + inner + '</div>' +
+        '<div style="padding:12px 18px;border-top:1px solid #eee;text-align:right;">' +
+          '<button onclick="closePrepModal()" style="padding:8px 18px;background:#374151;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">Band karein</button>' +
+        '</div></div>';
+    }
+    el.innerHTML = shell('<div style="text-align:center;padding:24px 0;color:#6B7280;font-size:13px;">Purani meetings padhi ja rahi hain...</div>');
+    el.style.display = 'flex';
+
+    gasFetch('getMeetingPrep', { meetingId: m.meetingId }, function(res) {
+      if (!res || !res.success) {
+        el.innerHTML = shell('<div style="color:#991B1B;font-size:13px;">' + esc((res && res.message) || 'Prep brief nahi ban paayi.') + '</div>');
+        return;
+      }
+      var body = '';
+      if (res.firstMeeting) {
+        body = '<div style="font-size:13px;color:#374151;line-height:1.6;">Is adhikari ke saath aapke district me ye <strong>pehli meeting</strong> hai. Koi purana record nahi mila.</div>';
+      } else {
+        var b = res.brief;
+        if (b && b.summary) {
+          body += '<div style="background:#FEF7F0;border-left:3px solid #7B1010;padding:10px 12px;border-radius:0 6px 6px 0;font-size:13px;color:#374151;line-height:1.6;margin-bottom:14px;">' + esc(b.summary) + '</div>';
+        }
+        if (b) {
+          body += prepList('Jo pura ho chuka',  '✅', b.done,          '#166534');
+          body += prepList('Jo abhi baaki hai', '⏳', b.pending,       '#9a5b0e');
+          body += prepList('Baat karne layak',  '💬', b.talkingPoints, '#1D4ED8');
+        }
+        if (res.aiFailed) {
+          body += '<div style="font-size:12px;color:#9a5b0e;margin-bottom:10px;">AI saar abhi nahi ban paaya. Neeche purani meetings ki list hai.</div>';
+        }
+        var c = res.counts || {};
+        body += '<div style="border-top:1px solid #eee;margin-top:6px;padding-top:10px;">' +
+          '<div style="font-size:11px;color:#9CA3AF;margin-bottom:6px;">Purani meetings: ' +
+            (c.withPerson || 0) + ' inke saath, ' + (c.withPost || 0) + ' isi pad ke saath</div>' +
+          (res.history || []).map(function(h){
+            return '<div style="font-size:12px;color:#6B7280;padding:3px 0;">' + esc(h.date) + ' · ' + esc(h.purpose || '-') +
+                   (h.by ? ' <span style="color:#9CA3AF;">(' + esc(h.by) + ')</span>' : '') + '</div>';
+          }).join('') + '</div>';
+      }
+      el.innerHTML = shell(body);
+    }, function() {
+      el.innerHTML = shell('<div style="color:#991B1B;font-size:13px;">Server se jawab nahi mila. Dobara koshish karein.</div>');
     });
   }
 
