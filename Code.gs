@@ -2601,6 +2601,8 @@ function tagOneMeeting_(d) {
       '{"priority":"High|Medium|Low","flag":"Follow-up needed|Resolved|Blocked","nextAction":"one short action line in English","escalate":true|false,"category":"Document/Data request|Quality issue|Blocker|Resource needed|Commitment|None"}. '+
       'GLOSSARY (India, important): "block" (also "khand", "vikas khand") is an administrative unit BELOW a district, and BEO, BDO, BRC, CRC, BSA are block level officers or offices. A note saying the meeting was held in a block, at block level, in a named block, or with a block officer is an ordinary LOCATION detail. It NEVER means the work is blocked. '+
       'Use flag "Blocked" or category "Blocker" ONLY when the note actually describes work being stuck, refused, delayed, denied or obstructed. If in doubt, prefer "Follow-up needed".\n'+
+      'COMPLETED vs PENDING (important): these notes are usually past tense Hinglish. "report submit ki", "jama kar di", "de di", "kar diya", "ho gaya", "bhej diya", "share kar diya" all mean the work is ALREADY DONE. Report that as a completed update: escalate false, flag "Resolved", category "None" unless something else is open. '+
+      'Use escalate true, or a request category, ONLY when something is still OUTSTANDING right now: the officer is still asking for it, it was refused, or it is pending. Never turn a finished action into a fresh request.\n'+
       "Escalate true only for a real ask, request, quality issue, complaint, blocker or problem needing a senior's attention; a positive or normal update is false. Do not use em dashes.\n"+
       'NOTE: '+note+'\n(Purpose: '+(d.purpose||'')+'; Stakeholder: '+(d.stakeholder||'')+'; Type: '+(d.type||'')+')';
     var o = _parseJson_(callLLM(prompt));
