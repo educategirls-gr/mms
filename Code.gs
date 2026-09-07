@@ -2826,7 +2826,7 @@ function getMeetingPrep(session, meetingId) {
   byPerson.sort(function(a,b){ return monthSortVal_(b.date) - monthSortVal_(a.date); });
   byPost.sort(function(a,b){ return monthSortVal_(b.date) - monthSortVal_(a.date); });
 
-  var hist = byPerson.concat(byPost).slice(0, 12);   // keep the prompt small
+  var hist = byPerson.concat(byPost).slice(0, 8);    // keep the prompt small
   var res = {
     success: true,
     meeting: { id:meetingId, stakeholder:me.name, post:me.post, district:me.district,
@@ -2844,10 +2844,10 @@ function getMeetingPrep(session, meetingId) {
   }
 
   // 3. Ask the model for the brief, written in the officer's own language.
-  var sample = myNotes.slice(-6).join(' | ').substring(0, 900);
+  var sample = myNotes.slice(-4).join(' | ').substring(0, 500);
   var lines = hist.map(function(h){
-    return '- ' + h.date + ' (by ' + h.by + '; purpose: ' + h.purpose + '; status: ' + (h.flag||'-') +
-           (h.nextAction ? '; next action noted: ' + h.nextAction : '') + '): ' + h.note.substring(0, 400);
+    return '- ' + h.date + ' (' + h.purpose + '; status: ' + (h.flag||'-') +
+           (h.nextAction ? '; next: ' + h.nextAction : '') + '): ' + h.note.substring(0, 300);
   }).join('\n');
 
   var prompt =
@@ -2864,11 +2864,13 @@ function getMeetingPrep(session, meetingId) {
     '{"summary":"1 or 2 lines on the relationship so far","done":["things already achieved, short lines"],'+
     '"pending":["things still open or promised but not delivered, short lines"],'+
     '"talkingPoints":["2 to 4 things to raise in this meeting, short lines"]}. '+
-    'Use [] for any list with nothing to report. Keep every line under 20 words. Do not invent anything that is not in the records. Do not use em dashes.\n'+
+    'Use [] for any list with nothing to report. At most 3 items per list, each under 15 words. Do not invent anything that is not in the records. Do not use em dashes.\n'+
     'UPCOMING MEETING: ' + me.name + ' (' + me.post + '), ' + me.district + ', purpose: ' + me.purpose + '\n'+
-    'PAST RECORDS (newest first):\n' + lines;
+    'PAST RECORDS (newest first):\n' + lines + '\n\n'+
+    'Reply with the JSON object only. No explanation before or after it.';
 
-  var o = _parseJson_(callLLM(prompt));
+  var rawLLM = callLLM(prompt);
+  var o = _parseJson_(rawLLM);
   if (o) {
     res.brief = {
       summary: (o.summary||'').toString(),
@@ -2879,9 +2881,30 @@ function getMeetingPrep(session, meetingId) {
   } else {
     res.brief = '';
     res.aiFailed = true;    // the raw history is still returned, so the popup is never empty
+    res.rawLen = (rawLLM||'').length;              // 0 means the API call itself failed
+    res.rawSample = (rawLLM||'').substring(0, 400); // what the model actually replied
   }
   cPut(cacheKey, res, C_TTL_EMP);
   return res;
+}
+
+// Run from the editor to see exactly why a prep brief failed: the model's raw
+// reply, or length 0 if the API call itself did not come back.
+function PREP_debug() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var plan = ss.getSheetByName(MEETINGS_SHEET);
+  var pd = plan.getDataRange().getValues(), id = '', email = '';
+  for (var i = pd.length - 1; i >= 1; i--) {                    // newest first
+    var st = (pd[i][13]||'').toString();
+    if (st !== 'Planned' && st !== 'Follow-up') continue;
+    if ((pd[i][4]||'').toString().toLowerCase() !== REPORT_TEST_EMAIL.toLowerCase()) continue;
+    id = (pd[i][0]||'').toString(); email = (pd[i][4]||'').toString(); break;
+  }
+  if (!id) return { message:'No planned meeting found for ' + REPORT_TEST_EMAIL };
+  cDel('prep_' + id);                                          // force a fresh model call
+  var r = getMeetingPrep({ email:email }, id);
+  Logger.log(JSON.stringify(r, null, 2));
+  return r;
 }
 
 // Dry run: who WOULD get an escalation right now, and why every other row is
