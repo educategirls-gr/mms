@@ -2806,6 +2806,88 @@ function tagUntaggedMeetings(limit) {
 // Which meetings are currently marked Blocked/Blocker, and does the note even
 // mention a block? The old prompt had no glossary, so an ordinary
 // "meeting in X block" note could be read as work being obstructed.
+// ------------------------------------------------------------
+//  COMMITMENT EXTRACTION (dry run only, nothing is written yet)
+//  Pulls out what a government official said they would do. Every
+//  commitment must carry the exact sentence it came from, which makes an
+//  invented one easy to catch: the quote simply will not be in the note.
+// ------------------------------------------------------------
+function extractCommitments_(d) {
+  var note = (d.keyPoints || '').toString().trim();
+  if (note.length < 25) return [];                 // nothing meaningful to read
+  var prompt =
+    'You are reading a note from a government relations field meeting in India. The note may be Hindi, English or mixed. '+
+    'Find every COMMITMENT the government official made, meaning something they said they would do.\n'+
+    'METHOD: read each sentence to the end and judge from its full meaning, never from a single keyword.\n'+
+    'GLOSSARY: "block" (khand) is an administrative area in India, and BEO, BDO, BRC, CRC, BSA are block level offices or officers. A block is a place. It never means something is obstructed.\n'+
+    'ALREADY DONE vs STILL PROMISED: past tense such as "de di", "kar diya", "jaari kar diya", "submit ki", "bhej diya", "ho gaya" means the thing is ALREADY DONE, so it is NOT an open commitment. Only record what the official still has to do.\n'+
+    'RULES:\n'+
+    '1. Record a commitment ONLY when the note clearly says the official agreed, promised, assured, sanctioned or directed that something will be done. Never infer one from a general discussion or from a request our own team made.\n'+
+    '2. For each commitment you MUST copy, word for word, the sentence from the note that shows it, into "evidence". If you cannot copy such a sentence, do not record that commitment at all.\n'+
+    '3. If the note contains no clear commitment, return an empty list. An empty list is a correct and useful answer. Guessing is not.\n'+
+    '4. Never invent a deadline. Leave "due" empty unless the note states one.\n'+
+    'Return STRICT JSON only, no markdown: {"commitments":[{"what":"one short line in English","by":"who promised, as written in the note","due":"as written, or empty","evidence":"exact sentence copied from the note"}]}\n'+
+    'Do not use em dashes.\n'+
+    'OFFICIAL: ' + (d.stakeholderName||'') + ' (' + (d.stakeholderPost||'') + '), ' + (d.district||'') + '\n'+
+    'PURPOSE: ' + (d.purpose||'') + '\n'+
+    'NOTE: ' + note;
+  var o = _parseJson_(callLLM(prompt));
+  var list = (o && Array.isArray(o.commitments)) ? o.commitments : [];
+  var flat = note.toLowerCase().replace(/\s+/g, ' ');
+  return list.map(function(c){
+    var ev = (c.evidence || '').toString().trim();
+    // Does the quote actually exist in the note? A hallucination fails this.
+    var probe = ev.toLowerCase().replace(/\s+/g, ' ').substring(0, 45);
+    return { what:(c.what||'').toString().trim(), by:(c.by||'').toString().trim(),
+             due:(c.due||'').toString().trim(), evidence:ev,
+             evidenceFound: (probe.length >= 12 && flat.indexOf(probe) >= 0) };
+  }).filter(function(c){ return c.what; });
+}
+
+// Try the extractor on real meetings and PRINT the result. Writes nothing,
+// changes nothing, so it is always safe to run.
+function COMMIT_dryRun(limit) {
+  limit = limit || 15;
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID), sh = ss.getSheetByName(CONDUCTED_SHEET);
+  if (!sh) return { success:false, message:'no conducted sheet' };
+  var data = sh.getDataRange().getValues();
+
+  // Take the meetings with the most substantial notes: that is where the
+  // extractor has something to work with and where a mistake would matter.
+  var cand = [];
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    var note = (data[i][15] || '').toString().trim();
+    if (note.length < 25) continue;
+    cand.push({ row:i+1, id:data[i][0], district:data[i][1], officer:data[i][2],
+                stakeholderName:data[i][9], stakeholderPost:data[i][10],
+                purpose:data[i][11], date:fmtDateVal(data[i][13]), keyPoints:note });
+  }
+  cand.sort(function(a,b){ return b.keyPoints.length - a.keyPoints.length; });
+  var pick = cand.slice(0, limit);
+
+  var out = [], totals = { meetings:0, found:0, evidenceOk:0, evidenceBad:0, none:0 };
+  pick.forEach(function(m, idx){
+    if (idx) Utilities.sleep(1500);                // stay under the rate limit
+    var cs = extractCommitments_(m);
+    totals.meetings++;
+    if (!cs.length) totals.none++;
+    cs.forEach(function(c){
+      totals.found++;
+      if (c.evidenceFound) totals.evidenceOk++; else totals.evidenceBad++;
+    });
+    out.push({ date:m.date, district:m.district, officer:m.officer,
+               official:m.stakeholderName + ' (' + m.stakeholderPost + ')',
+               noteLength:m.keyPoints.length,
+               note:m.keyPoints.substring(0, 220),
+               commitments: cs.length ? cs : '(none found)' });
+  });
+
+  var res = { summary:totals, results:out };
+  Logger.log(JSON.stringify(res, null, 2));
+  return res;
+}
+
 function TAG_showBlocked() {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID), sh = ss.getSheetByName(CONDUCTED_SHEET);
   if (!sh) return { success:false, message:'No conducted sheet' };
