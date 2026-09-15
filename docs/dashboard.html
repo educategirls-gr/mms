@@ -1237,7 +1237,7 @@
              ';font-size:12px;font-weight:700;padding:8px 12px;border-top:1px solid #e5e7eb;">' + text + '</td></tr>';
     }
     if (_overdue.length) {
-      html += sectionRow('&#9888;&nbsp; Action needed (' + _overdue.length + ') &nbsp;<span style="font-weight:400;">in meetings ki date nikal chuki hai, inhe update karein</span>', '#991B1B', '#FEF2F2');
+      html += sectionRow('&#9888;&nbsp; Action needed (' + _overdue.length + ') &nbsp;<span style="font-weight:400;">these meetings are past their date, please update them</span>', '#991B1B', '#FEF2F2');
     }
     _manageMeetings.forEach(function(m, idx) {
       if (_overdue.length && idx === _overdue.length) {
