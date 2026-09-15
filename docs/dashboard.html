@@ -945,7 +945,7 @@
   }
   function gasErrText(e) {
     return (e && e.serverBusy)
-      ? 'Server abhi busy hai. Thodi der baad dobara koshish karein.'
+      ? 'Server is busy. Please try again in a moment.'
       : 'Server error: ' + ((e && e.message) ? e.message : e);
   }
 
@@ -985,7 +985,7 @@
       .then(function(res){ if (res && res.message === 'AUTH_REQUIRED') { logout(); return; } onSuccess(res); })
       .catch(onFail || function(e) {
         err(e && e.serverBusy
-          ? 'Server busy tha. Page refresh karke check karein ki kaam hua ya nahi.'
+          ? 'Server was busy. Refresh the page to check whether it went through.'
           : gasErrText(e));
       });
   }
@@ -1169,7 +1169,7 @@
     var dv = document.getElementById('view-district');
     if (dv && dv.classList.contains('active')) loadDistrictMeetings(true);
 
-    showToast('Ab dikha rahe hain: ' + val + ' district');
+    showToast('Now showing: ' + val + ' district');
   }
 
   // ── Frontend cache (2-min TTL, invalidated on action) ───────
@@ -1308,31 +1308,31 @@
           '<button onclick="closePrepModal()" style="padding:8px 18px;background:#374151;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">Close</button>' +
         '</div></div>';
     }
-    el.innerHTML = shell('<div style="text-align:center;padding:24px 0;color:#6B7280;font-size:13px;">Purani meetings padhi ja rahi hain...</div>');
+    el.innerHTML = shell('<div style="text-align:center;padding:24px 0;color:#6B7280;font-size:13px;">Reading past meetings...</div>');
     el.style.display = 'flex';
 
     gasFetch('getMeetingPrep', { meetingId: m.meetingId }, function(res) {
       if (!res || !res.success) {
-        el.innerHTML = shell('<div style="color:#991B1B;font-size:13px;">' + esc((res && res.message) || 'Prep brief nahi ban paayi.') + '</div>');
+        el.innerHTML = shell('<div style="color:#991B1B;font-size:13px;">' + esc((res && res.message) || 'Could not load the prep brief.') + '</div>');
         return;
       }
       var body = '';
       if (res.firstMeeting) {
-        body = '<div style="font-size:13px;color:#374151;line-height:1.6;">Is adhikari ke saath aapke district me ye <strong>pehli meeting</strong> hai. Koi purana record nahi mila.</div>';
+        body = '<div style="font-size:13px;color:#374151;line-height:1.6;">This is the first meeting with this official in your district. No past records found.</div>';
       } else {
         var b = res.brief;
         if (b && b.summary) {
           body += '<div style="background:#FEF7F0;border-left:3px solid #7B1010;padding:10px 12px;border-radius:0 6px 6px 0;font-size:13px;color:#374151;line-height:1.6;margin-bottom:14px;">' + esc(b.summary) + '</div>';
         }
         if (b) {
-          body += prepList('Jo pura ho chuka',  '✅', b.done,          '#166534');
-          body += prepList('Jo abhi baaki hai', '⏳', b.pending,       '#9a5b0e');
-          body += prepList('Baat karne layak',  '💬', b.talkingPoints, '#1D4ED8');
+          body += prepList('Already done',  '✅', b.done,          '#166534');
+          body += prepList('Still pending', '⏳', b.pending,       '#9a5b0e');
+          body += prepList('Worth raising',  '💬', b.talkingPoints, '#1D4ED8');
         }
         var c = res.counts || {};
         body += '<div style="border-top:1px solid #eee;margin-top:6px;padding-top:10px;">' +
-          '<div style="font-size:11px;color:#9CA3AF;margin-bottom:6px;">Purani meetings: ' +
-            (c.withPerson || 0) + ' inke saath, ' + (c.withPost || 0) + ' isi pad ke saath</div>' +
+          '<div style="font-size:11px;color:#9CA3AF;margin-bottom:6px;">Past meetings: ' +
+            (c.withPerson || 0) + ' with this person, ' + (c.withPost || 0) + ' with this post</div>' +
           (res.history || []).map(function(h){
             return '<div style="font-size:12px;color:#6B7280;padding:3px 0;">' + esc(h.date) + ' · ' + esc(h.purpose || '-') +
                    (h.by ? ' <span style="color:#9CA3AF;">(' + esc(h.by) + ')</span>' : '') + '</div>';
@@ -1340,7 +1340,7 @@
       }
       el.innerHTML = shell(body);
     }, function() {
-      el.innerHTML = shell('<div style="color:#991B1B;font-size:13px;">Server se jawab nahi mila. Dobara koshish karein.</div>');
+      el.innerHTML = shell('<div style="color:#991B1B;font-size:13px;">No response from the server. Please try again.</div>');
     });
   }
 
