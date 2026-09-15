@@ -957,7 +957,9 @@
         if (params.hasOwnProperty(k)) url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(params[k] != null ? params[k] : '');
       }
     }
-    // Reads are safe to retry once: a transient HTML page then costs nothing.
+    // The Apps Script front door rejects roughly a third of requests with an
+    // HTML page instead of running the script, so read failures are retried a
+    // couple of times before the user is told anything.
     function attempt(retriesLeft) {
       fetch(url)
         .then(parseGasJson)
@@ -967,27 +969,35 @@
           (onFail || function(e2) { err(gasErrText(e2)); })(e);
         });
     }
-    attempt(1);
+    attempt(2);
   }
 
-  // No auto-retry here on purpose: these actions write (save/delete/conduct),
-  // and the write may well have succeeded before the HTML page came back.
-  // Retrying could duplicate the meeting, so ask the user to refresh instead.
+  // These actions write (save, delete, conduct), so retrying is only safe for
+  // the one failure we can actually identify: the front door answering with an
+  // HTML page, which means the script never ran and nothing was written. A
+  // network-level error is left alone, because there the write may have landed
+  // and a retry could duplicate the meeting.
   function gasPost(action, data, onSuccess, onFail) {
     var url = GAS_URL + '?action=' + encodeURIComponent(action);
     if (SESSION && SESSION.token) url += '&token=' + encodeURIComponent(SESSION.token);
-    fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(data)
-    })
-      .then(parseGasJson)
-      .then(function(res){ if (res && res.message === 'AUTH_REQUIRED') { logout(); return; } onSuccess(res); })
-      .catch(onFail || function(e) {
-        err(e && e.serverBusy
-          ? 'Server was busy. Refresh the page to check whether it went through.'
-          : gasErrText(e));
-      });
+    function attempt(retriesLeft) {
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(data)
+      })
+        .then(parseGasJson)
+        .then(function(res){ if (res && res.message === 'AUTH_REQUIRED') { logout(); return; } onSuccess(res); })
+        .catch(function(e){
+          if (e && e.serverBusy && retriesLeft > 0) { setTimeout(function(){ attempt(retriesLeft - 1); }, 1200); return; }
+          (onFail || function(e2) {
+            err(e2 && e2.serverBusy
+              ? 'Server was busy. Refresh the page to check whether it went through.'
+              : gasErrText(e2));
+          })(e);
+        });
+    }
+    attempt(2);
   }
 
   var selectedMeetingType = '';
