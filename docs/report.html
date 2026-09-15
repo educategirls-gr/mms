@@ -277,6 +277,9 @@
     <a class="nav-item" id="nav-perf" href="teamperformance.html" style="text-decoration:none;">
       <span style="font-size:17px;">👥</span><span>Team Performance</span>
     </a>
+    <a class="nav-item" id="nav-rel" href="stakeholders.html" style="text-decoration:none;">
+      <span style="font-size:17px;">🤝</span><span>Stakeholders</span>
+    </a>
   </div>
   <div class="sidebar-footer">
     EG GR Meeting Management System<br>Powered by Google Workspace
@@ -396,12 +399,6 @@
         </div>
 
         <!-- Full detail table -->
-        <!-- Relationship Health: repeat contact with the same office over time -->
-        <div class="card" style="margin-bottom:18px;">
-          <div class="card-title">Relationship Health <span style="font-weight:400;color:#9CA3AF;text-transform:none;letter-spacing:0;font-size:11px;">(full history, not filtered by month)</span><span class="card-title-line"></span></div>
-          <div id="rel-body"></div>
-        </div>
-
         <div class="card">
           <div class="card-title">All Conducted Meetings<span class="card-title-line"></span></div>
           <div id="rp-table" style="overflow-x:auto;"></div>
@@ -465,6 +462,37 @@
         <div style="font-size:12px;color:#6B7280;margin:-6px 0 12px;">Team members in this district with <b>no meeting</b> in the selected filters.</div>
         <div id="pf-inactive" style="overflow-x:auto;"></div>
       </div>
+    </div>
+
+    <!-- ══════════ VIEW: STAKEHOLDERS ══════════ -->
+    <div id="view-rel" class="view">
+
+      <div class="card" style="margin-bottom:18px;">
+        <div class="card-title">Select District<span class="card-title-line"></span></div>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+          <select id="rel-district" onchange="renderRelations()">
+            <option value="">All Districts</option>
+          </select>
+          <select id="rel-status" onchange="renderRelations()">
+            <option value="">All Offices</option>
+            <option value="cold">Gone quiet only</option>
+            <option value="once">Met only once</option>
+            <option value="deep">Met 3+ times</option>
+          </select>
+          <div id="rel-loading" style="display:none;color:#9CA3AF;font-size:13px;font-weight:600;">Loading…</div>
+        </div>
+        <div style="font-size:12px;color:#9CA3AF;margin-top:10px;">
+          Tracked by office rather than by person, since officials get transferred. Reads the full meeting history.
+        </div>
+      </div>
+
+      <div id="rel-kpi" class="kpi-grid" style="margin-bottom:18px;"></div>
+
+      <div class="card">
+        <div class="card-title">Government Offices<span class="card-title-line"></span></div>
+        <div id="rel-table" style="overflow-x:auto;"></div>
+      </div>
+
     </div>
 
   </div><!-- /content-area -->
@@ -574,10 +602,11 @@
   var TOPBAR = {
     overview: { title: 'Overview',        sub: 'Organisation-wide meeting summary'       },
     reports:  { title: 'District Reports',sub: 'District-wise analytics and meeting details' },
-    perf:     { title: 'Team Performance',sub: '' }
+    perf:     { title: 'Team Performance',sub: '' },
+    rel:      { title: 'Stakeholders',     sub: 'Relationships with government offices over time' }
   };
   function showView(v) {
-    ['overview','reports','perf'].forEach(function(x) {
+    ['overview','reports','perf','rel'].forEach(function(x) {
       document.getElementById('view-'+x).classList.remove('active');
       var n = document.getElementById('nav-'+x); if (n) n.classList.remove('active');
       var mn = document.getElementById('mob-nav-'+x); if (mn) mn.classList.remove('active');
@@ -590,6 +619,7 @@
     if (v === 'overview') loadOverview();
     if (v === 'reports')  loadReports();
     if (v === 'perf')     loadPerf();
+    if (v === 'rel')      loadRelations();
   }
 
   // ── Dashboard (Overview) ──────────────────────────────────────
@@ -751,13 +781,10 @@
     var d = parseInt(p[0], 10), mi = _MONTHS.indexOf(p[1]), y = parseInt(p[2], 10);
     return (isNaN(d) || mi < 0 || isNaN(y)) ? 0 : new Date(y, mi, d).getTime();
   }
-  function renderRelationships() {
-    var box = document.getElementById('rel-body');
-    if (!box) return;
-    if (!_allMeetings) { box.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:16px 0;">Loading…</div>'; return; }
-    var pick = curDist();          // follows the District Reports selector
+  // Build one row per government office from the whole meeting history.
+  function relBuild(pick) {
     var now = Date.now(), map = {};
-    _allMeetings.forEach(function(m) {
+    (_allMeetings || []).forEach(function(m) {
       if (m.status !== 'Conducted') return;
       if (pick && String(m.district || '').trim() !== pick) return;
       // Keyed on the POST, not the person. Officers get transferred, but the
@@ -770,44 +797,92 @@
       if (!ts) return;
       var k = relNorm(m.district) + '|' + pk;
       var r = map[k] || (map[k] = { post:(post || person), district:String(m.district||'').trim(),
-                                    lastPerson:'', count:0, last:0 });
+                                    lastPerson:'', people:{}, count:0, last:0, first:ts, purpose:'' });
       r.count++;
-      if (ts > r.last) { r.last = ts; if (person) r.lastPerson = person; }
+      if (person) r.people[relNorm(person)] = 1;
+      if (ts < r.first) r.first = ts;
+      if (ts > r.last) { r.last = ts; if (person) r.lastPerson = person; r.purpose = String(m.purpose||'').trim(); }
     });
-    var all = Object.keys(map).map(function(k){ return map[k]; });
-    if (!all.length) { box.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:16px 0;">No conducted meetings for this selection</div>'; return; }
-    var cold = all.filter(function(r){ return (now - r.last) > REL_COLD_DAYS * 86400000; })
-                  .sort(function(a,b){ return a.last - b.last; });
-    var once = all.filter(function(r){ return r.count === 1; }).length;
-    var deep = all.filter(function(r){ return r.count >= 3; }).length;
-    function tile(n, l, c) {
-      return '<div class="kpi-card" style="border-top:4px solid '+c+';"><div class="kpi-num" style="color:'+c+';">'+n+'</div><div class="kpi-lbl">'+l+'</div></div>';
-    }
-    var html = '<div class="kpi-grid" style="margin-bottom:14px;">' +
-      tile(all.length, 'Offices Engaged',  '#1D4ED8') +
-      tile(deep,       'Met 3+ Times',     '#065F46') +
-      tile(once,       'Met Only Once',    '#92400E') +
-      tile(cold.length,'No Contact ' + REL_COLD_DAYS + '+ Days', '#991B1B') +
-      '</div>' +
-      '<div style="font-size:11.5px;color:#9CA3AF;margin-bottom:12px;">Tracked by office rather than by person, since officials get transferred.</div>';
-    if (cold.length) {
-      html += '<div style="font-size:12px;font-weight:700;color:#991B1B;margin-bottom:8px;">Offices gone quiet (' + cold.length + ')</div>' +
-        '<div style="overflow-x:auto;"><table class="rep-table"><thead><tr>' +
-        '<th>Office</th><th>District</th><th>Last Met</th><th>Meetings</th><th>Last Contact</th></tr></thead><tbody>' +
-        cold.slice(0, 15).map(function(r) {
-          var days = Math.round((now - r.last) / 86400000);
-          return '<tr><td><strong>' + esc(r.post) + '</strong></td>' +
-                 '<td>' + esc(r.district) + '</td>' +
-                 '<td style="font-size:11px;color:#6B7280;">' + esc(r.lastPerson || '-') + '</td>' +
-                 '<td style="text-align:center;">' + r.count + '</td>' +
-                 '<td style="white-space:nowrap;color:#991B1B;font-weight:700;">' + days + ' days ago</td></tr>';
-        }).join('') + '</tbody></table></div>';
-      if (cold.length > 15) html += '<div style="font-size:11px;color:#9CA3AF;margin-top:8px;">Showing the 15 longest gaps of ' + cold.length + '.</div>';
-    } else {
-      html += '<div style="color:#065F46;font-size:13px;padding:8px 0;">Every office has been contacted within the last ' + REL_COLD_DAYS + ' days.</div>';
-    }
-    box.innerHTML = html;
+    return Object.keys(map).map(function(k) {
+      var r = map[k];
+      r.peopleCount = Object.keys(r.people).length; delete r.people;
+      r.days = Math.round((now - r.last) / 86400000);
+      r.state = r.days > REL_COLD_DAYS ? 'cold' : (r.days > 30 ? 'warm' : 'live');
+      return r;
+    }).sort(function(a, b){ return b.last - a.last; });
   }
+
+  function renderRelations() {
+    var kpiEl = document.getElementById('rel-kpi'), tblEl = document.getElementById('rel-table');
+    if (!kpiEl || !tblEl) return;
+    if (!_allMeetings) { tblEl.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:16px 0;">Loading…</div>'; return; }
+    var pick = document.getElementById('rel-district').value;
+    var only = document.getElementById('rel-status').value;
+    var all = relBuild(pick);
+    var cold = all.filter(function(r){ return r.state === 'cold'; });
+    var once = all.filter(function(r){ return r.count === 1; });
+    var deep = all.filter(function(r){ return r.count >= 3; });
+
+    kpiEl.innerHTML = [
+      { n: all.length,  l: 'Offices Engaged', c: '#1D4ED8' },
+      { n: deep.length, l: 'Met 3+ Times',    c: '#065F46' },
+      { n: once.length, l: 'Met Only Once',   c: '#92400E' },
+      { n: cold.length, l: 'No Contact ' + REL_COLD_DAYS + '+ Days', c: '#991B1B' }
+    ].map(function(k) {
+      return '<div class="kpi-card" style="border-top:4px solid '+k.c+';">' +
+             '<div class="kpi-num" style="color:'+k.c+';">'+k.n+'</div>' +
+             '<div class="kpi-lbl">'+k.l+'</div></div>';
+    }).join('');
+
+    var rows = only === 'cold' ? cold : only === 'once' ? once : only === 'deep' ? deep : all;
+    if (only === 'cold') rows = rows.slice().sort(function(a,b){ return b.days - a.days; });
+    if (!rows.length) {
+      tblEl.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:20px 0;text-align:center;">No offices for this selection</div>';
+      return;
+    }
+    var dot = { live:'#059669', warm:'#D97706', cold:'#DC2626' };
+    var word = { live:'In contact', warm:'Cooling', cold:'Gone quiet' };
+    tblEl.innerHTML = '<table class="rep-table"><thead><tr>' +
+      '<th>Status</th><th>Office</th><th>District</th><th>Last Met</th>' +
+      '<th>Meetings</th><th>Officials Seen</th><th>Last Contact</th></tr></thead><tbody>' +
+      rows.map(function(r) {
+        return '<tr>' +
+          '<td style="white-space:nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+dot[r.state]+';margin-right:6px;"></span>' +
+            '<span style="font-size:11px;color:#6B7280;">'+word[r.state]+'</span></td>' +
+          '<td><strong>'+esc(r.post)+'</strong></td>' +
+          '<td>'+esc(r.district)+'</td>' +
+          '<td style="font-size:11.5px;color:#6B7280;">'+esc(r.lastPerson || '-')+'</td>' +
+          '<td style="text-align:center;font-weight:700;">'+r.count+'</td>' +
+          '<td style="text-align:center;color:#6B7280;">'+r.peopleCount+'</td>' +
+          '<td style="white-space:nowrap;color:'+dot[r.state]+';font-weight:700;">'+r.days+' days ago</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  function loadRelations() {
+    ensureEmployees(function(){
+      var sel = document.getElementById('rel-district');
+      if (sel && sel.options.length <= 1) {
+        allDistrictList().forEach(function(d){
+          var o = document.createElement('option'); o.value = d; o.textContent = d; sel.appendChild(o);
+        });
+      }
+    });
+    if (_allMeetings) { renderRelations(); return; }
+    document.getElementById('rel-loading').style.display = 'block';
+    renderRelations();
+    snapFetch('data/report.json', withTok(GAS_URL + '?action=getReportData'),
+      function(res){
+        document.getElementById('rel-loading').style.display = 'none';
+        _allMeetings = (res && res.meetings) ? res.meetings : [];
+        renderRelations();
+      },
+      function(){
+        document.getElementById('rel-loading').style.display = 'none';
+        document.getElementById('rel-table').innerHTML =
+          '<div style="color:#9CA3AF;font-size:13px;padding:16px 0;">Could not load stakeholder data</div>';
+      });
+  }
+
   // ── District Reports ──────────────────────────────────────────
   var _allMeetings = null;
   var _reportFiltered = [];   // currently filtered meetings (for download)
@@ -920,7 +995,6 @@
     });
     _reportFiltered = filtered;
     renderReport(filtered, dist, block, month);
-    renderRelationships();   // reads the whole history, so only the district applies
   }
 
   // ── Auto "districts needing attention" (zero conducted) ───────
@@ -1455,6 +1529,7 @@
     <a class="mob-nav-btn" id="mob-nav-overview" href="report.html" style="text-decoration:none;">Overview</a>
     <a class="mob-nav-btn" id="mob-nav-reports" href="districtreports.html" style="text-decoration:none;">District Reports</a>
     <a class="mob-nav-btn" id="mob-nav-perf" href="teamperformance.html" style="text-decoration:none;">Team</a>
+    <a class="mob-nav-btn" id="mob-nav-rel" href="stakeholders.html" style="text-decoration:none;">Stakeholders</a>
   </div>
 </div>
 </body>

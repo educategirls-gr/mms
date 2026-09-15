@@ -6,7 +6,8 @@ const SRC = 'docs/report.html';
 const src = fs.readFileSync(SRC, 'utf8');
 const pages = {
   'docs/districtreports.html': 'reports',
-  'docs/teamperformance.html': 'perf'
+  'docs/teamperformance.html': 'perf',
+  'docs/stakeholders.html':    'rel'
 };
 Object.keys(pages).forEach(function(out) {
   const view = pages[out];
