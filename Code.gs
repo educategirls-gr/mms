@@ -2823,12 +2823,11 @@ function extractCommitments_(d) {
     'ALREADY DONE vs STILL PROMISED: past tense such as "de di", "kar diya", "jaari kar diya", "submit ki", "bhej diya", "ho gaya" means the thing is ALREADY DONE, so it is NOT an open commitment. Only record what the official still has to do.\n'+
     'RULES:\n'+
     '1. Record a commitment ONLY when the note clearly says the official agreed, promised, assured, sanctioned or directed that something will be done. Never infer one from a general discussion or from a request our own team made.\n'+
-    '2. It must be a CONCRETE DELIVERABLE: a specific document, letter, permission, order, list, dataset, number, meeting, visit, or a named action. Something a person could later point at and say it did or did not happen.\n'+
-    '   A general assurance of goodwill is NOT a commitment and must be left out. Examples to reject: "assured full cooperation", "will extend support", "call me if there is any problem", "will resolve any issue", "is always available to help", "appreciated the initiative". These can never be closed, so they only clutter the list.\n'+
-    '   Examples to accept: "agreed to share the list of girls with low attendance", "will issue the feedback letter", "sanctioned 500 saplings", "will visit the block on Monday", "directed the BEO to provide enrolment data".\n'+
-    '3. For each commitment you MUST copy, word for word, the sentence from the note that shows it, into "evidence". If you cannot copy such a sentence, do not record that commitment at all.\n'+
-    '4. If the note contains no clear commitment, return an empty list. An empty list is a correct and useful answer. Guessing is not.\n'+
-    '5. Never invent a deadline. Leave "due" empty unless the note states one.\n'+
+    '2. Record it whenever the official names a SPECIFIC thing they will provide or do: a document, letter, permission, order, list, data, quantity, visit, instruction to a junior officer, or any named action. Record these readily.\n'+
+    '   Leave out only a bare expression of goodwill with no specific thing attached, such as "assured full cooperation" or "call me if there is any problem", because nobody can ever tick those off.\n'+
+    '3. For each commitment you MUST copy, word for word, the sentence from the note that shows it, into "evidence". If you cannot copy such a sentence, do not record that commitment.\n'+
+    '4. Never invent a deadline. Leave "due" empty unless the note states one.\n'+
+    '5. If the note truly contains no such promise, return an empty list.\n'+
     'Return STRICT JSON only, no markdown: {"commitments":[{"what":"one short line in English","by":"who promised, as written in the note","due":"as written, or empty","evidence":"exact sentence copied from the note"}]}\n'+
     'Do not use em dashes.\n'+
     'OFFICIAL: ' + (d.stakeholderName||'') + ' (' + (d.stakeholderPost||'') + '), ' + (d.district||'') + '\n'+
