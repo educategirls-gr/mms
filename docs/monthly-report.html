@@ -236,20 +236,20 @@
 
     // Relationship health
     var rel=j.relationships;
-    if(rel && rel.totalOfficials){
+    if(rel && rel.totalOffices){
       html+=sec('Relationship Health','calc','Computed')+
         '<div class="kpis" style="margin-bottom:12px;">'+
-        '<div class="kpi"><div class="big num">'+rel.totalOfficials+'</div><div class="lbl">Officials engaged</div></div>'+
+        '<div class="kpi"><div class="big num">'+rel.totalOffices+'</div><div class="lbl">Offices engaged</div></div>'+
         '<div class="kpi"><div class="big num" style="color:var(--good)">'+rel.metThisMonth+'</div><div class="lbl">Met this month</div></div>'+
         '<div class="kpi"><div class="big num" style="color:#1D4ED8">'+rel.newThisMonth+'</div><div class="lbl">First time</div></div>'+
         '<div class="kpi"><div class="big num" style="color:var(--crit)">'+rel.coldCount+'</div><div class="lbl">Gone quiet</div></div>'+
         '</div>'+
-        '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">'+rel.onlyOnce+' of '+rel.totalOfficials+' officials have been met only once.</div>';
+        '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">'+rel.onlyOnce+' of '+rel.totalOffices+' offices have been met only once. Tracked by office, since officials get transferred.</div>';
       if(rel.cold && rel.cold.length){
         html+='<div style="font-size:12px;font-weight:700;color:var(--crit);margin-bottom:6px;">No contact in '+rel.coldDays+'+ days ('+rel.coldCount+')</div>'+
-          '<div class="tbl-wrap"><table><thead><tr><th>Official</th><th>District</th><th class="r">Meetings</th><th class="r">Last contact</th></tr></thead><tbody class="num">';
+          '<div class="tbl-wrap"><table><thead><tr><th>Office</th><th>District</th><th class="r">Meetings</th><th class="r">Last contact</th></tr></thead><tbody class="num">';
         rel.cold.forEach(function(r){
-          html+='<tr><td class="name">'+esc(r.name)+(r.post?'<br><small style="color:var(--muted);">'+esc(r.post)+'</small>':'')+'</td>'+
+          html+='<tr><td class="name">'+esc(r.post)+(r.lastPerson?'<br><small style="color:var(--muted);">last met: '+esc(r.lastPerson)+'</small>':'')+'</td>'+
             '<td>'+esc(r.district)+'</td><td class="r">'+r.count+'</td>'+
             '<td class="r" style="color:var(--crit);font-weight:700;">'+r.daysSince+' days</td></tr>';
         });

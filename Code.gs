@@ -2449,33 +2449,42 @@ function getMonthlyReport(session, monthParam) {
     var relMap = {};
     allM.forEach(function(m){
       if (m.status !== 'Conducted' || !inScope(m.district)) return;
-      var nm = _prepNorm_(m.stakeholderName);
-      if (!nm) return;
+      // Keyed on the POST, not the person. Officers get transferred, but the
+      // office carries the relationship: the BSA of a district stays the BSA.
+      // Falls back to the person's name only when no post was recorded.
+      var post = (m.stakeholderPost||'').toString().trim();
+      var person = (m.stakeholderName||'').toString().trim();
+      var pk = _prepNorm_(post) || _prepNorm_(person);
+      if (!pk) return;
       var ts = relTs_(m);
       if (!ts || ts > relRefTs) return;                 // nothing after this report's month
-      var k = normDist_(m.district) + '|' + nm;
-      var r = relMap[k] || (relMap[k] = { name:(m.stakeholderName||'').toString().trim(),
-                                          post:(m.stakeholderPost||'').toString().trim(),
-                                          district:(m.district||'').toString().trim(),
-                                          count:0, first:ts, last:0 });
+      var k = normDist_(m.district) + '|' + pk;
+      var r = relMap[k] || (relMap[k] = { post:(post || person), district:(m.district||'').toString().trim(),
+                                          lastPerson:'', people:{}, count:0, first:ts, last:0 });
       r.count++;
+      if (person) r.people[_prepNorm_(person)] = 1;
       if (ts < r.first) r.first = ts;
-      if (ts > r.last) { r.last = ts; if (m.stakeholderPost) r.post = m.stakeholderPost.toString().trim(); }
+      if (ts > r.last) { r.last = ts; if (person) r.lastPerson = person; }
     });
+    Object.keys(relMap).forEach(function(k){ var r = relMap[k]; r.peopleCount = Object.keys(r.people).length; delete r.people; });
     var relAll  = Object.keys(relMap).map(function(k){ return relMap[k]; });
     var relCold = relAll.filter(function(r){ return r.last && (relRefTs - r.last) > COLD_DAYS * 86400000; })
                         .sort(function(a,b){ return a.last - b.last; });
     var relSeen = {};
-    conducted.forEach(function(m){ var nm = _prepNorm_(m.stakeholderName); if (nm) relSeen[normDist_(m.district) + '|' + nm] = 1; });
+    conducted.forEach(function(m){
+      var pk = _prepNorm_(m.stakeholderPost) || _prepNorm_(m.stakeholderName);
+      if (pk) relSeen[normDist_(m.district) + '|' + pk] = 1;
+    });
     var relationships = {
-      totalOfficials: relAll.length,
+      totalOffices:   relAll.length,
       metThisMonth:   Object.keys(relSeen).length,
       newThisMonth:   relStartTs ? relAll.filter(function(r){ return r.first >= relStartTs; }).length : 0,
       onlyOnce:       relAll.filter(function(r){ return r.count === 1; }).length,
       coldDays:       COLD_DAYS,
       coldCount:      relCold.length,
       cold:           relCold.slice(0, 10).map(function(r){
-                        return { name:r.name, post:r.post, district:r.district, count:r.count,
+                        return { post:r.post, district:r.district, lastPerson:r.lastPerson,
+                                 peopleCount:r.peopleCount, count:r.count,
                                  daysSince: Math.round((relRefTs - r.last) / 86400000) };
                       })
     };
@@ -2486,7 +2495,7 @@ function getMonthlyReport(session, monthParam) {
     if (zeroAreas.length) attention.push({ level:'crit', title:zeroAreas.length + ' ' + areaWord + ' with no activity', detail:zeroAreas.slice(0,8).join(', ') + (zeroAreas.length>8?' +more':'') });
     if (pending) attention.push({ level:'warn', title:pending + ' follow-ups / planned meetings pending', detail:'Open in ' + month });
     if (conducted.length && govtMom < conducted.length) attention.push({ level:'warn', title:'Govt MoM pending on ' + (conducted.length - govtMom) + ' of ' + conducted.length, detail:'Only ' + govtMom + ' conducted meetings have official minutes uploaded' });
-    if (relationships.coldCount) attention.push({ level:'warn', title:relationships.coldCount + ' officials with no contact in ' + COLD_DAYS + '+ days', detail:relationships.cold.slice(0,4).map(function(r){ return r.name + ' (' + r.daysSince + 'd)'; }).join(', ') + (relationships.coldCount > 4 ? ' +more' : '') });
+    if (relationships.coldCount) attention.push({ level:'warn', title:relationships.coldCount + ' offices with no contact in ' + COLD_DAYS + '+ days', detail:relationships.cold.slice(0,4).map(function(r){ return r.post + ' ' + r.district + ' (' + r.daysSince + 'd)'; }).join(', ') + (relationships.coldCount > 4 ? ' +more' : '') });
     if (scopeKind === 'state' && breakdown.rows.length) {
       var worst = breakdown.rows.slice().sort(function(a,b){ return a.pct - b.pct; })[0];
       if (worst) attention.push({ level:'warn', title:worst.name + ' is the lowest-performing zone (' + worst.pct + '%)', detail:worst.conducted + ' of ' + worst.planned + ' conducted' });
@@ -2507,8 +2516,8 @@ function getMonthlyReport(session, monthParam) {
     if (zeroAreas.length) recs.push({ h:'Activate the ' + zeroAreas.length + ' inactive ' + areaWord + ' first.', d:zeroAreas.slice(0,5).join(', ') + ' had no conducted meetings.' });
     if (pending) recs.push({ h:'Close the ' + pending + ' pending follow-ups.', d:'Convert planned/postponed meetings before month-end.' });
     if (conducted.length && govtMom < conducted.length) recs.push({ h:'Push Govt MoM collection.', d:'Only ' + pct(govtMom, conducted.length) + '% of meetings have official minutes.' });
-    if (relationships.coldCount) recs.push({ h:'Re-engage the ' + relationships.coldCount + ' officials who have gone quiet.', d:'No contact for over ' + COLD_DAYS + ' days. Oldest: ' + (relationships.cold[0] ? relationships.cold[0].name + ', ' + relationships.cold[0].daysSince + ' days' : '') + '.' });
-    if (relationships.onlyOnce && relationships.totalOfficials) recs.push({ h:'Build depth, not just reach.', d:relationships.onlyOnce + ' of ' + relationships.totalOfficials + ' officials have been met only once. Repeat contact is what moves government work.' });
+    if (relationships.coldCount) recs.push({ h:'Re-engage the ' + relationships.coldCount + ' offices that have gone quiet.', d:'No contact for over ' + COLD_DAYS + ' days. Longest gap: ' + (relationships.cold[0] ? relationships.cold[0].post + ' ' + relationships.cold[0].district + ', ' + relationships.cold[0].daysSince + ' days' : '') + '.' });
+    if (relationships.onlyOnce && relationships.totalOffices) recs.push({ h:'Build depth, not just reach.', d:relationships.onlyOnce + ' of ' + relationships.totalOffices + ' offices have been met only once. Repeat contact is what moves government work.' });
 
     var resp = {
       success: true,
@@ -2680,8 +2689,8 @@ function buildReportPrompt(r) {
   // counts only, never the officials' names: this prompt leaves the org
   if (r.relationships) {
     var rl = r.relationships;
-    L.push('Relationships: ' + rl.totalOfficials + ' officials engaged to date, ' + rl.metThisMonth + ' met this month, ' +
-           rl.newThisMonth + ' met for the first time, ' + rl.onlyOnce + ' have been met only once, ' +
+    L.push('Relationships (tracked by office, not by person, since officials transfer): ' + rl.totalOffices + ' offices engaged to date, ' + rl.metThisMonth + ' met this month, ' +
+           rl.newThisMonth + ' engaged for the first time, ' + rl.onlyOnce + ' have been met only once, ' +
            rl.coldCount + ' have had no contact for over ' + rl.coldDays + ' days');
   }
   var att = [];
@@ -3467,7 +3476,7 @@ function buildReportEmailHtml(rep, recipientName) {
   // whole history of each official rather than this month's meeting count.
   var rel = rep.relationships;
   var relSec = '';
-  if (rel && rel.totalOfficials) {
+  if (rel && rel.totalOffices) {
     function relTile(label, val, colour) {
       return '<td width="25%" style="padding:0 5px;"><div style="background:#fafafa;border:1px solid #e5e7eb;border-radius:8px;padding:12px 10px;text-align:center;">'+
         '<div style="font-family:Georgia,serif;font-size:24px;font-weight:700;color:'+colour+';">'+val+'</div>'+
@@ -3475,7 +3484,7 @@ function buildReportEmailHtml(rep, recipientName) {
     }
     var coldRows = (rel.cold||[]).map(function(r){
       return '<tr style="border-top:1px solid #f0ebe5;">'+
-        '<td style="padding:8px 12px;"><b>'+_emailEsc(r.name)+'</b>'+(r.post?'<br><span style="color:#6b7280;font-size:12px;">'+_emailEsc(r.post)+'</span>':'')+'</td>'+
+        '<td style="padding:8px 12px;"><b>'+_emailEsc(r.post)+'</b>'+(r.lastPerson?'<br><span style="color:#6b7280;font-size:12px;">last met: '+_emailEsc(r.lastPerson)+'</span>':'')+'</td>'+
         '<td style="padding:8px 12px;color:#6b7280;font-size:12px;">'+_emailEsc(r.district)+'</td>'+
         '<td align="right" style="padding:8px 12px;color:#6b7280;font-size:12px;">'+r.count+'</td>'+
         '<td align="right" style="padding:8px 12px;color:#991b1b;font-weight:700;font-size:12px;white-space:nowrap;">'+r.daysSince+' days</td></tr>';
@@ -3483,17 +3492,17 @@ function buildReportEmailHtml(rep, recipientName) {
     var coldTable = coldRows ?
       '<div style="font-size:12px;font-weight:700;color:#991b1b;margin:14px 0 6px;">No contact in '+rel.coldDays+'+ days ('+rel.coldCount+')</div>'+
       '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px;border:1px solid #e5e7eb;border-radius:8px;">'+
-      '<tr style="background:#f7f2ee;color:#6b7280;font-size:11px;text-transform:uppercase;"><th align="left" style="padding:10px 12px;">Official</th><th align="left" style="padding:10px 12px;">District</th><th align="right" style="padding:10px 12px;">Meetings</th><th align="right" style="padding:10px 12px;">Last contact</th></tr>'+
+      '<tr style="background:#f7f2ee;color:#6b7280;font-size:11px;text-transform:uppercase;"><th align="left" style="padding:10px 12px;">Office</th><th align="left" style="padding:10px 12px;">District</th><th align="right" style="padding:10px 12px;">Meetings</th><th align="right" style="padding:10px 12px;">Last contact</th></tr>'+
       coldRows+'</table>'+
       (rel.coldCount > (rel.cold||[]).length ? '<div style="font-size:11px;color:#9ca3af;margin-top:6px;">Showing the '+(rel.cold||[]).length+' longest gaps of '+rel.coldCount+'.</div>' : '') : '';
     relSec = sec(sech('Relationship Health','Computed','calc')+
       '<table width="100%" cellpadding="0" cellspacing="0"><tr>'+
-        relTile('Officials engaged', rel.totalOfficials, '#1f2937')+
+        relTile('Offices engaged', rel.totalOffices, '#1f2937')+
         relTile('Met this month',    rel.metThisMonth,   '#166534')+
         relTile('First time',        rel.newThisMonth,   '#1D4ED8')+
         relTile('Gone quiet',        rel.coldCount,      '#991b1b')+
       '</tr></table>'+
-      '<div style="font-size:12px;color:#6b7280;margin-top:10px;">'+rel.onlyOnce+' of '+rel.totalOfficials+' officials have been met only once.</div>'+
+      '<div style="font-size:12px;color:#6b7280;margin-top:10px;">'+rel.onlyOnce+' of '+rel.totalOffices+' offices have been met only once. Tracked by office, since officials get transferred.</div>'+
       coldTable);
   }
 

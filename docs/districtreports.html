@@ -768,15 +768,19 @@
     _allMeetings.forEach(function(m) {
       if (m.status !== 'Conducted') return;
       if (pick && String(m.district || '').trim() !== pick) return;
-      var nm = relNorm(m.stakeholderName);
-      if (!nm) return;
+      // Keyed on the POST, not the person. Officers get transferred, but the
+      // office carries the relationship: the BSA of a district stays the BSA.
+      var post = String(m.stakeholderPost || '').trim();
+      var person = String(m.stakeholderName || '').trim();
+      var pk = relNorm(post) || relNorm(person);
+      if (!pk) return;
       var ts = relDayTs(m.conductDate || m.date);
       if (!ts) return;
-      var k = relNorm(m.district) + '|' + nm;
-      var r = map[k] || (map[k] = { name:String(m.stakeholderName||'').trim(), post:String(m.stakeholderPost||'').trim(),
-                                    district:String(m.district||'').trim(), count:0, last:0 });
+      var k = relNorm(m.district) + '|' + pk;
+      var r = map[k] || (map[k] = { post:(post || person), district:String(m.district||'').trim(),
+                                    lastPerson:'', count:0, last:0 });
       r.count++;
-      if (ts > r.last) { r.last = ts; if (m.stakeholderPost) r.post = String(m.stakeholderPost).trim(); }
+      if (ts > r.last) { r.last = ts; if (person) r.lastPerson = person; }
     });
     var all = Object.keys(map).map(function(k){ return map[k]; });
     if (!all.length) { box.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:16px 0;">No conducted meetings for this selection</div>'; return; }
@@ -788,26 +792,27 @@
       return '<div class="kpi-card" style="border-top:4px solid '+c+';"><div class="kpi-num" style="color:'+c+';">'+n+'</div><div class="kpi-lbl">'+l+'</div></div>';
     }
     var html = '<div class="kpi-grid" style="margin-bottom:14px;">' +
-      tile(all.length, 'Officials Engaged', '#1D4ED8') +
-      tile(deep,       'Met 3+ Times',      '#065F46') +
-      tile(once,       'Met Only Once',     '#92400E') +
+      tile(all.length, 'Offices Engaged',  '#1D4ED8') +
+      tile(deep,       'Met 3+ Times',     '#065F46') +
+      tile(once,       'Met Only Once',    '#92400E') +
       tile(cold.length,'No Contact ' + REL_COLD_DAYS + '+ Days', '#991B1B') +
-      '</div>';
+      '</div>' +
+      '<div style="font-size:11.5px;color:#9CA3AF;margin-bottom:12px;">Tracked by office rather than by person, since officials get transferred.</div>';
     if (cold.length) {
-      html += '<div style="font-size:12px;font-weight:700;color:#991B1B;margin-bottom:8px;">Officials gone quiet (' + cold.length + ')</div>' +
+      html += '<div style="font-size:12px;font-weight:700;color:#991B1B;margin-bottom:8px;">Offices gone quiet (' + cold.length + ')</div>' +
         '<div style="overflow-x:auto;"><table class="rep-table"><thead><tr>' +
-        '<th>Official</th><th>Designation</th><th>District</th><th>Meetings</th><th>Last Contact</th></tr></thead><tbody>' +
+        '<th>Office</th><th>District</th><th>Last Met</th><th>Meetings</th><th>Last Contact</th></tr></thead><tbody>' +
         cold.slice(0, 15).map(function(r) {
           var days = Math.round((now - r.last) / 86400000);
-          return '<tr><td><strong>' + esc(r.name) + '</strong></td>' +
-                 '<td style="font-size:11px;color:#6B7280;">' + esc(r.post || '-') + '</td>' +
+          return '<tr><td><strong>' + esc(r.post) + '</strong></td>' +
                  '<td>' + esc(r.district) + '</td>' +
+                 '<td style="font-size:11px;color:#6B7280;">' + esc(r.lastPerson || '-') + '</td>' +
                  '<td style="text-align:center;">' + r.count + '</td>' +
                  '<td style="white-space:nowrap;color:#991B1B;font-weight:700;">' + days + ' days ago</td></tr>';
         }).join('') + '</tbody></table></div>';
       if (cold.length > 15) html += '<div style="font-size:11px;color:#9CA3AF;margin-top:8px;">Showing the 15 longest gaps of ' + cold.length + '.</div>';
     } else {
-      html += '<div style="color:#065F46;font-size:13px;padding:8px 0;">Every official has been contacted within the last ' + REL_COLD_DAYS + ' days.</div>';
+      html += '<div style="color:#065F46;font-size:13px;padding:8px 0;">Every office has been contacted within the last ' + REL_COLD_DAYS + ' days.</div>';
     }
     box.innerHTML = html;
   }
