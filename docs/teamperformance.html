@@ -342,6 +342,18 @@
           </div>
         </div>
 
+        <!-- Relationship Health: repeat contact with the same official -->
+        <div class="card" style="margin-bottom:18px;">
+          <div class="card-title" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <span>Relationship Health</span>
+            <select id="rel-district" style="font-weight:400;text-transform:none;letter-spacing:0;font-size:12px;padding:4px 8px;border:1px solid #D1D5DB;border-radius:6px;color:#374151;">
+              <option value="">All Districts</option>
+            </select>
+            <span class="card-title-line"></span>
+          </div>
+          <div id="rel-body"></div>
+        </div>
+
         <div class="card">
           <div class="card-title">Recently Conducted Meetings<span class="card-title-line"></span></div>
           <div id="ov-recent" style="overflow-x:auto;"></div>
@@ -728,6 +740,91 @@
                  '<td><span class="badge-type">'+r.meetingType+'</span></td>' +
                  '<td style="white-space:nowrap;font-size:11.5px;">'+r.conductDate+'</td></tr>';
         }).join('') + '</tbody></table>';
+
+    ensureRelationships();
+  }
+
+  // ── Relationship Health ───────────────────────────────────────
+  // Government relations is repeat contact, so each official is read as one
+  // ongoing relationship across their whole history, not as separate meetings.
+  var REL_COLD_DAYS = 60;
+  function relNorm(s) {
+    return String(s == null ? '' : s).toLowerCase()
+      .replace(/\b(shri|smt|mr|mrs|ms|dr|sir|madam|maam|ji)\b/g, '')
+      .replace(/[^a-z0-9ऀ-ॿ]/g, '').trim();
+  }
+  function relDayTs(s) {
+    var p = String(s == null ? '' : s).trim().split(' ');
+    if (p.length < 3) return 0;
+    var d = parseInt(p[0], 10), mi = _MONTHS.indexOf(p[1]), y = parseInt(p[2], 10);
+    return (isNaN(d) || mi < 0 || isNaN(y)) ? 0 : new Date(y, mi, d).getTime();
+  }
+  function renderRelationships() {
+    var box = document.getElementById('rel-body');
+    if (!box) return;
+    if (!_allMeetings) { box.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:16px 0;">Loading…</div>'; return; }
+    var pick = document.getElementById('rel-district').value;
+    var now = Date.now(), map = {};
+    _allMeetings.forEach(function(m) {
+      if (m.status !== 'Conducted') return;
+      if (pick && String(m.district || '').trim() !== pick) return;
+      var nm = relNorm(m.stakeholderName);
+      if (!nm) return;
+      var ts = relDayTs(m.conductDate || m.date);
+      if (!ts) return;
+      var k = relNorm(m.district) + '|' + nm;
+      var r = map[k] || (map[k] = { name:String(m.stakeholderName||'').trim(), post:String(m.stakeholderPost||'').trim(),
+                                    district:String(m.district||'').trim(), count:0, last:0 });
+      r.count++;
+      if (ts > r.last) { r.last = ts; if (m.stakeholderPost) r.post = String(m.stakeholderPost).trim(); }
+    });
+    var all = Object.keys(map).map(function(k){ return map[k]; });
+    if (!all.length) { box.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:16px 0;">No conducted meetings for this selection</div>'; return; }
+    var cold = all.filter(function(r){ return (now - r.last) > REL_COLD_DAYS * 86400000; })
+                  .sort(function(a,b){ return a.last - b.last; });
+    var once = all.filter(function(r){ return r.count === 1; }).length;
+    var deep = all.filter(function(r){ return r.count >= 3; }).length;
+    function tile(n, l, c) {
+      return '<div class="kpi-card" style="border-top:4px solid '+c+';"><div class="kpi-num" style="color:'+c+';">'+n+'</div><div class="kpi-lbl">'+l+'</div></div>';
+    }
+    var html = '<div class="kpi-grid" style="margin-bottom:14px;">' +
+      tile(all.length, 'Officials Engaged', '#1D4ED8') +
+      tile(deep,       'Met 3+ Times',      '#065F46') +
+      tile(once,       'Met Only Once',     '#92400E') +
+      tile(cold.length,'No Contact ' + REL_COLD_DAYS + '+ Days', '#991B1B') +
+      '</div>';
+    if (cold.length) {
+      html += '<div style="font-size:12px;font-weight:700;color:#991B1B;margin-bottom:8px;">Officials gone quiet (' + cold.length + ')</div>' +
+        '<div style="overflow-x:auto;"><table class="rep-table"><thead><tr>' +
+        '<th>Official</th><th>Designation</th><th>District</th><th>Meetings</th><th>Last Contact</th></tr></thead><tbody>' +
+        cold.slice(0, 15).map(function(r) {
+          var days = Math.round((now - r.last) / 86400000);
+          return '<tr><td><strong>' + esc(r.name) + '</strong></td>' +
+                 '<td style="font-size:11px;color:#6B7280;">' + esc(r.post || '-') + '</td>' +
+                 '<td>' + esc(r.district) + '</td>' +
+                 '<td style="text-align:center;">' + r.count + '</td>' +
+                 '<td style="white-space:nowrap;color:#991B1B;font-weight:700;">' + days + ' days ago</td></tr>';
+        }).join('') + '</tbody></table></div>';
+      if (cold.length > 15) html += '<div style="font-size:11px;color:#9CA3AF;margin-top:8px;">Showing the 15 longest gaps of ' + cold.length + '.</div>';
+    } else {
+      html += '<div style="color:#065F46;font-size:13px;padding:8px 0;">Every official has been contacted within the last ' + REL_COLD_DAYS + ' days.</div>';
+    }
+    box.innerHTML = html;
+  }
+  function ensureRelationships() {
+    var sel = document.getElementById('rel-district');
+    if (sel && sel.options.length <= 1) {
+      allDistrictList().forEach(function(d){
+        var o = document.createElement('option'); o.value = d; o.textContent = d; sel.appendChild(o);
+      });
+      sel.onchange = renderRelationships;
+    }
+    if (_allMeetings) { renderRelationships(); return; }
+    renderRelationships();                       // shows the loading line
+    snapFetch('data/report.json', withTok(GAS_URL + '?action=getReportData'),
+      function(res){ _allMeetings = (res && res.meetings) ? res.meetings : []; renderRelationships(); },
+      function(){ var b = document.getElementById('rel-body');
+                  if (b) b.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:16px 0;">Could not load relationship data</div>'; });
   }
 
   // ── District Reports ──────────────────────────────────────────
