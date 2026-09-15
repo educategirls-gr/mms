@@ -1210,7 +1210,20 @@
       return ok;
     });
     _manageMeetings.reverse();
-    console.log('Manage meetings after filter:', _manageMeetings.length, 'of', allForUser.length);
+    // Meetings whose date has passed but which were never closed out sit in this
+    // list looking exactly like upcoming ones, so nobody notices them. Put them
+    // in their own group at the top. The array is reordered to match, because
+    // openActionModal and openPrepModal address meetings by row index.
+    var _todayTs = new Date(); _todayTs.setHours(0,0,0,0); _todayTs = _todayTs.getTime();
+    var _overdue = [], _upcoming = [];
+    _manageMeetings.forEach(function(m){
+      var ts = toTs(m.date);
+      (ts && ts < _todayTs ? _overdue : _upcoming).push(m);
+    });
+    _overdue.sort(function(a,b){ return toTs(a.date) - toTs(b.date); });   // oldest first
+    _upcoming.sort(function(a,b){ return toTs(a.date) - toTs(b.date); });  // soonest first
+    _manageMeetings = _overdue.concat(_upcoming);
+    console.log('Manage meetings after filter:', _manageMeetings.length, 'of', allForUser.length, '| overdue:', _overdue.length);
     if (_manageMeetings.length === 0) {
       document.getElementById('manage-content').innerHTML =
         '<div class="empty-state"><div class="empty-icon">📋</div><div style="font-size:15px;font-weight:700;color:#374151;margin-bottom:6px;">No Upcoming Meetings</div><div style="font-size:13px;color:#9CA3AF;margin-bottom:16px;">Click below to plan a new meeting</div><button onclick="showView(\'create\')" style="padding:10px 22px;background:#7B1010;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">+ Plan a Meeting</button></div>';
@@ -1219,14 +1232,25 @@
     var html = '<div class="meetings-table-wrap"><table class="meetings-table"><thead><tr>' +
       '<th>Date</th><th>Time</th><th>Stakeholder</th><th>Purpose</th><th>Status</th><th>Action</th>' +
       '</tr></thead><tbody>';
+    function sectionRow(text, color, bg) {
+      return '<tr><td colspan="6" style="background:' + bg + ';color:' + color +
+             ';font-size:12px;font-weight:700;padding:8px 12px;border-top:1px solid #e5e7eb;">' + text + '</td></tr>';
+    }
+    if (_overdue.length) {
+      html += sectionRow('&#9888;&nbsp; Action needed (' + _overdue.length + ') &nbsp;<span style="font-weight:400;">in meetings ki date nikal chuki hai, inhe update karein</span>', '#991B1B', '#FEF2F2');
+    }
     _manageMeetings.forEach(function(m, idx) {
+      if (_overdue.length && idx === _overdue.length) {
+        html += sectionRow('Upcoming (' + _upcoming.length + ')', '#374151', '#F9FAFB');
+      }
+      var isOverdue = idx < _overdue.length;
       var bc = m.status === 'Completed'  ? 'badge-completed' :
                m.status === 'Postponed'  ? 'badge-postponed' :
                m.status === 'Cancelled'  ? 'badge-cancelled' :
                m.status === 'Follow-up'  ? 'badge-followup'  : 'badge-planned';
       var showAction = (!m.status || m.status === 'Planned' || m.status === 'Postponed' || m.status === 'Follow-up');
-      html += '<tr>' +
-        '<td><strong>' + esc(relDate(m.date)) + '</strong><br><small style="color:#9CA3AF;font-size:10px">' + esc(m.date) + '</small></td>' +
+      html += '<tr' + (isOverdue ? ' style="background:#FFFBFB;"' : '') + '>' +
+        '<td><strong' + (isOverdue ? ' style="color:#991B1B;"' : '') + '>' + esc(relDate(m.date)) + '</strong><br><small style="color:#9CA3AF;font-size:10px">' + esc(m.date) + '</small></td>' +
         '<td style="white-space:nowrap;font-size:12px">' + esc(m.meetingTime) + '</td>' +
         '<td><strong style="font-size:13px">' + esc(m.adhikariName) + '</strong><br><small style="color:#6B7280">' + esc(m.adhikariPost) + '</small></td>' +
         '<td style="max-width:140px;font-size:12px">' + esc(m.purpose) +
