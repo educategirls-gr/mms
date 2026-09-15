@@ -804,6 +804,38 @@
     var t = String(s == null ? '' : s).trim();
     return t.length > 45 || (t.match(/,/g) || []).length >= 2;
   }
+  // Split a name into its words, minus honorifics and service suffixes.
+  function relWords(s) {
+    return relStripSuffix(s).toLowerCase()
+      .replace(/\b(shri|smt|mr|mrs|ms|dr|sir|madam|maam|ji)\b/g, ' ')
+      .replace(/[^a-zऀ-ॿ\s.]/g, ' ')
+      .split(/[\s.]+/).filter(Boolean);
+  }
+  // "K.K Singh" and "Shri Krishna Kant Singh" are one officer written two ways.
+  // Compare initials plus surname, but only when one of the two is actually
+  // abbreviated. Without that guard, Ram Kumar Singh and Rajesh Kamal Singh
+  // would both read as R K Singh and wrongly merge.
+  function relSameByInitials(a, b) {
+    var wa = relWords(a), wb = relWords(b);
+    if (wa.length < 2 || wb.length < 2) return false;
+    var abbrev = wa.some(function(w){ return w.length === 1; }) ||
+                 wb.some(function(w){ return w.length === 1; });
+    if (!abbrev) return false;
+    if (wa[wa.length - 1] !== wb[wb.length - 1]) return false;      // surname must match
+    var sa = wa.map(function(w){ return w.charAt(0); }).join('');
+    var sb = wb.map(function(w){ return w.charAt(0); }).join('');
+    return sa === sb;
+  }
+  // "Ashok Kumar Tripathi" and "ASHOK TRIPATHI" are one officer: same first and
+  // last name, with a middle name dropped in one of them.
+  function relSameByDroppedMiddle(a, b) {
+    var wa = relWords(a), wb = relWords(b);
+    if (wa.length < 2 || wb.length < 2 || wa.length === wb.length) return false;
+    if (wa[0] !== wb[0]) return false;
+    if (wa[wa.length - 1] !== wb[wb.length - 1]) return false;
+    var shrt = wa.length < wb.length ? wa : wb, lng = wa.length < wb.length ? wb : wa;
+    return shrt.every(function(w){ return lng.indexOf(w) >= 0; });
+  }
   // Fold people whose normalised names contain one another.
   function relMergePeople(list) {
     var out = [];
@@ -811,7 +843,7 @@
       var n = relNorm(relStripSuffix(p.name));
       for (var i = 0; i < out.length; i++) {
         var o = relNorm(relStripSuffix(out[i].name));
-        if (n && o && (n.indexOf(o) === 0 || o.indexOf(n) === 0)) {
+        if (n && o && (n.indexOf(o) === 0 || o.indexOf(n) === 0 || relSameByInitials(p.name, out[i].name) || relSameByDroppedMiddle(p.name, out[i].name))) {
           out[i].count += p.count;
           if (p.first < out[i].first) out[i].first = p.first;
           if (p.last > out[i].last) { out[i].last = p.last; out[i].name = p.name; }
