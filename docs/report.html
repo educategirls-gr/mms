@@ -478,6 +478,7 @@
             <option value="cold">Gone quiet only</option>
             <option value="once">Met only once</option>
             <option value="deep">Met 3+ times</option>
+            <option value="changed">Official changed</option>
           </select>
           <div id="rel-loading" style="display:none;color:#9CA3AF;font-size:13px;font-weight:600;">Loading…</div>
         </div>
@@ -487,6 +488,16 @@
       </div>
 
       <div id="rel-kpi" class="kpi-grid" style="margin-bottom:18px;"></div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <div class="card-title">New Official, Introduction Pending <span style="font-weight:400;color:#9CA3AF;text-transform:none;letter-spacing:0;font-size:11px;">(the person holding this office has changed)</span><span class="card-title-line"></span></div>
+        <div id="rel-transfer"></div>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <div class="card-title">Coverage Gaps <span style="font-weight:400;color:#9CA3AF;text-transform:none;letter-spacing:0;font-size:11px;">(offices other districts meet, but this one never has)</span><span class="card-title-line"></span></div>
+        <div id="rel-coverage"></div>
+      </div>
 
       <div class="card">
         <div class="card-title">Government Offices<span class="card-title-line"></span></div>
@@ -782,6 +793,36 @@
     return (isNaN(d) || mi < 0 || isNaN(y)) ? 0 : new Date(y, mi, d).getTime();
   }
   // Build one row per government office from the whole meeting history.
+  // "Anjani Kumar Singh(IAS)" and "Anjani Kumar Singh" are the same officer.
+  function relStripSuffix(s) {
+    return String(s == null ? '' : s).replace(/\(.*?\)/g, ' ')
+      .replace(/\b(ias|ips|pcs|sir|mam|madam|maam)\b/gi, ' ').trim();
+  }
+  // The name box is free text and sometimes holds a whole list of attendees or
+  // a sentence. Those cannot tell us who holds an office, so leave them out.
+  function relJunkName(s) {
+    var t = String(s == null ? '' : s).trim();
+    return t.length > 45 || (t.match(/,/g) || []).length >= 2;
+  }
+  // Fold people whose normalised names contain one another.
+  function relMergePeople(list) {
+    var out = [];
+    list.forEach(function(p) {
+      var n = relNorm(relStripSuffix(p.name));
+      for (var i = 0; i < out.length; i++) {
+        var o = relNorm(relStripSuffix(out[i].name));
+        if (n && o && (n.indexOf(o) === 0 || o.indexOf(n) === 0)) {
+          out[i].count += p.count;
+          if (p.first < out[i].first) out[i].first = p.first;
+          if (p.last > out[i].last) { out[i].last = p.last; out[i].name = p.name; }
+          return;
+        }
+      }
+      out.push({ name:p.name, first:p.first, last:p.last, count:p.count });
+    });
+    return out;
+  }
+
   function relBuild(pick) {
     var now = Date.now(), map = {};
     (_allMeetings || []).forEach(function(m) {
@@ -799,17 +840,72 @@
       var r = map[k] || (map[k] = { post:(post || person), district:String(m.district||'').trim(),
                                     lastPerson:'', people:{}, count:0, last:0, first:ts, purpose:'' });
       r.count++;
-      if (person) r.people[relNorm(person)] = 1;
+      // Remember each person and when we last saw them, so a transfer is visible.
+      // The name field is free text, so drop anything that is plainly not one
+      // person's name: officers sometimes paste a whole list of attendees.
+      if (person && !relJunkName(person)) {
+        var nk = relNorm(relStripSuffix(person));
+        var pr = r.people[nk] || (r.people[nk] = { name:person, first:ts, last:0, count:0 });
+        pr.count++;
+        if (ts < pr.first) pr.first = ts;
+        if (ts > pr.last) pr.last = ts;
+      }
       if (ts < r.first) r.first = ts;
       if (ts > r.last) { r.last = ts; if (person) r.lastPerson = person; r.purpose = String(m.purpose||'').trim(); }
     });
     return Object.keys(map).map(function(k) {
       var r = map[k];
-      r.peopleCount = Object.keys(r.people).length; delete r.people;
+      var people = Object.keys(r.people).map(function(n){ return r.people[n]; });
+      // "Anjani Kumar Singh" and "Anjani Kumar Singh (IAS)" are one person. If
+      // one normalised name contains the other, fold them together, otherwise
+      // every stray suffix looks like a transfer.
+      people = relMergePeople(people);
+      // Ties on the same date made the newest person ambiguous, so settle the
+      // order here and read the current holder from this list, not separately.
+      people.sort(function(a,b){ return (a.last - b.last) || (a.first - b.first) || (a.count - b.count); });
+      r.peopleCount = people.length;
+      var cur = people[people.length - 1];
+      if (cur) r.lastPerson = cur.name;
+      // A different person now holds this office. In government relations that
+      // resets the relationship, however many meetings the office itself has.
+      r.changed  = people.length > 1;
+      r.prevPerson = people.length > 1 ? people[people.length - 2].name : '';
+      // Met the new person only once since the handover: introduce properly.
+      r.needsIntro = r.changed && cur && cur.count < 2;
+      delete r.people;
       r.days = Math.round((now - r.last) / 86400000);
       r.state = r.days > REL_COLD_DAYS ? 'cold' : (r.days > 30 ? 'warm' : 'live');
       return r;
     }).sort(function(a, b){ return b.last - a.last; });
+  }
+
+  // Which posts should a district have met? Derived from the data rather than
+  // from an assumed org chart: a post counts as expected once several other
+  // districts have met it. A district missing one is a real gap, not an opinion.
+  function relCoverage() {
+    var byPost = {}, byDistrict = {}, districts = {};
+    (_allMeetings || []).forEach(function(m) {
+      if (m.status !== 'Conducted') return;
+      var post = String(m.stakeholderPost || '').trim();
+      var dist = String(m.district || '').trim();
+      if (!post || !dist) return;
+      districts[dist] = (districts[dist] || 0) + 1;
+      var pk = relNorm(post);
+      (byPost[pk] = byPost[pk] || { label:post, districts:{} }).districts[relNorm(dist)] = 1;
+      (byDistrict[dist] = byDistrict[dist] || {})[pk] = 1;
+    });
+    var expected = Object.keys(byPost)
+      .filter(function(pk){ return Object.keys(byPost[pk].districts).length >= 3; })
+      .map(function(pk){ return { key:pk, label:byPost[pk].label,
+                                  seenIn:Object.keys(byPost[pk].districts).length }; })
+      .sort(function(a,b){ return b.seenIn - a.seenIn; });
+    return Object.keys(districts).sort().map(function(d) {
+      var have = byDistrict[d] || {};
+      var missing = expected.filter(function(e){ return !have[e.key]; });
+      return { district:d, missing:missing.map(function(e){ return e.label; }),
+               missingCount:missing.length, haveCount:expected.length - missing.length,
+               expectedCount:expected.length, meetings:districts[d] };
+    }).sort(function(a,b){ return b.missingCount - a.missingCount; });
   }
 
   function renderRelations() {
@@ -834,7 +930,47 @@
              '<div class="kpi-lbl">'+k.l+'</div></div>';
     }).join('');
 
-    var rows = only === 'cold' ? cold : only === 'once' ? once : only === 'deep' ? deep : all;
+    // Coverage: which expected posts has this district never met at all?
+    var covEl = document.getElementById('rel-coverage');
+    if (covEl) {
+      var cov = relCoverage();
+      if (pick) cov = cov.filter(function(c){ return c.district === pick; });
+      var gaps = cov.filter(function(c){ return c.missingCount; });
+      if (!gaps.length) {
+        covEl.innerHTML = '<div style="color:#065F46;font-size:13px;padding:6px 0;">Every district has met all the offices that other districts meet.</div>';
+      } else {
+        covEl.innerHTML = '<div style="overflow-x:auto;"><table class="rep-table"><thead><tr>' +
+          '<th>District</th><th>Covered</th><th>Never Met</th></tr></thead><tbody>' +
+          gaps.map(function(c) {
+            return '<tr><td><strong>'+esc(c.district)+'</strong></td>' +
+              '<td style="white-space:nowrap;">'+c.haveCount+' of '+c.expectedCount+'<br><span style="font-size:10px;color:#9CA3AF;">'+c.meetings+' meetings so far</span></td>' +
+              '<td>'+c.missing.map(function(p){
+                return '<span style="display:inline-block;background:#FEF2F2;color:#991B1B;border:1px solid #FECACA;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;margin:2px 4px 2px 0;">'+esc(p)+'</span>';
+              }).join('')+'</td></tr>';
+          }).join('') + '</tbody></table></div>';
+      }
+    }
+
+    var changed = all.filter(function(r){ return r.needsIntro; });
+    var chEl = document.getElementById('rel-transfer');
+    if (chEl) {
+      if (!changed.length) {
+        chEl.innerHTML = '<div style="color:#065F46;font-size:13px;padding:6px 0;">No office is waiting on an introduction to a new official.</div>';
+      } else {
+        chEl.innerHTML = '<div style="overflow-x:auto;"><table class="rep-table"><thead><tr>' +
+          '<th>Office</th><th>District</th><th>Earlier</th><th>Now</th><th>Last Contact</th></tr></thead><tbody>' +
+          changed.sort(function(a,b){ return b.days - a.days; }).map(function(r) {
+            return '<tr><td><strong>'+esc(r.post)+'</strong></td>' +
+              '<td>'+esc(r.district)+'</td>' +
+              '<td style="font-size:11.5px;color:#9CA3AF;text-decoration:line-through;">'+esc(r.prevPerson || '-')+'</td>' +
+              '<td style="font-size:11.5px;font-weight:700;color:#1D4ED8;">'+esc(r.lastPerson || '-')+'</td>' +
+              '<td style="white-space:nowrap;color:'+(r.state==='cold'?'#DC2626':'#6B7280')+';font-weight:700;">'+r.days+' days ago</td></tr>';
+          }).join('') + '</tbody></table></div>';
+      }
+    }
+
+    var rows = only === 'cold' ? cold : only === 'once' ? once : only === 'deep' ? deep
+             : only === 'changed' ? all.filter(function(r){ return r.changed; }) : all;
     if (only === 'cold') rows = rows.slice().sort(function(a,b){ return b.days - a.days; });
     if (!rows.length) {
       tblEl.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:20px 0;text-align:center;">No offices for this selection</div>';
@@ -851,7 +987,7 @@
             '<span style="font-size:11px;color:#6B7280;">'+word[r.state]+'</span></td>' +
           '<td><strong>'+esc(r.post)+'</strong></td>' +
           '<td>'+esc(r.district)+'</td>' +
-          '<td style="font-size:11.5px;color:#6B7280;">'+esc(r.lastPerson || '-')+'</td>' +
+          '<td style="font-size:11.5px;color:#6B7280;">'+esc(r.lastPerson || '-')+(r.changed ? '<br><span style="font-size:10px;color:#1D4ED8;font-weight:700;">official changed</span>' : '')+'</td>' +
           '<td style="text-align:center;font-weight:700;">'+r.count+'</td>' +
           '<td style="text-align:center;color:#6B7280;">'+r.peopleCount+'</td>' +
           '<td style="white-space:nowrap;color:'+dot[r.state]+';font-weight:700;">'+r.days+' days ago</td></tr>';
