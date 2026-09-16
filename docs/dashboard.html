@@ -478,7 +478,7 @@
         <div class="form-row" id="plan-district-row" style="display:none;margin-top:14px;">
           <div class="field full">
             <label>Meeting District <span class="req">*</span>
-              <span style="color:#9CA3AF;font-weight:400;font-size:11px;">Kis district mein meeting hai?</span>
+              <span style="color:#9CA3AF;font-weight:400;font-size:11px;">Which district is this meeting in?</span>
             </label>
             <select id="plan-district">
               <option value="">- Select District -</option>
@@ -526,6 +526,15 @@
           <div class="field">
             <label>Stakeholder Name <span class="req">*</span></label>
             <input type="text" id="adhikariName" placeholder="Enter stakeholder's name">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field full">
+            <label>Stakeholder Block <span style="color:#9CA3AF;font-weight:400">(optional)</span></label>
+            <select id="adhikariBlock">
+              <option value="">Not applicable / district level</option>
+            </select>
+            <div style="font-size:11px;color:#9CA3AF;margin-top:4px;">Fill this for block level officials like ABSA, BEO or ARP, since each block has its own.</div>
           </div>
         </div>
         <div class="form-row">
@@ -2459,11 +2468,32 @@
   }
 
   // ── Dropdowns ────────────────────────────────────────────────
+  var _blocksByDistrict = {};
+  // The block a block-level official sits in. Offered per district, because
+  // every district has its own blocks.
+  function refreshBlockOptions() {
+    var sel = document.getElementById('adhikariBlock');
+    if (!sel) return;
+    var row = document.getElementById('plan-district-row');
+    var d = (row && row.style.display !== 'none') ? (document.getElementById('plan-district') || {}).value : '';
+    if (!d) d = (typeof ACTIVE_DISTRICT !== 'undefined' && ACTIVE_DISTRICT) ? ACTIVE_DISTRICT : (SESSION.district || '');
+    var keep = sel.value;
+    sel.innerHTML = '<option value="">Not applicable / district level</option>';
+    (_blocksByDistrict[d] || []).forEach(function(b) {
+      var o = document.createElement('option'); o.value = b; o.textContent = b; sel.appendChild(o);
+    });
+    if (keep) sel.value = keep;
+  }
+
   function populateDropdowns(data) {
     if (data && data.error === 'ACCESS_REVOKED') {
       forceLogout('Your access has been revoked. Please contact Admin.');
       return;
     }
+    _blocksByDistrict = (data && data.blocksByDistrict) || {};
+    refreshBlockOptions();
+    var pdSel = document.getElementById('plan-district');
+    if (pdSel) pdSel.addEventListener('change', refreshBlockOptions);
     var postSel = document.getElementById('adhikariPost');
     postSel.innerHTML = '<option value="">Select Post</option>';
     (data.stakeholders || []).forEach(function(s) {
@@ -2608,6 +2638,7 @@
       block: SESSION.block, designation: SESSION.designation || SESSION.role,
       meetingDate: date, meetingTime: time, duration: selectedDuration,
       meetingType: selectedMeetingType, adhikariName: aname, adhikariPost: apost,
+      adhikariBlock: v('adhikariBlock'),
       purpose: purpose2, agenda: agenda,
       colleagueName: v('colleagueName'), colleaguePost: v('colleaguePost')
     };
@@ -2721,6 +2752,7 @@
     var di = document.getElementById('meetingDocs'); if (di) di.value = '';
     var dl = document.getElementById('docs-list');   if (dl) dl.innerHTML = '';
     var pd = document.getElementById('plan-district'); if (pd) pd.value = '';
+    var ab = document.getElementById('adhikariBlock'); if (ab) ab.value = '';
   }
 
   // ── Success Modal ────────────────────────────────────────────

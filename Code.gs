@@ -729,7 +729,23 @@ function getDropdownData(email) {
     cache.put('EG_PURPOSES', JSON.stringify(purposes), 600);
   }
 
-  return { stakeholders: stakeholders, purposes: purposes };
+  // Blocks per district, so the plan form can offer the block a block-level
+  // official actually sits in. Taken from the employee master, which is where
+  // the block names are already maintained.
+  var blocksByDistrict = {};
+  try {
+    var em = getEmployeeMaster();
+    ((em && em.employees) || []).forEach(function(e) {
+      var d = (e.district || '').toString().trim();
+      var b = (e.block || '').toString().trim();
+      if (!d || !b) return;
+      var list = blocksByDistrict[d] || (blocksByDistrict[d] = []);
+      if (list.indexOf(b) === -1) list.push(b);
+    });
+    Object.keys(blocksByDistrict).forEach(function(d){ blocksByDistrict[d].sort(); });
+  } catch (be) { blocksByDistrict = {}; }
+
+  return { stakeholders: stakeholders, purposes: purposes, blocksByDistrict: blocksByDistrict };
 }
 
 // ------------------------------------------------------------
@@ -799,6 +815,8 @@ function saveMeeting(data) {
 
     sheet.appendRow(row);
     sheet.getRange(sheet.getLastRow(), 7).setNumberFormat('@'); // keep Meeting Time as text
+    if (!sheet.getRange(1, COL_PLAN_SKBLOCK).getValue()) sheet.getRange(1, COL_PLAN_SKBLOCK).setValue('Stakeholder Block');
+    if (data.adhikariBlock) sheet.getRange(sheet.getLastRow(), COL_PLAN_SKBLOCK).setValue(data.adhikariBlock);
 
     // ── Colleague email notification ──────────────────────────
     if (data.colleagueName && data.colleagueName.trim()) {
@@ -838,6 +856,7 @@ function getMyMeetings(email) {
           type:         (sheetData[i][8]  || '').toString(),  // I
           adhikariName: (sheetData[i][9]  || '').toString(),  // J
           adhikariPost: (sheetData[i][10] || '').toString(),  // K
+          adhikariBlock: (sheetData[i][COL_PLAN_SKBLOCK-1] || '').toString(),  // X
           purpose:      (sheetData[i][11] || '').toString(),  // L
           agenda:       (sheetData[i][12] || '').toString(),  // M
           status:       (sheetData[i][13] || '').toString(),  // N
@@ -1140,6 +1159,17 @@ function conductMeeting(payload) {
     var clr = cSheet.getLastRow();
     cSheet.getRange(clr, 7).setNumberFormat('@');  // G Original Time
     cSheet.getRange(clr, 15).setNumberFormat('@'); // O Conduct Time
+
+    // Carry the official's block over from the plan row rather than trusting
+    // the client to send it back unchanged.
+    try {
+      if (!cSheet.getRange(1, COL_CON_SKBLOCK).getValue()) cSheet.getRange(1, COL_CON_SKBLOCK).setValue('Stakeholder Block');
+      var skBlock = (payload.adhikariBlock || '').toString().trim();
+      if (!skBlock && planSheet && planRowIdx > 0) {
+        skBlock = (planSheet.getRange(planRowIdx + 1, COL_PLAN_SKBLOCK).getValue() || '').toString().trim();
+      }
+      if (skBlock) cSheet.getRange(clr, COL_CON_SKBLOCK).setValue(skBlock);
+    } catch (sbErr) { /* block is optional, never fail the conduct over it */ }
 
     // 5. Update status in Plan Meetings to "Conducted" - NEVER delete, keeps master ledger intact for dashboard reporting
     if (planSheet && planRowIdx > 0) {
@@ -3242,6 +3272,10 @@ function ESC_reset()           { var sh=SpreadsheetApp.openById(SPREADSHEET_ID).
 //  Event id stored in Plan Meetings col W to avoid duplicates.
 // ============================================================
 var COL_CAL_EVENT = 23;   // W in Plan Meetings
+// The block a block-level official sits in. Kept separate from the officer's
+// own block, which is what the sheets already carried and is only a proxy.
+var COL_PLAN_SKBLOCK = 24;   // X in Plan Meetings
+var COL_CON_SKBLOCK  = 31;   // AE in Conducted Meetings
 
 function parseStart_(dateStr, timeStr) {
   var p = (dateStr||'').toString().trim().split(' '); if (p.length < 3) return null;
@@ -3750,7 +3784,7 @@ function getReportData() {
           block: blk(pd[a][4]), employeeName:(pd[a][2]||'').toString(), post:(pd[a][3]||'').toString(),
           status: st, date: fmtDateVal(pd[a][5]), conductDate:'',
           meetingType:(pd[a][8]||'').toString(), stakeholderName:(pd[a][9]||'').toString(),
-          stakeholderPost:(pd[a][10]||'').toString(), purpose:(pd[a][11]||'').toString(),
+          stakeholderPost:(pd[a][10]||'').toString(), stakeholderBlock:(pd[a][COL_PLAN_SKBLOCK-1]||'').toString(), purpose:(pd[a][11]||'').toString(),
           momUrl:'', photoUrl:'', colleagueName:(pd[a][17]||'').toString()
         });
       }
@@ -3767,7 +3801,7 @@ function getReportData() {
           block: blk(cd[b][4]), employeeName:(cd[b][2]||'').toString(), post:(cd[b][3]||'').toString(),
           status:'Conducted', date: fmtDateVal(cd[b][13]), conductDate: fmtDateVal(cd[b][13]),
           meetingType:(cd[b][8]||'').toString(), stakeholderName:(cd[b][9]||'').toString(),
-          stakeholderPost:(cd[b][10]||'').toString(), purpose:(cd[b][11]||'').toString(),
+          stakeholderPost:(cd[b][10]||'').toString(), stakeholderBlock:(cd[b][COL_CON_SKBLOCK-1]||'').toString(), purpose:(cd[b][11]||'').toString(),
           momUrl:(cd[b][17]||'').toString(), photoUrl:(cd[b][16]||'').toString(),
           govtMom:(cd[b][21]||'').toString(),
           priority:(cd[b][22]||'').toString(), flag:(cd[b][23]||'').toString(), nextAction:(cd[b][24]||'').toString(),
@@ -3805,7 +3839,7 @@ function getReportData() {
           block: blk(zd[d][4]), employeeName:(zd[d][2]||'').toString(), post:(zd[d][3]||'').toString(),
           status:'Cancelled', date: fmtDateVal(zd[d][5]), conductDate:'',
           meetingType:(zd[d][8]||'').toString(), stakeholderName:(zd[d][9]||'').toString(),
-          stakeholderPost:(zd[d][10]||'').toString(), purpose:(zd[d][11]||'').toString(),
+          stakeholderPost:(zd[d][10]||'').toString(), stakeholderBlock:(zd[d][COL_PLAN_SKBLOCK-1]||'').toString(), purpose:(zd[d][11]||'').toString(),
           momUrl:'', photoUrl:'', colleagueName:(zd[d][13]||'').toString()
         });
       }

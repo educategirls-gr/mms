@@ -473,6 +473,9 @@
           <select id="rel-district" onchange="renderRelations()">
             <option value="">All Districts</option>
           </select>
+          <select id="rel-block" onchange="renderRelations()">
+            <option value="">All Blocks</option>
+          </select>
           <select id="rel-status" onchange="renderRelations()">
             <option value="">All Offices</option>
             <option value="cold">Gone quiet only</option>
@@ -798,11 +801,15 @@
     return String(s == null ? '' : s).replace(/\(.*?\)/g, ' ')
       .replace(/\b(ias|ips|pcs|sir|mam|madam|maam)\b/gi, ' ').trim();
   }
-  // The name box is free text and sometimes holds a whole list of attendees or
-  // a sentence. Those cannot tell us who holds an office, so leave them out.
+  // The name box is free text. Officers sometimes paste a whole list of
+  // attendees, and sometimes type the post instead of the person, as in
+  // "BEO Sir". Neither tells us who holds an office, so leave them out.
   function relJunkName(s) {
     var t = String(s == null ? '' : s).trim();
-    return t.length > 45 || (t.match(/,/g) || []).length >= 2;
+    if (!t || t.length > 45 || (t.match(/,/g) || []).length >= 2) return true;
+    var bare = relWords(t).join('');
+    if (bare.length < 3) return true;   // 'Sir' collapses to nothing; 'Ram Ji' is a real name
+    return /^(beo|bsa|absa|arp|brc|crc|dm|cdo|dc|dios|dfo|principal|officer|teacher)$/.test(bare);
   }
   // Split a name into its words, minus honorifics and service suffixes.
   function relWords(s) {
@@ -855,11 +862,38 @@
     return out;
   }
 
-  function relBuild(pick) {
-    var now = Date.now(), map = {};
+  // Some posts exist once per district (BSA, DM, CDO) and some exist once per
+  // BLOCK (ABSA, ARP, BEO). Lumping every block's ABSA into one district row
+  // makes each block's officer look like a transfer. Which posts are block
+  // level is read from the data: a post seen against two or more blocks inside
+  // a single district is a block level post.
+  var _relBlockPosts = null;
+  function relBlockLevelPosts() {
+    if (_relBlockPosts) return _relBlockPosts;
+    var seen = {};
+    (_allMeetings || []).forEach(function(m) {
+      if (m.status !== 'Conducted') return;
+      var post = relNorm(m.stakeholderPost), dist = relNorm(m.district);
+      var blk = relNorm(m.stakeholderBlock || m.block);
+      if (!post || !dist || !blk) return;
+      var d = seen[post] || (seen[post] = {});
+      (d[dist] = d[dist] || {})[blk] = 1;
+    });
+    _relBlockPosts = {};
+    Object.keys(seen).forEach(function(post) {
+      var multi = Object.keys(seen[post]).some(function(d){ return Object.keys(seen[post][d]).length >= 2; });
+      if (multi) _relBlockPosts[post] = 1;
+    });
+    return _relBlockPosts;
+  }
+
+  function relBuild(pick, pickBlock) {
+    var now = Date.now(), map = {}, blockPosts = relBlockLevelPosts();
     (_allMeetings || []).forEach(function(m) {
       if (m.status !== 'Conducted') return;
       if (pick && String(m.district || '').trim() !== pick) return;
+      var mBlock = String(m.stakeholderBlock || m.block || '').trim();
+      if (pickBlock && mBlock !== pickBlock) return;
       // Keyed on the POST, not the person. Officers get transferred, but the
       // office carries the relationship: the BSA of a district stays the BSA.
       var post = String(m.stakeholderPost || '').trim();
@@ -868,8 +902,12 @@
       if (!pk) return;
       var ts = relDayTs(m.conductDate || m.date);
       if (!ts) return;
-      var k = relNorm(m.district) + '|' + pk;
+      // Block level posts are one office PER BLOCK, so the block joins the key.
+      var isBlockPost = !!blockPosts[relNorm(post)];
+      var keyBlock = isBlockPost ? relNorm(mBlock) : '';
+      var k = relNorm(m.district) + '|' + pk + (keyBlock ? '|' + keyBlock : '');
       var r = map[k] || (map[k] = { post:(post || person), district:String(m.district||'').trim(),
+                                    block:(isBlockPost ? mBlock : ''), blockLevel:isBlockPost,
                                     lastPerson:'', people:{}, count:0, last:0, first:ts, purpose:'' });
       r.count++;
       // Remember each person and when we last saw them, so a transfer is visible.
@@ -940,13 +978,38 @@
     }).sort(function(a,b){ return b.missingCount - a.missingCount; });
   }
 
+  // Only the blocks that actually appear for the chosen district.
+  function relFillBlocks(pick) {
+    var sel = document.getElementById('rel-block');
+    if (!sel) return;
+    var want = {};
+    (_allMeetings || []).forEach(function(m) {
+      if (m.status !== 'Conducted') return;
+      if (pick && String(m.district || '').trim() !== pick) return;
+      var b = String(m.stakeholderBlock || m.block || '').trim();
+      if (b) want[b] = 1;
+    });
+    var list = Object.keys(want).sort();
+    var sig = pick + '::' + list.join('|');
+    if (sel.getAttribute('data-sig') === sig) return;   // unchanged, keep the selection
+    var keep = sel.value;
+    sel.innerHTML = '<option value="">All Blocks</option>';
+    list.forEach(function(b) {
+      var o = document.createElement('option'); o.value = b; o.textContent = b; sel.appendChild(o);
+    });
+    if (list.indexOf(keep) >= 0) sel.value = keep;
+    sel.setAttribute('data-sig', sig);
+  }
+
   function renderRelations() {
     var kpiEl = document.getElementById('rel-kpi'), tblEl = document.getElementById('rel-table');
     if (!kpiEl || !tblEl) return;
     if (!_allMeetings) { tblEl.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:16px 0;">Loading…</div>'; return; }
     var pick = document.getElementById('rel-district').value;
     var only = document.getElementById('rel-status').value;
-    var all = relBuild(pick);
+    relFillBlocks(pick);
+    var pickBlock = (document.getElementById('rel-block') || {}).value || '';
+    var all = relBuild(pick, pickBlock);
     var cold = all.filter(function(r){ return r.state === 'cold'; });
     var once = all.filter(function(r){ return r.count === 1; });
     var deep = all.filter(function(r){ return r.count >= 3; });
@@ -992,7 +1055,7 @@
         chEl.innerHTML = '<div style="overflow-x:auto;"><table class="rep-table"><thead><tr>' +
           '<th>Office</th><th>District</th><th>Earlier</th><th>Now</th><th>Last Contact</th></tr></thead><tbody>' +
           changed.sort(function(a,b){ return b.days - a.days; }).map(function(r) {
-            return '<tr><td><strong>'+esc(r.post)+'</strong></td>' +
+            return '<tr><td>' + '<strong>'+esc(r.post)+'</strong>'+(r.block?'<br><span style="font-size:10px;color:#6B7280;">'+esc(r.block)+' block</span>':'') + '</td>' +
               '<td>'+esc(r.district)+'</td>' +
               '<td style="font-size:11.5px;color:#9CA3AF;text-decoration:line-through;">'+esc(r.prevPerson || '-')+'</td>' +
               '<td style="font-size:11.5px;font-weight:700;color:#1D4ED8;">'+esc(r.lastPerson || '-')+'</td>' +
@@ -1017,7 +1080,7 @@
         return '<tr>' +
           '<td style="white-space:nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+dot[r.state]+';margin-right:6px;"></span>' +
             '<span style="font-size:11px;color:#6B7280;">'+word[r.state]+'</span></td>' +
-          '<td><strong>'+esc(r.post)+'</strong></td>' +
+          '<td>' + '<strong>'+esc(r.post)+'</strong>'+(r.block?'<br><span style="font-size:10px;color:#6B7280;">'+esc(r.block)+' block</span>':'') + '</td>' +
           '<td>'+esc(r.district)+'</td>' +
           '<td style="font-size:11.5px;color:#6B7280;">'+esc(r.lastPerson || '-')+(r.changed ? '<br><span style="font-size:10px;color:#1D4ED8;font-weight:700;">official changed</span>' : '')+'</td>' +
           '<td style="text-align:center;font-weight:700;">'+r.count+'</td>' +
