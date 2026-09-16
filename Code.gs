@@ -2975,6 +2975,32 @@ function COMMIT_dryRun(limit) {
 //  Counts only, never the text itself, so this can be read and shared
 //  without exposing what was written in any meeting.
 // ------------------------------------------------------------
+// Find rows in Plan Meetings that render as a blank line in Manage Meetings:
+// no id, or an id with the core fields missing. Reads only, writes nothing.
+function PLAN_findBlank() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID), sh = ss.getSheetByName(MEETINGS_SHEET);
+  if (!sh) return { success:false, message:'no plan sheet' };
+  var data = sh.getDataRange().getValues();
+  var bad = [];
+  for (var i = 1; i < data.length; i++) {
+    var id = (data[i][0] || '').toString().trim();
+    var dist = (data[i][1] || '').toString().trim();
+    var email = (data[i][4] || '').toString().trim();
+    var date = (data[i][5] || '').toString().trim();
+    var name = (data[i][9] || '').toString().trim();
+    var status = (data[i][13] || '').toString().trim();
+    var filled = data[i].filter(function(c){ return (c || '').toString().trim(); }).length;
+    if (!id || !dist || !date || !name) {
+      bad.push({ sheetRow:i + 1, id:id || '(none)', district:dist || '(none)',
+                 email:email || '(none)', date:date || '(none)', stakeholder:name || '(none)',
+                 status:status || '(none)', nonEmptyCells:filled });
+    }
+  }
+  var res = { totalRows: data.length - 1, columnsInSheet: data[0].length, suspectRows: bad.length, rows: bad };
+  Logger.log(JSON.stringify(res, null, 2));
+  return res;
+}
+
 function NOTE_quality() {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID), sh = ss.getSheetByName(CONDUCTED_SHEET);
   if (!sh) return { success:false, message:'no conducted sheet' };

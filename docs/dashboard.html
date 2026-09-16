@@ -2677,6 +2677,26 @@
   }
 
   // ── Submit Meeting ───────────────────────────────────────────
+  // Outline whatever is still missing, and clear it as soon as it is filled.
+  // The AM/PM box is the usual one people miss, because the hour and minute
+  // beside it look complete.
+  function markFields(ids) {
+    ['meetingDate','mt-h','mt-m','mt-ap','adhikariPost','adhikariName','meetingPurpose','meetingAgenda']
+      .forEach(function(id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        var bad = ids.indexOf(id) >= 0;
+        el.style.borderColor = bad ? '#DC2626' : '';
+        el.style.background  = bad ? '#FEF2F2' : '';
+        if (bad && !el.dataset.clearBound) {
+          el.dataset.clearBound = '1';
+          var clear = function(){ el.style.borderColor = ''; el.style.background = ''; };
+          el.addEventListener('change', clear);
+          el.addEventListener('input', clear);
+        }
+      });
+  }
+
   function submitMeeting() {
     clearAlerts();
     var date     = v('meetingDate');
@@ -2691,13 +2711,15 @@
     // Name what is missing. "Fill all required fields" sent people hunting,
     // because an unset AM/PM leaves the time blank while the hour and minute
     // sitting next to it look filled in.
-    var missing = [];
-    if (!date)     missing.push('Meeting Date');
-    if (!time)     missing.push('Meeting Time (choose hour, minute and AM/PM)');
-    if (!apost)    missing.push('Stakeholder Post');
-    if (!aname)    missing.push('Stakeholder Name');
-    if (!purpose2) missing.push('Meeting Purpose');
-    if (!agenda)   missing.push('Meeting Agenda');
+    var missing = [], badIds = [];
+    function need(ok, label, ids) { if (!ok) { missing.push(label); badIds = badIds.concat(ids); } }
+    need(date,     'Meeting Date', ['meetingDate']);
+    need(time,     'Meeting Time (choose hour, minute and AM/PM)', ['mt-h','mt-m','mt-ap']);
+    need(apost,    'Stakeholder Post', ['adhikariPost']);
+    need(aname,    'Stakeholder Name', ['adhikariName']);
+    need(purpose2, 'Meeting Purpose', ['meetingPurpose']);
+    need(agenda,   'Meeting Agenda', ['meetingAgenda']);
+    markFields(badIds);
     if (missing.length) { err('Still needed: ' + missing.join(', ')); return; }
     if (agenda.length < 20) { err('Please write a little more in the agenda, at least a short sentence on what you want from this meeting.'); return; }
     // State/Zone pick the meeting's district; District/Field use their active/charge district
