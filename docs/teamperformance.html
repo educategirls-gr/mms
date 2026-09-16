@@ -800,6 +800,7 @@
   // Meeting count says the work happened. This says what it produced. The
   // officer picks it on the conduct form, so nothing here is inferred.
   var OUTCOME_CONCRETE = { Commitment:1, Information:1, Permission:1 };
+  var _outcomeOpen = {};   // which outcome is expanded, per container
   var OUTCOME_LABEL = {
     Commitment:'Commitment obtained', Information:'Information received',
     Permission:'Permission granted',  Courtesy:'Courtesy visit',
@@ -835,18 +836,60 @@
       '</div><div style="display:flex;flex-wrap:wrap;gap:10px;">';
     Object.keys(OUTCOME_LABEL).forEach(function(k) {
       if (!counts[k]) return;
-      html += '<div style="border:1px solid #E5E7EB;border-left:4px solid ' + OUTCOME_COLOR[k] + ';border-radius:8px;padding:8px 14px;min-width:150px;">' +
+      var on = _outcomeOpen[box.id] === k;
+      html += '<div class="oc-tile" data-oc="' + k + '" title="Click to see these meetings" ' +
+        'style="cursor:pointer;border:1px solid ' + (on ? OUTCOME_COLOR[k] : '#E5E7EB') + ';border-left:4px solid ' + OUTCOME_COLOR[k] +
+        ';background:' + (on ? '#F9FAFB' : '#fff') + ';border-radius:8px;padding:8px 14px;min-width:150px;">' +
         '<div style="font-size:20px;font-weight:800;color:' + OUTCOME_COLOR[k] + ';">' + counts[k] + '</div>' +
-        '<div style="font-size:11.5px;color:#6B7280;">' + OUTCOME_LABEL[k] + '</div></div>';
+        '<div style="font-size:11.5px;color:#6B7280;">' + OUTCOME_LABEL[k] + (on ? ' &#9652;' : ' &#9662;') + '</div></div>';
     });
-    html += '</div><div style="font-size:11px;color:#9CA3AF;margin-top:10px;">A courtesy visit is a normal part of the work, not a poor result.</div>';
+    html += '</div><div style="font-size:11px;color:#9CA3AF;margin-top:10px;">A courtesy visit is a normal part of the work, not a poor result. Click any outcome to see those meetings.</div>' +
+      '<div class="oc-detail" style="margin-top:12px;"></div>';
     box.innerHTML = html;
+
+    // A count on its own cannot be acted on. Opening it lists the meetings
+    // behind it, with the MoM so the actual record is one click away.
+    box.querySelectorAll('.oc-tile').forEach(function(t) {
+      t.addEventListener('click', function() {
+        _outcomeOpen[box.id] = (_outcomeOpen[box.id] === t.dataset.oc) ? null : t.dataset.oc;
+        renderOutcomes(box.id, pick);
+      });
+    });
+    var openKey = _outcomeOpen[box.id];
+    if (openKey) {
+      var rows = _allMeetings.filter(function(m) {
+        if (m.status !== 'Conducted') return false;
+        if (pick && String(m.district || '').trim() !== pick) return false;
+        return String(m.outcome || '').trim() === openKey;
+      }).sort(function(a, b){ return relDayTs(b.conductDate || b.date) - relDayTs(a.conductDate || a.date); });
+      var det = box.querySelector('.oc-detail');
+      det.innerHTML =
+        '<div style="font-size:12px;font-weight:700;color:' + OUTCOME_COLOR[openKey] + ';margin-bottom:8px;">' +
+          OUTCOME_LABEL[openKey] + ' (' + rows.length + ')</div>' +
+        '<div style="overflow-x:auto;"><table class="rep-table"><thead><tr>' +
+        '<th>Date</th><th>District</th><th>Officer</th><th>Met With</th><th>Designation</th><th>Purpose</th><th>Record</th>' +
+        '</tr></thead><tbody>' +
+        rows.map(function(m) {
+          var links = [];
+          if (m.momUrl)   links.push('<a href="' + esc(m.momUrl)   + '" target="_blank" rel="noopener" style="color:#1D4ED8;font-weight:600;text-decoration:none;">MoM</a>');
+          if (m.photoUrl) links.push('<a href="' + esc(m.photoUrl) + '" target="_blank" rel="noopener" style="color:#0F766E;font-weight:600;text-decoration:none;">Photos</a>');
+          if (m.govtMom)  links.push('<a href="' + esc(String(m.govtMom).split(/\s*,\s*/)[0]) + '" target="_blank" rel="noopener" style="color:#7B1010;font-weight:600;text-decoration:none;">Govt MoM</a>');
+          return '<tr>' +
+            '<td style="white-space:nowrap;font-size:11.5px;">' + esc(m.conductDate || m.date) + '</td>' +
+            '<td>' + esc(distLabel(m.district)) + (m.stakeholderBlock ? '<br><span style="font-size:10px;color:#9CA3AF;">' + esc(m.stakeholderBlock) + ' block</span>' : '') + '</td>' +
+            '<td style="font-size:11.5px;">' + esc(m.employeeName) + '</td>' +
+            '<td><strong>' + esc(m.stakeholderName) + '</strong></td>' +
+            '<td style="font-size:11px;color:#6B7280;">' + esc(m.stakeholderPost) + '</td>' +
+            '<td style="font-size:11.5px;">' + esc(m.purpose) + '</td>' +
+            '<td style="white-space:nowrap;font-size:11.5px;">' + (links.join(' &nbsp;|&nbsp; ') || '<span style="color:#9CA3AF;">-</span>') + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+    }
   }
   function ensureOutcomes() {
     if (_allMeetings) { renderOutcomes(); return; }
     renderOutcomes();                       // shows the loading line
     snapFetch('data/report.json', withTok(GAS_URL + '?action=getReportData'),
-      function(res){ _allMeetings = (res && res.meetings) ? res.meetings : []; renderOutcomes(); },
+      function(res){ _allMeetings = (res && res.meetings) ? res.meetings : []; renderOutcomes('ov-outcomes'); },
       function(){ var b = document.getElementById('ov-outcomes');
                   if (b) b.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:12px 0;">Could not load outcome data</div>'; });
   }
