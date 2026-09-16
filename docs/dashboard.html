@@ -1232,22 +1232,44 @@
   var _stateCache  = { data: null, ts: 0 };
   var _zoneCache   = { data: null, ts: 0 };
   var _CACHE_TTL   = 120000; // 2 minutes in ms
-  function invalidateFrontCache() { _manageCache.ts = 0; _mymCache.ts = 0; _distCache.ts = 0; _stateCache.ts = 0; _zoneCache.ts = 0; }
+  function invalidateFrontCache() {
+    _manageCache.ts = 0; _mymCache.ts = 0; _distCache.ts = 0; _stateCache.ts = 0; _zoneCache.ts = 0;
+    try { sessionStorage.removeItem('eg_manage_list'); } catch (e) {}
+  }
 
   // ── Manage Meetings ──────────────────────────────────────────
+  // The in-page cache dies on every page load, and going to Analytics and back
+  // is a full load, so the list was fetched from scratch each time. Keep the
+  // last list for this tab and draw it at once, then refresh behind it, so the
+  // meetings are on screen while the request is still in flight.
+  var _MANAGE_KEY = 'eg_manage_list';
+  function readStoredManage() {
+    try { return JSON.parse(sessionStorage.getItem(_MANAGE_KEY) || 'null'); } catch (e) { return null; }
+  }
+  function writeStoredManage(list) {
+    try { sessionStorage.setItem(_MANAGE_KEY, JSON.stringify(list)); } catch (e) {}
+  }
+
   function loadManageMeetings(force) {
     var now = Date.now();
     if (!force && _manageCache.data && (now - _manageCache.ts) < _CACHE_TTL) {
       renderManageMeetings(_manageCache.data);
       return;
     }
-    document.getElementById('manage-content').innerHTML =
-      '<div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>';
+    var stored = force ? null : readStoredManage();
+    if (stored && stored.length) {
+      renderManageMeetings(stored);           // instant, and possibly a little stale
+    } else {
+      document.getElementById('manage-content').innerHTML =
+        '<div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>';
+    }
     gasFetch('getMyMeetings', { email: SESSION.email }, function(list) {
       _manageCache = { data: list, ts: Date.now() };
+      writeStoredManage(list);
       renderManageMeetings(list);
     }, function(e) {
       console.error('getMyMeetings failed:', e);
+      if (stored && stored.length) return;    // already showing something usable
       document.getElementById('manage-content').innerHTML =
         '<div class="empty-state"><p style="color:#DC2626;">Failed to load meetings. Please refresh and try again.<br><small>' + (e ? e.message : '') + '</small></p></div>';
     });

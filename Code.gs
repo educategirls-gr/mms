@@ -853,6 +853,14 @@ function saveMeeting(data) {
 // ------------------------------------------------------------
 function getMyMeetings(email) {
   try {
+    // invalidateUser already clears mymtg_<email> on every write path, so the
+    // cache was wired up long ago and simply never filled in. Reading the whole
+    // plan sheet to pull out one officer's handful of rows is the slow part of
+    // opening Manage Meetings.
+    var _ck = 'mymtg_' + (email || '').trim().toLowerCase();
+    var _hit = cGet(_ck);
+    if (_hit) return _hit;
+
     var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
     var sheet = ss.getSheetByName(MEETINGS_SHEET);
     if (!sheet) return [];
@@ -888,6 +896,7 @@ function getMyMeetings(email) {
         });
       }
     }
+    cPut(_ck, meetings, 600);   // 10 min; every write path clears it anyway
     return meetings;
   } catch (err) {
     return [];
