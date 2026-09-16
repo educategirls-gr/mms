@@ -967,7 +967,9 @@
   // Dileep from Dilip apart from Amit and Ajit. This can: Amit and Ajit have
   // nothing to normalise, so they stay two people.
   function relTranslit(s) {
-    return relWords(s).join('')
+    return relWords(s)
+      .map(function(w){ return w.replace(/(a|e)y$/, 'e'); })   // Pandey, Panday
+      .join('')
       .replace(/ee/g, 'i').replace(/oo/g, 'u')
       .replace(/(.)\1+/g, '$1');
   }
