@@ -210,7 +210,11 @@
 
     /* Action Modal */
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100; }
-    .modal-box { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; border-radius: 14px; width: 480px; max-width: 95vw; box-shadow: 0 8px 32px rgba(0,0,0,0.2); z-index: 101; overflow: hidden; }
+        /* The conduct form grew past one screen, and with overflow hidden and no
+       height limit the Save button sat outside the box with no way to reach it. */
+    .modal-box { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; border-radius: 14px; width: 480px; max-width: 95vw; box-shadow: 0 8px 32px rgba(0,0,0,0.2); z-index: 101; max-height: 90vh; display: flex; flex-direction: column; }
+    .modal-box .modal-header { flex: none; border-radius: 14px 14px 0 0; }
+    .modal-box .modal-body { flex: 1 1 auto; overflow-y: auto; }
     .modal-header { display: flex; justify-content: space-between; align-items: flex-start; padding: 16px 20px; background: #7B1010; color: #fff; }
     .modal-title { font-size: 15px; font-weight: 700; }
     .modal-sub   { font-size: 12px; opacity: 0.75; margin-top: 3px; }
@@ -307,7 +311,8 @@
       .link-row label { min-width: unset; }
 
       /* Modal: full width on mobile */
-      .modal-box { width: 96vw; max-width: 96vw; max-height: 90vh; overflow-y: auto; top: 5vh; transform: translateX(-50%); }
+      /* Same flex layout on small screens: the body scrolls, not the box. */
+      .modal-box { width: 96vw; max-width: 96vw; max-height: 90vh; overflow: visible; top: 5vh; transform: translateX(-50%); }
 
       /* Action option cards: 3 columns stay */
       .aoc-icon  { font-size: 24px; }
