@@ -960,6 +960,22 @@
     var shrt = wa.length < wb.length ? wa : wb, lng = wa.length < wb.length ? wb : wa;
     return shrt.every(function(w){ return lng.indexOf(w) >= 0; });
   }
+  // The same officer written two ways when a Hindi name is put into English:
+  // Akhhilanand and Akkhilanand, Dileep and Dilip, Anoop and Anup. These are
+  // fixed spelling habits, so they can be normalised away outright. An
+  // edit-distance rule was tried for this and removed, because it cannot tell
+  // Dileep from Dilip apart from Amit and Ajit. This can: Amit and Ajit have
+  // nothing to normalise, so they stay two people.
+  function relTranslit(s) {
+    return relWords(s).join('')
+      .replace(/ee/g, 'i').replace(/oo/g, 'u')
+      .replace(/(.)\1+/g, '$1');
+  }
+  function relSameByTranslit(a, b) {
+    var na = relTranslit(a), nb = relTranslit(b);
+    return na.length >= 5 && na === nb;
+  }
+
   // Fold people whose normalised names contain one another.
   function relMergePeople(list) {
     var out = [];
@@ -967,7 +983,7 @@
       var n = relNorm(relStripSuffix(p.name));
       for (var i = 0; i < out.length; i++) {
         var o = relNorm(relStripSuffix(out[i].name));
-        if (n && o && (n.indexOf(o) === 0 || o.indexOf(n) === 0 || relSameByInitials(p.name, out[i].name) || relSameByDroppedMiddle(p.name, out[i].name))) {
+        if (n && o && (n.indexOf(o) === 0 || o.indexOf(n) === 0 || relSameByInitials(p.name, out[i].name) || relSameByDroppedMiddle(p.name, out[i].name) || relSameByTranslit(p.name, out[i].name))) {
           out[i].count += p.count;
           if (p.first < out[i].first) out[i].first = p.first;
           if (p.last > out[i].last) { out[i].last = p.last; out[i].name = p.name; }
