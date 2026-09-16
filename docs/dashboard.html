@@ -2688,7 +2688,17 @@
     var purpose2 = purpose === 'Other' ? v('otherPurpose') : purpose;
     var agenda   = v('meetingAgenda');
     if (!selectedMeetingType) { err('Please select a meeting type.'); return; }
-    if (!date || !time || !aname || !apost || !purpose2 || !agenda) { err('Please fill all required fields.'); return; }
+    // Name what is missing. "Fill all required fields" sent people hunting,
+    // because an unset AM/PM leaves the time blank while the hour and minute
+    // sitting next to it look filled in.
+    var missing = [];
+    if (!date)     missing.push('Meeting Date');
+    if (!time)     missing.push('Meeting Time (choose hour, minute and AM/PM)');
+    if (!apost)    missing.push('Stakeholder Post');
+    if (!aname)    missing.push('Stakeholder Name');
+    if (!purpose2) missing.push('Meeting Purpose');
+    if (!agenda)   missing.push('Meeting Agenda');
+    if (missing.length) { err('Still needed: ' + missing.join(', ')); return; }
     if (agenda.length < 20) { err('Please write a little more in the agenda, at least a short sentence on what you want from this meeting.'); return; }
     // State/Zone pick the meeting's district; District/Field use their active/charge district
     var mtgDistrict = ACTIVE_DISTRICT;
