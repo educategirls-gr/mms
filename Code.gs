@@ -4307,6 +4307,7 @@ function getDashboardStats(email, allDistricts, activeDistrict) {
       // Reverse pass - collect recent 8
       for (var ri = cd.length - 1; ri >= 1 && recent.length < 8; ri--) {
         var rr    = cd[ri];
+        if (!(rr[0] || '').toString().trim()) continue;   // trailing blank rows are not meetings
         var rdist = (rr[1]||'').toString().trim();
         if (!isState && rdist.toUpperCase() !== userDistrict.toUpperCase()) continue;
         recent.push({
