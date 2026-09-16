@@ -496,6 +496,11 @@
         </div>
       </div>
 
+      <div class="card" style="margin-bottom:18px;">
+        <div class="card-title">Meeting Outcomes <span style="font-weight:400;color:#9CA3AF;text-transform:none;letter-spacing:0;font-size:11px;">(reported by the officer, follows the district filter)</span><span class="card-title-line"></span></div>
+        <div id="rel-outcomes"></div>
+      </div>
+
       <div id="rel-kpi" class="kpi-grid" style="margin-bottom:18px;"></div>
 
       <div class="card" style="margin-bottom:18px;">
@@ -804,12 +809,13 @@
     Commitment:'#065F46', Information:'#1D4ED8', Permission:'#0F766E',
     Courtesy:'#92400E',   Awaiting:'#9a5b0e',    Nothing:'#6B7280'
   };
-  function renderOutcomes() {
-    var box = document.getElementById('ov-outcomes');
+  function renderOutcomes(boxId, pick) {
+    var box = document.getElementById(boxId || 'ov-outcomes');
     if (!box) return;
     if (!_allMeetings) { box.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:12px 0;">Loading…</div>'; return; }
     var counts = {}, answered = 0, concrete = 0;
     _allMeetings.forEach(function(m) {
+      if (pick && String(m.district || '').trim() !== pick) return;
       if (m.status !== 'Conducted') return;
       var o = String(m.outcome || '').trim();
       if (!o) return;                       // meetings recorded before the question existed
@@ -1075,6 +1081,7 @@
     if (!_allMeetings) { tblEl.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:16px 0;">Loading…</div>'; return; }
     var pick = document.getElementById('rel-district').value;
     var only = document.getElementById('rel-status').value;
+    renderOutcomes('rel-outcomes', pick);
     relFillBlocks(pick);
     var pickBlock = (document.getElementById('rel-block') || {}).value || '';
     var all = relBuild(pick, pickBlock);
