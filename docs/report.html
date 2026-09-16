@@ -809,6 +809,9 @@
     if (!t || t.length > 45 || (t.match(/,/g) || []).length >= 2) return true;
     var bare = relWords(t).join('');
     if (bare.length < 3) return true;   // 'Sir' collapses to nothing; 'Ram Ji' is a real name
+    // Test entries otherwise sit in the office list for good, and the day a
+    // real official is recorded against that post it reads as a transfer.
+    if (/^(test|testing|demo|sample|dummy|abc|xyz|na|none|nil)[0-9]*$/.test(bare)) return true;
     return /^(beo|bsa|absa|arp|brc|crc|dm|cdo|dc|dios|dfo|principal|officer|teacher)$/.test(bare);
   }
   // Split a name into its words, minus honorifics and service suffixes.
