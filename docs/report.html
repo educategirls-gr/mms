@@ -327,6 +327,12 @@
         <div class="section-label">Key Insights</div>
         <div class="insight-grid" id="ov-insights" style="margin-bottom:20px;"></div>
 
+        <!-- What came out of the meetings, not just how many were held -->
+        <div class="card" style="margin-bottom:18px;">
+          <div class="card-title">Meeting Outcomes <span style="font-weight:400;color:#9CA3AF;text-transform:none;letter-spacing:0;font-size:11px;">(reported by the officer)</span><span class="card-title-line"></span></div>
+          <div id="ov-outcomes"></div>
+        </div>
+
         <!-- Meeting Types (moved above District Performance) -->
         <div class="card" style="margin-bottom:18px;">
           <div class="card-title">Meeting Types<span class="card-title-line"></span></div>
@@ -516,6 +522,9 @@
   var GAS_URL = 'https://script.google.com/macros/s/AKfycbw2JJ5xmZ-zLUolbZJb7eApczsZjsXwzVY6uXpAYO-7h8j9CyNF9y5Upgxji8rD2oJb/exec';
   var PORTAL_VIEW = 'overview'; /* BUILD:VIEW */
   var EG = '#8B1212';
+  // A meeting with no district is a state level one, met by the state team.
+  // Showing an empty cell just looks like missing data.
+  function distLabel(d) { return String(d == null ? '' : d).trim() || 'State'; }
   function esc(s) { return s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
   // Robust JSON fetch - GAS occasionally returns an HTML error page; retry once, then fail gracefully.
@@ -769,7 +778,7 @@
         '</tr></thead><tbody>' +
         rec.map(function(r) {
           return '<tr><td><span style="font-size:11px;font-weight:800;color:'+EG+';">'+r.meetingId+'</span></td>' +
-                 '<td><span style="font-weight:600;">'+r.district+'</span></td>' +
+                 '<td><span style="font-weight:600;">'+esc(distLabel(r.district))+'</span></td>' +
                  '<td>'+r.employeeName+'</td>' +
                  '<td style="font-size:11px;color:#6B7280;">'+r.post+'</td>' +
                  '<td><strong>'+r.stakeholderName+'</strong></td>' +
@@ -778,6 +787,62 @@
                  '<td><span class="badge-type">'+r.meetingType+'</span></td>' +
                  '<td style="white-space:nowrap;font-size:11.5px;">'+r.conductDate+'</td></tr>';
         }).join('') + '</tbody></table>';
+
+    ensureOutcomes();
+  }
+
+  // ── Meeting Outcomes ──────────────────────────────────────────
+  // Meeting count says the work happened. This says what it produced. The
+  // officer picks it on the conduct form, so nothing here is inferred.
+  var OUTCOME_CONCRETE = { Commitment:1, Information:1, Permission:1 };
+  var OUTCOME_LABEL = {
+    Commitment:'Commitment obtained', Information:'Information received',
+    Permission:'Permission granted',  Courtesy:'Courtesy visit',
+    Awaiting:'Awaiting response',     Nothing:'Nothing concrete yet'
+  };
+  var OUTCOME_COLOR = {
+    Commitment:'#065F46', Information:'#1D4ED8', Permission:'#0F766E',
+    Courtesy:'#92400E',   Awaiting:'#9a5b0e',    Nothing:'#6B7280'
+  };
+  function renderOutcomes() {
+    var box = document.getElementById('ov-outcomes');
+    if (!box) return;
+    if (!_allMeetings) { box.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:12px 0;">Loading…</div>'; return; }
+    var counts = {}, answered = 0, concrete = 0;
+    _allMeetings.forEach(function(m) {
+      if (m.status !== 'Conducted') return;
+      var o = String(m.outcome || '').trim();
+      if (!o) return;                       // meetings recorded before the question existed
+      answered++;
+      counts[o] = (counts[o] || 0) + 1;
+      if (OUTCOME_CONCRETE[o]) concrete++;
+    });
+    if (!answered) {
+      box.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:12px 0;">No outcomes recorded yet. The question was added to the conduct form on 16 September, so this fills up as new meetings are conducted.</div>';
+      return;
+    }
+    var rate = Math.round(concrete / answered * 100);
+    var html = '<div class="kpi-grid" style="margin-bottom:14px;">' +
+      '<div class="kpi-card" style="border-top:4px solid #065F46;"><div class="kpi-num" style="color:#065F46;">' + rate + '%</div><div class="kpi-lbl">Produced Something</div></div>' +
+      '<div class="kpi-card" style="border-top:4px solid #1D4ED8;"><div class="kpi-num" style="color:#1D4ED8;">' + concrete + '</div><div class="kpi-lbl">Concrete Outcomes</div></div>' +
+      '<div class="kpi-card" style="border-top:4px solid #6B7280;"><div class="kpi-num" style="color:#6B7280;">' + answered + '</div><div class="kpi-lbl">Meetings Answered</div></div>' +
+      '</div><div style="display:flex;flex-wrap:wrap;gap:10px;">';
+    Object.keys(OUTCOME_LABEL).forEach(function(k) {
+      if (!counts[k]) return;
+      html += '<div style="border:1px solid #E5E7EB;border-left:4px solid ' + OUTCOME_COLOR[k] + ';border-radius:8px;padding:8px 14px;min-width:150px;">' +
+        '<div style="font-size:20px;font-weight:800;color:' + OUTCOME_COLOR[k] + ';">' + counts[k] + '</div>' +
+        '<div style="font-size:11.5px;color:#6B7280;">' + OUTCOME_LABEL[k] + '</div></div>';
+    });
+    html += '</div><div style="font-size:11px;color:#9CA3AF;margin-top:10px;">A courtesy visit is a normal part of the work, not a poor result.</div>';
+    box.innerHTML = html;
+  }
+  function ensureOutcomes() {
+    if (_allMeetings) { renderOutcomes(); return; }
+    renderOutcomes();                       // shows the loading line
+    snapFetch('data/report.json', withTok(GAS_URL + '?action=getReportData'),
+      function(res){ _allMeetings = (res && res.meetings) ? res.meetings : []; renderOutcomes(); },
+      function(){ var b = document.getElementById('ov-outcomes');
+                  if (b) b.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:12px 0;">Could not load outcome data</div>'; });
   }
 
   // ── Relationship Health ───────────────────────────────────────
@@ -1059,7 +1124,7 @@
           '<th>Office</th><th>District</th><th>Earlier</th><th>Now</th><th>Last Contact</th></tr></thead><tbody>' +
           changed.sort(function(a,b){ return b.days - a.days; }).map(function(r) {
             return '<tr><td>' + '<strong>'+esc(r.post)+'</strong>'+(r.block?'<br><span style="font-size:10px;color:#6B7280;">'+esc(r.block)+' block</span>':'') + '</td>' +
-              '<td>'+esc(r.district)+'</td>' +
+              '<td>'+esc(distLabel(r.district))+'</td>' +
               '<td style="font-size:11.5px;color:#9CA3AF;text-decoration:line-through;">'+esc(r.prevPerson || '-')+'</td>' +
               '<td style="font-size:11.5px;font-weight:700;color:#1D4ED8;">'+esc(r.lastPerson || '-')+'</td>' +
               '<td style="white-space:nowrap;color:'+(r.state==='cold'?'#DC2626':'#6B7280')+';font-weight:700;">'+r.days+' days ago</td></tr>';
@@ -1084,7 +1149,7 @@
           '<td style="white-space:nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+dot[r.state]+';margin-right:6px;"></span>' +
             '<span style="font-size:11px;color:#6B7280;">'+word[r.state]+'</span></td>' +
           '<td>' + '<strong>'+esc(r.post)+'</strong>'+(r.block?'<br><span style="font-size:10px;color:#6B7280;">'+esc(r.block)+' block</span>':'') + '</td>' +
-          '<td>'+esc(r.district)+'</td>' +
+          '<td>'+esc(distLabel(r.district))+'</td>' +
           '<td style="font-size:11.5px;color:#6B7280;">'+esc(r.lastPerson || '-')+(r.changed ? '<br><span style="font-size:10px;color:#1D4ED8;font-weight:700;">official changed</span>' : '')+'</td>' +
           '<td style="text-align:center;font-weight:700;">'+r.count+'</td>' +
           '<td style="text-align:center;color:#6B7280;">'+r.peopleCount+'</td>' +
@@ -1744,7 +1809,7 @@
         return '<tr>' +
           '<td style="color:#9CA3AF;">'+(i+1)+'</td>' +
           '<td style="white-space:nowrap;font-size:11.5px;">'+esc(r.conductDate||r.date)+'</td>' +
-          '<td style="font-size:11px;color:#6B7280;">'+esc(r.district)+'</td>' +
+          '<td style="font-size:11px;color:#6B7280;">'+esc(distLabel(r.district))+'</td>' +
           '<td style="font-weight:600;">'+esc(r.employeeName)+'</td>' +
           '<td><strong>'+esc(r.stakeholderName)+'</strong></td>' +
           '<td style="font-size:11px;color:#6B7280;">'+esc(r.stakeholderPost)+'</td>' +
