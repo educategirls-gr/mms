@@ -1066,6 +1066,28 @@ function conductMeeting(payload) {
     var tz  = Session.getScriptTimeZone();
     var now = new Date();
 
+    // A note reused word for word from an earlier meeting tells us nothing
+    // about this one, and no length rule catches it: a pasted template can run
+    // to several hundred characters. Checked here rather than in the browser so
+    // it cannot be skipped. Compares only this officer's own notes.
+    try {
+      var incoming = (payload.keyPoints || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
+      if (incoming.length >= 40) {
+        var cSh = ss.getSheetByName(CONDUCTED_SHEET);
+        if (cSh) {
+          var cdAll = cSh.getDataRange().getValues();
+          var mine = (payload.email || '').toString().trim().toLowerCase();
+          for (var dI = cdAll.length - 1; dI >= 1 && dI > cdAll.length - 200; dI--) {
+            if ((cdAll[dI][4] || '').toString().trim().toLowerCase() !== mine) continue;
+            var prev = (cdAll[dI][15] || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
+            if (prev && prev === incoming) {
+              return { success:false, message:'DUPLICATE_NOTE' };
+            }
+          }
+        }
+      }
+    } catch (dupErr) { /* never block a genuine conduct because this check failed */ }
+
     // 1. Find row in Plan Meetings (we'll delete it after saving)
     var planSheet = ss.getSheetByName(MEETINGS_SHEET);
     var momUrl = '', photoFolderUrl = '';

@@ -552,7 +552,7 @@
         <div class="form-row">
           <div class="field full">
             <label>Meeting Agenda <span class="req">*</span></label>
-            <textarea id="meetingAgenda" placeholder="Briefly describe what will be discussed in this meeting..."></textarea>
+            <textarea id="meetingAgenda" placeholder="What do you want out of this meeting? For example: ask for block-wise enrolment data, get permission for the Shiksha Rath route"></textarea>
             <div style="margin-top:10px;">
               <label style="display:block;margin-bottom:6px;">Meeting Documents <span style="color:#9CA3AF;font-weight:400">(optional)</span>
                 <span style="color:#9CA3AF;font-weight:400;font-size:11px;">PDF / Word / Excel / PPT only - up to 5 files, 5MB each. (Photos go in the Conduct step.)</span>
@@ -665,10 +665,24 @@
           </div>
           <div class="form-row">
             <div class="field full">
-              <label>Key Discussion Points <span class="req">*</span></label>
-              <textarea id="c-keypoints" rows="4" placeholder="• Key discussion points&#10;• List each point separately..."></textarea>
+              <label>1. What was discussed? <span class="req">*</span></label>
+              <textarea id="c-kp-what" rows="2" placeholder="Enrollment progress and KGBV attendance were reviewed"></textarea>
             </div>
           </div>
+          <div class="form-row">
+            <div class="field full">
+              <label>2. What did the official say or agree to? <span class="req">*</span></label>
+              <textarea id="c-kp-said" rows="2" placeholder="BSA agreed to share block-wise enrolment data by 15th"></textarea>
+              <div style="font-size:11px;color:#9CA3AF;margin-top:4px;">This is the most useful line. It is what lets the system remind you of pending commitments later.</div>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="field full">
+              <label>3. What needs to be done next? <span style="color:#9CA3AF;font-weight:400">(optional)</span></label>
+              <textarea id="c-kp-next" rows="2" placeholder="Collect the data and share the summary with the district team"></textarea>
+            </div>
+          </div>
+          <div id="c-kp-hint" style="display:none;font-size:12px;color:#9a5b0e;background:#FEF7ED;border:1px solid #FDE68A;border-radius:8px;padding:8px 12px;margin-bottom:12px;"></div>
           <div class="form-row">
             <div class="field full">
               <label>Meeting Photos <span style="color:#9CA3AF;font-weight:400">(optional)</span>
@@ -1377,7 +1391,11 @@
     document.getElementById('ct-h').value  = '';
     document.getElementById('ct-m').value  = '';
     document.getElementById('ct-ap').value = '';
-    document.getElementById('c-keypoints').value = '';
+    document.getElementById('c-kp-what').value = '';
+    document.getElementById('c-kp-said').value = '';
+    document.getElementById('c-kp-next').value = '';
+    var _kph = document.getElementById('c-kp-hint');
+    if (_kph) { _kph.style.display = 'none'; _kph.dataset.warned = ''; }
     initPhotoBoxes();
     document.getElementById('c-fu-toggle').checked        = false;
     document.getElementById('c-fu-section').style.display = 'none';
@@ -1471,11 +1489,35 @@
   }
 
   // ── Conduct ──────────────────────────────────────────────────
+  // Three small boxes instead of one blank one. They are joined into the same
+  // single field the sheet already stores, with the labels kept, which also
+  // gives the tagging and prep features something structured to read.
+  function buildKeyPoints() {
+    var what = document.getElementById('c-kp-what').value.trim();
+    var said = document.getElementById('c-kp-said').value.trim();
+    var next = document.getElementById('c-kp-next').value.trim();
+    var parts = [];
+    if (what) parts.push('Discussed: ' + what);
+    if (said) parts.push('Official said: ' + said);
+    if (next) parts.push('Next step: ' + next);
+    return { text: parts.join('\n'), what: what, said: said, next: next };
+  }
+
   function submitConduct() {
     var date = document.getElementById('c-date').value;
-    var kp   = document.getElementById('c-keypoints').value.trim();
+    var kpo  = buildKeyPoints();
+    var kp   = kpo.text;
     if (!date) { showModalAlert('conduct', 'Please select a conduct date.'); return; }
-    if (!kp)   { showModalAlert('conduct', 'Please enter key discussion points.'); return; }
+    if (kpo.what.length < 20) { showModalAlert('conduct', 'Please write a little more in question 1, at least a full sentence.'); return; }
+    if (kpo.said.length < 20) { showModalAlert('conduct', 'Please write a little more in question 2. What the official said is the part that matters most.'); return; }
+    // Thin but allowed: say so once and let them decide, rather than blocking.
+    var hint = document.getElementById('c-kp-hint');
+    if (kp.length < 120 && hint && hint.dataset.warned !== '1') {
+      hint.dataset.warned = '1';
+      hint.textContent = 'This is quite short. A line or two more, especially on what the official said, makes the follow-up reminders and the meeting prep far more useful. Press Submit again to save it as it is.';
+      hint.style.display = 'block';
+      return;
+    }
     var followUp = null;
     if (document.getElementById('c-fu-toggle').checked) {
       var fuDate = document.getElementById('c-fu-date').value;
@@ -1528,6 +1570,8 @@
         if (res.photoError) showToast('⚠️ Photo upload failed: ' + res.photoError, 6000);
         showConductSuccess(res.momUrl, res.photoFolderUrl, res.followUpId, followUp);
         loadManageMeetings(true);
+      } else if (res.message === 'DUPLICATE_NOTE') {
+        showModalAlert('conduct', 'This note is word for word the same as one of your earlier meetings. Please write what actually happened in this one.');
       } else { showModalAlert('conduct', res.message || 'An error occurred.'); }
     }, function(e) {
       btn.disabled = false; btn.innerHTML = '💾 Save &amp; Generate MoM';
@@ -2626,6 +2670,7 @@
     var agenda   = v('meetingAgenda');
     if (!selectedMeetingType) { err('Please select a meeting type.'); return; }
     if (!date || !time || !aname || !apost || !purpose2 || !agenda) { err('Please fill all required fields.'); return; }
+    if (agenda.length < 20) { err('Please write a little more in the agenda, at least a short sentence on what you want from this meeting.'); return; }
     // State/Zone pick the meeting's district; District/Field use their active/charge district
     var mtgDistrict = ACTIVE_DISTRICT;
     var _pdRow = document.getElementById('plan-district-row');
