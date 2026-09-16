@@ -346,9 +346,13 @@ function apiResponse(e, method) {
   var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : '';
   var result;
   try {
-    var body = {};
+    var body = {}, bodyBroken = false;
     if (method === 'POST' && e.postData && e.postData.contents) {
-      try { body = JSON.parse(e.postData.contents); } catch(pe) { body = {}; }
+      // A truncated or malformed body used to fall through as {} and the write
+      // went ahead anyway, stamping the session fields onto an otherwise empty
+      // row. Refuse instead: a request that did not arrive must not become a
+      // half meeting in the sheet.
+      try { body = JSON.parse(e.postData.contents); } catch(pe) { body = {}; bodyBroken = true; }
     }
     var token  = (e && e.parameter && e.parameter.token) ? e.parameter.token : '';
     // getDashboardStats / getDistrictReport are public - power the open
@@ -356,7 +360,9 @@ function apiResponse(e, method) {
     var PUBLIC = { sendOTP: 1, verifyOTP: 1, getDashboardStats: 1, getDistrictReport: 1, getReportData: 1, getEmployeeMaster: 1 };
     var ADMIN  = { bulkUpdateEmployeeDB: 1, importFromSource: 1, peekSourceSheet: 1 };
 
-    if (PUBLIC[action]) {
+    if (bodyBroken) {
+      result = { success:false, message:'Your request did not arrive complete. Nothing was saved. Please try again.' };
+    } else if (PUBLIC[action]) {
       // ── No auth required ──────────────────────────────────────
       if      (action === 'sendOTP')           result = sendOTP(e.parameter.email || '');
       else if (action === 'verifyOTP')         result = verifyOTP(e.parameter.email || '', e.parameter.otp || '');
@@ -756,6 +762,18 @@ function saveMeeting(data) {
     // Re-verify employee is still active before saving
     if (!getEmployeeByEmail((data.email || '').trim().toLowerCase())) {
       return { success: false, message: 'ACCESS_REVOKED' };
+    }
+
+    // Second guard, in case a request ever reaches here without its form data.
+    // The identity fields are stamped from the session, so without this a lost
+    // body writes a row carrying only who and when, and no meeting at all.
+    var req = [];
+    if (!(data.meetingDate  || '').toString().trim()) req.push('date');
+    if (!(data.adhikariName || '').toString().trim()) req.push('stakeholder name');
+    if (!(data.adhikariPost || '').toString().trim()) req.push('stakeholder post');
+    if (!(data.purpose      || '').toString().trim()) req.push('purpose');
+    if (req.length) {
+      return { success: false, message: 'Nothing was saved, the meeting details did not arrive (' + req.join(', ') + '). Please try again.' };
     }
 
     var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -2999,6 +3017,29 @@ function PLAN_findBlank() {
   var res = { totalRows: data.length - 1, columnsInSheet: data[0].length, suspectRows: bad.length, rows: bad };
   Logger.log(JSON.stringify(res, null, 2));
   return res;
+}
+
+// Remove the half rows PLAN_findBlank lists: a meeting id and the session
+// fields, but no date and no stakeholder, so nothing was ever really planned.
+// Deletes bottom up so the row numbers stay valid while it works. Run
+// PLAN_findBlank first and read what it found.
+function PLAN_deleteBlank() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID), sh = ss.getSheetByName(MEETINGS_SHEET);
+  if (!sh) return { success:false, message:'no plan sheet' };
+  var data = sh.getDataRange().getValues();
+  var kill = [];
+  for (var i = 1; i < data.length; i++) {
+    if (!(data[i][0] || '').toString().trim()) continue;              // keep truly empty lines alone
+    var date = (data[i][5] || '').toString().trim();
+    var name = (data[i][9] || '').toString().trim();
+    var status = (data[i][13] || '').toString().trim();
+    // Only ever the never-started ones: no date, no stakeholder, still Planned.
+    if (!date && !name && status === 'Planned') kill.push({ row:i + 1, id:data[i][0] });
+  }
+  for (var k = kill.length - 1; k >= 0; k--) sh.deleteRow(kill[k].row);
+  try { cDel('reportData'); } catch(e){}
+  Logger.log('Deleted ' + kill.length + ' half rows: ' + kill.map(function(x){ return x.id; }).join(', '));
+  return { deleted: kill.length, rows: kill };
 }
 
 function NOTE_quality() {
