@@ -2920,6 +2920,64 @@ function COMMIT_dryRun(limit) {
   return res;
 }
 
+// ------------------------------------------------------------
+//  NOTE QUALITY
+//  Counts only, never the text itself, so this can be read and shared
+//  without exposing what was written in any meeting.
+// ------------------------------------------------------------
+function NOTE_quality() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID), sh = ss.getSheetByName(CONDUCTED_SHEET);
+  if (!sh) return { success:false, message:'no conducted sheet' };
+  var data = sh.getDataRange().getValues();
+
+  function bucket(n) {
+    return n === 0 ? '0 empty' : n < 30 ? '1 under 30' : n < 80 ? '2 30 to 79' :
+           n < 200 ? '3 80 to 199' : n < 500 ? '4 200 to 499' : '5 500 plus';
+  }
+  var kp = {}, ag = {}, byOfficer = {}, seen = {}, dupes = 0, dupOfficers = {};
+  var total = 0, kpSum = 0;
+
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    total++;
+    var officer = (data[i][2] || '?').toString().trim();
+    var note = (data[i][15] || '').toString().trim();
+    var agenda = (data[i][12] || '').toString().trim();
+    kp[bucket(note.length)] = (kp[bucket(note.length)] || 0) + 1;
+    ag[bucket(agenda.length)] = (ag[bucket(agenda.length)] || 0) + 1;
+    kpSum += note.length;
+
+    var o = byOfficer[officer] || (byOfficer[officer] = { meetings:0, totalChars:0, thin:0 });
+    o.meetings++; o.totalChars += note.length;
+    if (note.length < 80) o.thin++;
+
+    // the same note text reused across meetings, which a length rule cannot catch
+    if (note.length >= 40) {
+      var k = note.toLowerCase().replace(/\s+/g, ' ').substring(0, 160);
+      if (seen[k]) { dupes++; dupOfficers[officer] = (dupOfficers[officer] || 0) + 1; }
+      else seen[k] = 1;
+    }
+  }
+
+  var officers = Object.keys(byOfficer).map(function(n){
+    var o = byOfficer[n];
+    return { officer:n, meetings:o.meetings, avgChars:Math.round(o.totalChars / o.meetings), thinNotes:o.thin };
+  }).sort(function(a,b){ return a.avgChars - b.avgChars; });
+
+  var res = {
+    conductedMeetings: total,
+    avgKeyPointsChars: total ? Math.round(kpSum / total) : 0,
+    keyPointsLengths: kp,
+    agendaLengths: ag,
+    repeatedNotes: dupes,
+    repeatedNotesByOfficer: dupOfficers,
+    shortestWriters: officers.slice(0, 10),
+    longestWriters: officers.slice(-5).reverse()
+  };
+  Logger.log(JSON.stringify(res, null, 2));
+  return res;
+}
+
 function TAG_showBlocked() {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID), sh = ss.getSheetByName(CONDUCTED_SHEET);
   if (!sh) return { success:false, message:'No conducted sheet' };
