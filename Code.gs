@@ -1191,7 +1191,10 @@ function conductMeeting(payload) {
         skBlock = (planSheet.getRange(planRowIdx + 1, COL_PLAN_SKBLOCK).getValue() || '').toString().trim();
       }
       if (skBlock) cSheet.getRange(clr, COL_CON_SKBLOCK).setValue(skBlock);
-    } catch (sbErr) { /* block is optional, never fail the conduct over it */ }
+      if (!cSheet.getRange(1, COL_CON_OUTCOME).getValue()) cSheet.getRange(1, COL_CON_OUTCOME).setValue('Outcome');
+      var oc = (payload.outcome || '').toString().trim();
+      if (oc) cSheet.getRange(clr, COL_CON_OUTCOME).setValue(oc);
+    } catch (sbErr) { /* both are optional, never fail the conduct over them */ }
 
     // 5. Update status in Plan Meetings to "Conducted" - NEVER delete, keeps master ledger intact for dashboard reporting
     if (planSheet && planRowIdx > 0) {
@@ -2479,6 +2482,27 @@ function getMonthlyReport(session, monthParam) {
     var byPurpose = tally(conducted, 'purpose');
     var byStakeholder = tally(conducted, 'stakeholderPost');
 
+    // ── Outcomes ──
+    // Every report so far counts activity: how many meetings happened. This
+    // counts what came out of them, which is the actual job. The officer picks
+    // the outcome on the conduct form, so this is reported, not inferred.
+    var OUTCOME_CONCRETE = { Commitment:1, Information:1, Permission:1 };
+    var ocCounts = {}, ocAnswered = 0, ocConcrete = 0;
+    conducted.forEach(function(m){
+      var o = (m.outcome || '').toString().trim();
+      if (!o) return;
+      ocAnswered++;
+      ocCounts[o] = (ocCounts[o] || 0) + 1;
+      if (OUTCOME_CONCRETE[o]) ocConcrete++;
+    });
+    var outcomes = {
+      answered: ocAnswered,                    // older meetings predate the question
+      concrete: ocConcrete,
+      rate: pct(ocConcrete, ocAnswered),
+      counts: Object.keys(ocCounts).map(function(k){ return { name:k, count:ocCounts[k] }; })
+                    .sort(function(a,b){ return b.count - a.count; })
+    };
+
     // ── Relationship health ──
     // Government relations is repeat contact, so each official is tracked as an
     // ongoing relationship rather than as a pile of separate meetings. This part
@@ -2581,7 +2605,7 @@ function getMonthlyReport(session, monthParam) {
               pending:pending, govtMom:govtMom },
       breakdown: breakdown,
       byPurpose: byPurpose, byStakeholder: byStakeholder,
-      relationships: relationships,
+      relationships: relationships, outcomes: outcomes,
       zeroAreas: zeroAreas, attention: attention,
       narrative: { ai:false, summary:summary, highlights:highlights, recommendations:recs }
     };
@@ -2738,6 +2762,10 @@ function buildReportPrompt(r) {
   if (b.leaderboard && b.leaderboard.length) L.push('Top districts by conducted: ' + b.leaderboard.slice(0,5).map(function(x){ return x.name + ' ' + x.conducted + ' (' + x.pct + '%)'; }).join(', '));
   if (r.byPurpose && r.byPurpose.length) L.push('Meeting purposes: ' + r.byPurpose.map(function(x){ return x.name + ' ' + x.count; }).join(', '));
   if (r.byStakeholder && r.byStakeholder.length) L.push('Stakeholder types met: ' + r.byStakeholder.map(function(x){ return x.name + ' ' + x.count; }).join(', '));
+  if (r.outcomes && r.outcomes.answered) {
+    var oc = r.outcomes;
+    L.push('Outcomes (reported by the officer, not inferred): ' + oc.concrete + ' of ' + oc.answered + ' meetings produced something concrete (' + oc.rate + '%), broken down as ' + oc.counts.map(function(x){ return x.name + ' ' + x.count; }).join(', '));
+  }
   // counts only, never the officials' names: this prompt leaves the org
   if (r.relationships) {
     var rl = r.relationships;
@@ -3356,6 +3384,10 @@ var COL_CAL_EVENT = 23;   // W in Plan Meetings
 // own block, which is what the sheets already carried and is only a proxy.
 var COL_PLAN_SKBLOCK = 24;   // X in Plan Meetings
 var COL_CON_SKBLOCK  = 31;   // AE in Conducted Meetings
+// What the officer says came out of the meeting. Asked rather than inferred:
+// they were there, and this number will end up judging them, so a model's
+// guess is the wrong thing to build it on.
+var COL_CON_OUTCOME  = 32;   // AF in Conducted Meetings
 
 function parseStart_(dateStr, timeStr) {
   var p = (dateStr||'').toString().trim().split(' '); if (p.length < 3) return null;
@@ -3670,6 +3702,29 @@ function buildReportEmailHtml(rep, recipientName) {
   var focus = (rep.byPurpose&&rep.byPurpose.length || rep.byStakeholder&&rep.byStakeholder.length) ?
     sec(sech('Meeting Focus','Computed','calc')+'<table width="100%" cellpadding="0" cellspacing="0"><tr>'+focusCol('By Purpose',rep.byPurpose)+focusCol('By Stakeholder',rep.byStakeholder)+'</tr></table>') : '';
 
+  // Outcomes: what came out of the meetings, not just how many happened.
+  var oc = rep.outcomes;
+  var ocSec = '';
+  if (oc && oc.answered) {
+    var ocRows = (oc.counts || []).map(function(x){
+      return '<tr style="border-top:1px solid #f0ebe5;"><td style="padding:8px 12px;font-weight:600;">'+_emailEsc(x.name)+'</td>'+
+        '<td align="right" style="padding:8px 12px;font-weight:700;">'+x.count+'</td></tr>';
+    }).join('');
+    ocSec = sec(sech('Meeting Outcomes','Reported','calc')+
+      '<table width="100%" cellpadding="0" cellspacing="0"><tr>'+
+        '<td width="50%" style="padding:0 5px;"><div style="background:#fafafa;border:1px solid #e5e7eb;border-radius:8px;padding:12px 10px;text-align:center;">'+
+          '<div style="font-family:Georgia,serif;font-size:24px;font-weight:700;color:#166534;">'+oc.rate+'%</div>'+
+          '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#6b7280;margin-top:2px;">Produced something</div></div></td>'+
+        '<td width="50%" style="padding:0 5px;"><div style="background:#fafafa;border:1px solid #e5e7eb;border-radius:8px;padding:12px 10px;text-align:center;">'+
+          '<div style="font-family:Georgia,serif;font-size:24px;font-weight:700;color:#1f2937;">'+oc.concrete+' / '+oc.answered+'</div>'+
+          '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#6b7280;margin-top:2px;">Meetings</div></div></td>'+
+      '</tr></table>'+
+      '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px;border:1px solid #e5e7eb;border-radius:8px;margin-top:12px;">'+
+      '<tr style="background:#f7f2ee;color:#6b7280;font-size:11px;text-transform:uppercase;"><th align="left" style="padding:10px 12px;">Outcome</th><th align="right" style="padding:10px 12px;">Meetings</th></tr>'+
+      ocRows+'</table>'+
+      '<div style="font-size:11px;color:#9ca3af;margin-top:8px;">Reported by the officer on the conduct form. A courtesy visit is a normal part of the work, not a poor result.</div>');
+  }
+
   // Relationship health: repeat contact is the actual work, so this reads the
   // whole history of each official rather than this month's meeting count.
   var rel = rep.relationships;
@@ -3737,7 +3792,7 @@ function buildReportEmailHtml(rep, recipientName) {
       '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:8px;">'+
       '<tr>'+tile('Total',k.total,'','Planned in month')+tile('Conducted',k.conducted,'#166534','This month')+tile('Success',k.success+'%','#7B1010','Conducted vs planned')+'</tr>'+
       '<tr>'+tile('Active Staff',k.activeStaff+' / '+k.totalStaff,'',k.participation+'% participation')+tile('Pending',k.pending,'#9a5b0e','Open in month')+tile('Govt MoM',k.govtMom+' / '+k.conducted,'','Official minutes')+'</tr></table>')+
-    perfTable + lb + part + focus + relSec + attention + highlights + recommendations +
+    perfTable + lb + part + focus + ocSec + relSec + attention + highlights + recommendations +
     '<tr><td style="padding:24px 30px 26px;"><div style="border-top:1px solid #e5e7eb;padding-top:14px;font-size:11px;color:#9ca3af;line-height:1.6;">Numbers computed from records; summary and recommendations written by AI. Full analytics portal: https://dataimpact.in/report.html<br>EG-MMS &middot; automated monthly report.</div></td></tr>'+
     '</table></div>';
 }
@@ -3881,7 +3936,7 @@ function getReportData() {
           block: blk(cd[b][4]), employeeName:(cd[b][2]||'').toString(), post:(cd[b][3]||'').toString(),
           status:'Conducted', date: fmtDateVal(cd[b][13]), conductDate: fmtDateVal(cd[b][13]),
           meetingType:(cd[b][8]||'').toString(), stakeholderName:(cd[b][9]||'').toString(),
-          stakeholderPost:(cd[b][10]||'').toString(), stakeholderBlock:(cd[b][COL_CON_SKBLOCK-1]||'').toString(), purpose:(cd[b][11]||'').toString(),
+          stakeholderPost:(cd[b][10]||'').toString(), stakeholderBlock:(cd[b][COL_CON_SKBLOCK-1]||'').toString(), outcome:(cd[b][COL_CON_OUTCOME-1]||'').toString(), purpose:(cd[b][11]||'').toString(),
           momUrl:(cd[b][17]||'').toString(), photoUrl:(cd[b][16]||'').toString(),
           govtMom:(cd[b][21]||'').toString(),
           priority:(cd[b][22]||'').toString(), flag:(cd[b][23]||'').toString(), nextAction:(cd[b][24]||'').toString(),

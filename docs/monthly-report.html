@@ -234,6 +234,24 @@
     html+=sec('Meeting Focus','calc','Computed')+'<div class="two">'+
       focusCard('By Purpose', j.byPurpose)+focusCard('By Stakeholder', j.byStakeholder)+'</div></section>';
 
+    // Outcomes: what came out of the meetings, not just how many happened
+    var oc=j.outcomes;
+    if(oc && oc.answered){
+      html+=sec('Meeting Outcomes','calc','Reported')+
+        '<div class="kpis" style="margin-bottom:12px;">'+
+        '<div class="kpi"><div class="big num" style="color:var(--good)">'+oc.rate+'%</div><div class="lbl">Produced something</div></div>'+
+        '<div class="kpi"><div class="big num">'+oc.concrete+'</div><div class="lbl">Concrete outcomes</div></div>'+
+        '<div class="kpi"><div class="big num">'+oc.answered+'</div><div class="lbl">Meetings answered</div></div>'+
+        '</div>'+
+        '<div class="tbl-wrap"><table><thead><tr><th>Outcome</th><th class="r">Meetings</th></tr></thead><tbody class="num">';
+      (oc.counts||[]).forEach(function(x){
+        html+='<tr><td class="name">'+esc(x.name)+'</td><td class="r">'+x.count+'</td></tr>';
+      });
+      html+='</tbody></table></div>'+
+        '<div style="font-size:11px;color:var(--muted);margin-top:8px;">Reported by the officer on the conduct form. A courtesy visit is a normal part of the work, not a poor result.</div>'+
+        '</section>';
+    }
+
     // Relationship health
     var rel=j.relationships;
     if(rel && rel.totalOffices){

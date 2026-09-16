@@ -682,6 +682,21 @@
               <textarea id="c-kp-next" rows="2" placeholder="Collect the data and share the summary with the district team"></textarea>
             </div>
           </div>
+          <div class="form-row">
+            <div class="field full">
+              <label>4. What came out of this meeting? <span class="req">*</span></label>
+              <select id="c-outcome">
+                <option value="">Select the outcome</option>
+                <option value="Commitment">Commitment obtained, the official agreed to do something</option>
+                <option value="Information">Information or data received</option>
+                <option value="Permission">Permission or approval granted</option>
+                <option value="Courtesy">Introduction or courtesy visit</option>
+                <option value="Awaiting">Issue raised, waiting for their response</option>
+                <option value="Nothing">Nothing concrete yet</option>
+              </select>
+              <div style="font-size:11px;color:#9CA3AF;margin-top:4px;">Answer honestly. A courtesy visit is a normal and useful part of the work, and marking it as one is not a poor result.</div>
+            </div>
+          </div>
           <div id="c-kp-hint" style="display:none;font-size:12px;color:#9a5b0e;background:#FEF7ED;border:1px solid #FDE68A;border-radius:8px;padding:8px 12px;margin-bottom:12px;"></div>
           <div class="form-row">
             <div class="field full">
@@ -1394,6 +1409,7 @@
     document.getElementById('c-kp-what').value = '';
     document.getElementById('c-kp-said').value = '';
     document.getElementById('c-kp-next').value = '';
+    var _oc = document.getElementById('c-outcome'); if (_oc) _oc.value = '';
     var _kph = document.getElementById('c-kp-hint');
     if (_kph) { _kph.style.display = 'none'; _kph.dataset.warned = ''; }
     initPhotoBoxes();
@@ -1510,6 +1526,8 @@
     if (!date) { showModalAlert('conduct', 'Please select a conduct date.'); return; }
     if (kpo.what.length < 20) { showModalAlert('conduct', 'Please write a little more in question 1, at least a full sentence.'); return; }
     if (kpo.said.length < 20) { showModalAlert('conduct', 'Please write a little more in question 2. What the official said is the part that matters most.'); return; }
+    var outcome = document.getElementById('c-outcome').value;
+    if (!outcome) { showModalAlert('conduct', 'Please choose what came out of this meeting.'); return; }
     // Thin but allowed: say so once and let them decide, rather than blocking.
     var hint = document.getElementById('c-kp-hint');
     if (kp.length < 120 && hint && hint.dataset.warned !== '1') {
@@ -1539,18 +1557,18 @@
     var btn = document.getElementById('conduct-submit-btn');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span>' + (allFiles.length ? 'Uploading photos...' : 'Generating MoM...');
-    if (allFiles.length === 0) { doSendConduct(m, date, btn, kp, [], followUp); return; }
+    if (allFiles.length === 0) { doSendConduct(m, date, btn, kp, [], followUp, outcome); return; }
     var photos = [], done = 0;
     allFiles.forEach(function(f) {
       var reader = new FileReader();
       reader.onload = function(e) {
         photos.push({ name: f.name, type: f.type, data: e.target.result.split(',')[1] });
-        if (++done === allFiles.length) doSendConduct(m, date, btn, kp, photos, followUp);
+        if (++done === allFiles.length) doSendConduct(m, date, btn, kp, photos, followUp, outcome);
       };
       reader.readAsDataURL(f);
     });
   }
-  function doSendConduct(m, date, btn, kp, photos, followUp) {
+  function doSendConduct(m, date, btn, kp, photos, followUp, outcome) {
     btn.innerHTML = '<span class="spinner"></span>Generating MoM...';
     var time = getPickerTime('ct-h', 'ct-m', 'ct-ap');
     gasPost('conductMeeting', {
@@ -1561,6 +1579,7 @@
       purpose: m.purpose, agenda: m.agenda,
       colleagueName: m.colleagueName || '', colleaguePost: m.colleaguePost || '',
       conductDate: date, conductTime: time, keyPoints: kp, photos: photos,
+      outcome: outcome || '',
       followUp: followUp || null
     }, function(res) {
       btn.disabled = false; btn.innerHTML = '💾 Save &amp; Generate MoM';
