@@ -117,6 +117,8 @@
     }
     input:focus, select:focus, textarea:focus { border-color: #1F4E79; background: #fff; }
     textarea { resize: vertical; min-height: 68px; }
+    /* The length rule, said out loud under the box instead of only on Submit */
+    .char-note { font-size: 11px; margin-top: 4px; color: #9CA3AF; }
 
     /* Status buttons */
     .status-group { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -567,6 +569,7 @@
           <div class="field full">
             <label>Meeting Agenda <span class="req">*</span></label>
             <textarea id="meetingAgenda" placeholder="What do you want out of this meeting? For example: ask for block-wise enrolment data, get permission for the Shiksha Rath route"></textarea>
+            <div class="char-note" id="cc-meetingAgenda"></div>
             <div style="margin-top:10px;">
               <label style="display:block;margin-bottom:6px;">Meeting Documents <span style="color:#9CA3AF;font-weight:400">(optional)</span>
                 <span style="color:#9CA3AF;font-weight:400;font-size:11px;">PDF / Word / Excel / PPT only - up to 5 files, 5MB each. (Photos go in the Conduct step.)</span>
@@ -691,12 +694,14 @@
             <div class="field full">
               <label>1. What was discussed? <span class="req">*</span></label>
               <textarea id="c-kp-what" rows="2" placeholder="Enrollment progress and KGBV attendance were reviewed"></textarea>
+              <div class="char-note" id="cc-c-kp-what"></div>
             </div>
           </div>
           <div class="form-row">
             <div class="field full">
               <label>2. What did the official say or agree to? <span class="req">*</span></label>
               <textarea id="c-kp-said" rows="2" placeholder="BSA agreed to share block-wise enrolment data by 15th"></textarea>
+              <div class="char-note" id="cc-c-kp-said"></div>
               <div style="font-size:11px;color:#9CA3AF;margin-top:4px;">This is the most useful line. It is what lets the system remind you of pending commitments later.</div>
             </div>
           </div>
@@ -1516,6 +1521,7 @@
     var _kph = document.getElementById('c-kp-hint');
     if (_kph) { _kph.style.display = 'none'; _kph.dataset.warned = ''; }
     restoreConductDraft(m.meetingId);
+    paintAllCharNotes();
     initPhotoBoxes();
     document.getElementById('c-fu-toggle').checked        = false;
     document.getElementById('c-fu-section').style.display = 'none';
@@ -3011,6 +3017,34 @@
     list.innerHTML = names.join('<br>');
   }
 
+  // ── How much to write ────────────────────────────────────────
+  // These fields have a minimum length, and it used to appear only as an error
+  // after Submit. Showing the rule under the box, and the distance still to go,
+  // means nobody writes two words and then has to come back to it.
+  var CHAR_MIN = { 'c-kp-what': 20, 'c-kp-said': 20, 'meetingAgenda': 20 };
+  function paintCharNote(id) {
+    var ta = document.getElementById(id), note = document.getElementById('cc-' + id);
+    if (!ta || !note) return;
+    var n = ta.value.trim().length, min = CHAR_MIN[id];
+    if (n === 0)      { note.textContent = 'At least ' + min + ' characters'; note.style.color = '#9CA3AF'; }
+    else if (n < min) { note.textContent = (min - n) + ' more character' + (min - n === 1 ? '' : 's') + ' needed'; note.style.color = '#B45309'; }
+    else              { note.textContent = n + ' characters, that is enough'; note.style.color = '#166534'; }
+  }
+  function paintAllCharNotes() { for (var id in CHAR_MIN) paintCharNote(id); }
+  function bindCharNotes() {
+    for (var id in CHAR_MIN) {
+      (function(k) {
+        var ta = document.getElementById(k);
+        if (!ta || ta.dataset.ccBound) return;
+        ta.dataset.ccBound = '1';
+        ta.addEventListener('input', function() { paintCharNote(k); });
+      })(id);
+    }
+    paintAllCharNotes();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindCharNotes);
+  else bindCharNotes();
+
   // ── Helpers ──────────────────────────────────────────────────
   // Today as YYYY-MM-DD in the phone's own calendar. toISOString() works in UTC,
   // which between midnight and 5.30am IST still reads as yesterday, and would
@@ -3097,6 +3131,7 @@
     var dl = document.getElementById('docs-list');   if (dl) dl.innerHTML = '';
     var pd = document.getElementById('plan-district'); if (pd) pd.value = '';
     var ab = document.getElementById('adhikariBlock'); if (ab) ab.value = '';
+    paintAllCharNotes();
   }
 
   // ── Success Modal ────────────────────────────────────────────
