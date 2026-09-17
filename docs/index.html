@@ -263,6 +263,9 @@
                onkeydown="if(event.key==='Enter') sendOTP()">
         <p class="hint">Enter your official @educategirls.ngo email address</p>
         <button id="btn-send-otp" class="btn-primary" onclick="sendOTP()">Send OTP</button>
+        <div id="have-code-row" style="display:none;text-align:center;margin-top:14px;">
+          <a onclick="iHaveACode()" style="color:#8B1212;font-weight:600;font-size:13px;cursor:pointer;text-decoration:underline;">The code did arrive, let me enter it</a>
+        </div>
       </div>
 
       <div id="step-otp" style="display:none;">
@@ -366,7 +369,16 @@
           document.getElementById('otp-input').focus();
         } else { showAlert('email', res.message); }
       },
-      function(timedOut) { setLoading('btn-send-otp', false); showAlert('email', gasErrMsg(timedOut)); });
+      function(timedOut) {
+        setLoading('btn-send-otp', false);
+        if (!timedOut) { showAlert('email', gasErrMsg(false)); return; }
+        // Going quiet is not the same as failing. The script may well have run
+        // and sent the code before the answer was lost on the way back, so
+        // point at the inbox rather than only apologising, and offer the way
+        // forward without sending a second code that would replace the first.
+        showAlert('email', 'The server did not answer in time. This is Google\'s side and it passes. Check your inbox first: the code may have been sent anyway.');
+        document.getElementById('have-code-row').style.display = '';
+      });
   }
 
   // The OTP is consumed on the first successful check, so guard against the
@@ -426,11 +438,28 @@
     }, 1000);
   }
 
+  // Used when the send request went quiet: the code may be in the inbox even
+  // though the page never heard back, so let them go straight to entering it.
+  function iHaveACode() {
+    if (!currentEmail) return;
+    hideAlert('email');
+    document.getElementById('have-code-row').style.display = 'none';
+    document.getElementById('otp-sent-msg').textContent = 'Enter the code sent to: ' + currentEmail;
+    showStep('otp');
+    startTimer(600);
+    document.getElementById('otp-input').focus();
+  }
   function showStep(s) {
     document.getElementById('step-email').style.display = s === 'email' ? '' : 'none';
     document.getElementById('step-otp').style.display   = s === 'otp'   ? '' : 'none';
   }
-  function goBack() { clearInterval(timerInterval); document.getElementById('otp-input').value = ''; hideAlert('otp'); showStep('email'); }
+  function goBack() {
+    clearInterval(timerInterval);
+    document.getElementById('otp-input').value = '';
+    hideAlert('otp');
+    document.getElementById('have-code-row').style.display = 'none';
+    showStep('email');
+  }
   function showAlert(s, m) { var el = document.getElementById('alert-' + s); el.textContent = m; el.className = 'alert alert-error show'; }
   function hideAlert(s)    { document.getElementById('alert-' + s).className = 'alert alert-error'; }
   function setLoading(id, on) {
