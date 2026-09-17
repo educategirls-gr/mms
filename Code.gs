@@ -1161,6 +1161,25 @@ function conductMeeting(payload) {
       }
     } catch (dupErr) { /* never block a genuine conduct because this check failed */ }
 
+    // ── Already recorded ──────────────────────────────────────
+    // One meeting, one conducted record. When the front door was slow the
+    // browser gave up, said it had failed and let the officer save again, so
+    // the same meeting landed in the sheet twice and was counted twice in
+    // every report. Checked before the photos are uploaded, so a second
+    // attempt does not leave stray files in Drive either.
+    try {
+      var cDone = ss.getSheetByName(CONDUCTED_SHEET);
+      if (cDone && cDone.getLastRow() > 1) {
+        var doneIds = cDone.getRange(2, 1, cDone.getLastRow() - 1, 1).getValues();
+        var wantId  = (payload.meetingId || '').toString().trim();
+        for (var aI = doneIds.length - 1; aI >= 0; aI--) {
+          if ((doneIds[aI][0] || '').toString().trim() === wantId) {
+            return { success: false, message: 'ALREADY_CONDUCTED' };
+          }
+        }
+      }
+    } catch (acErr) { /* never block a genuine conduct because this check failed */ }
+
     // 1. Find row in Plan Meetings (we'll delete it after saving)
     var planSheet = ss.getSheetByName(MEETINGS_SHEET);
     var momUrl = '', photoFolderUrl = '';

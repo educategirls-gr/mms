@@ -1053,6 +1053,13 @@
       : 'Server error: ' + ((e && e.message) ? e.message : e);
   }
 
+  // Different parts of the page often want the same list at the same moment:
+  // the My Month card and the My Meetings tab both need getAllMyMeetings, and
+  // the background prefetch asks for it again. Each of those was its own round
+  // trip, and the round trip is the slow part, so they all waited longer than
+  // any one of them needed to. Now the first caller does the fetch and anyone
+  // asking for the same url meanwhile is handed the same answer.
+  var _inFlight = {};
   function gasFetch(action, params, onSuccess, onFail) {
     var url = GAS_URL + '?action=' + encodeURIComponent(action);
     if (SESSION && SESSION.token) url += '&token=' + encodeURIComponent(SESSION.token);
@@ -1061,16 +1068,29 @@
         if (params.hasOwnProperty(k)) url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(params[k] != null ? params[k] : '');
       }
     }
+    if (_inFlight[url]) { _inFlight[url].push({ ok: onSuccess, fail: onFail }); return; }
+    _inFlight[url] = [{ ok: onSuccess, fail: onFail }];
+    function settle(good, arg) {
+      var waiting = _inFlight[url] || [];
+      delete _inFlight[url];
+      waiting.forEach(function(w) {
+        if (good) w.ok(arg);
+        else (w.fail || function(e2) { err(gasErrText(e2)); })(arg);
+      });
+    }
     // The Apps Script front door rejects roughly a third of requests with an
     // HTML page instead of running the script, so read failures are retried a
     // couple of times before the user is told anything.
     function attempt(retriesLeft) {
       fetch(url)
         .then(parseGasJson)
-        .then(function(res){ if (res && res.message === 'AUTH_REQUIRED') { logout(); return; } onSuccess(res); })
+        .then(function(res){
+          if (res && res.message === 'AUTH_REQUIRED') { delete _inFlight[url]; logout(); return; }
+          settle(true, res);
+        })
         .catch(function(e){
           if (e && e.serverBusy && retriesLeft > 0) { setTimeout(function(){ attempt(retriesLeft - 1); }, 1200); return; }
-          (onFail || function(e2) { err(gasErrText(e2)); })(e);
+          settle(false, e);
         });
     }
     attempt(2);
@@ -1236,17 +1256,20 @@
       document.getElementById('meetingPurpose').innerHTML = '<option value="">- Error loading -</option>';
     });
 
-    // Prefetch Manage + My Meetings in background so first click is instant
+    // Warm Manage and My Meetings so the first tap is instant. Side by side,
+    // not one after the other: chained, the second list could not start until
+    // the first had come back, which on a slow day meant half a minute before
+    // My Meetings was ready. The My Month card asks for the same list, and the
+    // two requests now collapse into one.
     setTimeout(function() {
       gasFetch('getMyMeetings', { email: SESSION.email }, function(list) {
         _manageCache = { data: list, ts: Date.now() };
-        // Chain: after manage done, prefetch My Meetings
-        gasFetch('getAllMyMeetings', { email: SESSION.email }, function(list2) {
-          _mymCache = { data: list2 || [], ts: Date.now() };
-          _mymAll   = _mymCache.data;
-        }, function(){});
       }, function(){});
-    }, 1500);
+      gasFetch('getAllMyMeetings', { email: SESSION.email }, function(list2) {
+        _mymCache = { data: list2 || [], ts: Date.now() };
+        _mymAll   = _mymCache.data;
+      }, function(){});
+    }, 800);
   };
 
   // ── View navigation ──────────────────────────────────────────
@@ -1306,7 +1329,9 @@
   var _distCache   = { data: null, ts: 0 };
   var _stateCache  = { data: null, ts: 0 };
   var _zoneCache   = { data: null, ts: 0 };
-  var _CACHE_TTL   = 120000; // 2 minutes in ms
+  var _CACHE_TTL   = 600000; // 10 min. Safe to hold this long because every
+                             // save, conduct, postpone, cancel and delete calls
+                             // invalidateFrontCache() below.
   function invalidateFrontCache() {
     _manageCache.ts = 0; _mymCache.ts = 0; _distCache.ts = 0; _stateCache.ts = 0; _zoneCache.ts = 0;
     try { sessionStorage.removeItem('eg_manage_list'); } catch (e) {}
@@ -1816,6 +1841,15 @@
         closeActionModal();
         if (res.photoError) showToast('⚠️ Photo upload failed: ' + res.photoError, 6000);
         showConductSuccess(res.momUrl, res.photoFolderUrl, res.followUpId, followUp);
+        loadManageMeetings(true);
+      } else if (res.message === 'ALREADY_CONDUCTED') {
+        // The earlier save did land, the browser just never heard back. Finish
+        // the way a success finishes, so nobody is left staring at an error
+        // over work that is already in the sheet.
+        clearConductDraft(m.meetingId);
+        invalidateFrontCache();
+        closeActionModal();
+        showToast('This meeting was already recorded, so it was not saved a second time.', 6000);
         loadManageMeetings(true);
       } else if (res.message === 'DUPLICATE_NOTE') {
         showModalAlert('conduct', 'This note is word for word the same as one of your earlier meetings. Please write what actually happened in this one.');
