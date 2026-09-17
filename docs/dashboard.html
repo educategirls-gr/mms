@@ -486,14 +486,16 @@
             <div class="mtc-icon">🌾</div><div class="mtc-name">Field Visit</div>
           </div>
         </div>
-        <!-- District selector - shown only for State / Zone users (choose which district this meeting is for) -->
-        <div class="form-row" id="plan-district-row" style="display:none;margin-top:14px;">
+        <!-- District selector - every role picks which district this meeting is for.
+             Visible from the start (with a loading placeholder) so the form does not
+             shuffle a second or two after login, when the list finally arrives. -->
+        <div class="form-row" id="plan-district-row" style="margin-top:14px;">
           <div class="field full">
             <label>Meeting District <span class="req">*</span>
               <span style="color:#9CA3AF;font-weight:400;font-size:11px;">Which district is this meeting in?</span>
             </label>
             <select id="plan-district">
-              <option value="">- Select District -</option>
+              <option value="">Loading districts...</option>
             </select>
           </div>
         </div>
@@ -1131,22 +1133,42 @@
 
     // Every role can pick the meeting's district (own scope + state-level extras like LUCKNOW),
     // so anyone can file a meeting held in Lucknow even without a district team there.
-    gasFetch('getPlanDistricts', {}, function(list) {
-      if (!list || !list.length) return;
+    // The list is tiny and the server builds it in memory, so the wait is pure
+    // round trip. The last one is kept per user: the field is filled from it at
+    // once, and the server's answer only refreshes it.
+    var _pdKey = 'eg_pdist_' + ((SESSION && SESSION.email) || '');
+    function fillPlanDistricts(list) {
+      if (!list || !list.length) return false;
       _myDistricts = list.slice();   // full district list for this role's scope (used by Zone/State filters)
       var sel = document.getElementById('plan-district');
+      var keep = sel.value;   // whatever they already picked while the list was still loading
+      sel.innerHTML = '<option value="">- Select District -</option>';
       list.forEach(function(d) {
         var o = document.createElement('option'); o.value = d; o.textContent = d; sel.appendChild(o);
       });
-      // Default to the user's active/home district when they have one
-      if (ACTIVE_DISTRICT) {
-        sel.value = ACTIVE_DISTRICT;
-        if (sel.value !== ACTIVE_DISTRICT) {   // not in list → add it and keep it selected
-          var o = document.createElement('option'); o.value = ACTIVE_DISTRICT; o.textContent = ACTIVE_DISTRICT;
-          sel.appendChild(o); sel.value = ACTIVE_DISTRICT;
+      // Their own pick wins; otherwise default to the active/home district
+      var want = keep || ACTIVE_DISTRICT;
+      if (want) {
+        sel.value = want;
+        if (sel.value !== want) {   // not in list → add it and keep it selected
+          var o = document.createElement('option'); o.value = want; o.textContent = want;
+          sel.appendChild(o); sel.value = want;
         }
       }
-      document.getElementById('plan-district-row').style.display = 'flex';
+      refreshBlockOptions();
+      return true;
+    }
+    try {
+      var _pdCached = JSON.parse(localStorage.getItem(_pdKey) || 'null');
+      if (_pdCached && _pdCached.length) fillPlanDistricts(_pdCached);
+    } catch (e) {}
+    gasFetch('getPlanDistricts', {}, function(list) {
+      if (!fillPlanDistricts(list)) return;
+      try { localStorage.setItem(_pdKey, JSON.stringify(list)); } catch (e) {}
+    }, function() {
+      // Front door refused even after the retries: keep the cached list if there
+      // is one, otherwise let them at least plan in their own district.
+      if (!_myDistricts.length && ACTIVE_DISTRICT) fillPlanDistricts([ACTIVE_DISTRICT]);
     });
 
     // Field role: hide "Delete Meeting" - prevents fake-meeting create-then-delete (keeps full audit trail)
