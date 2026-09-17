@@ -309,20 +309,45 @@
   // found" instead of running the script at all. Our code never sees those
   // requests, so nothing has happened yet and one retry is safe: no duplicate
   // OTP is sent and no OTP is consumed. A real JSON reply is never retried.
+  // Apps Script sometimes takes a request and then never answers at all. fetch
+  // has no timeout of its own, so the page sat on "Please wait..." for as long
+  // as anyone was willing to look at it, with nothing to read and nothing to
+  // press. A request that goes quiet is now given up on, and onFail is told
+  // which of the two things went wrong so it can say something useful.
+  //
+  // A silent request is deliberately NOT retried. The script may well be
+  // running, and a second send would put an older code in the inbox that no
+  // longer works, which is the "Invalid OTP" people hit before. An error page,
+  // on the other hand, comes back at once and means the script never ran, so
+  // that one is retried.
+  var GAS_TIMEOUT_MS = 30000;
   function gasGet(url, onJson, onFail) {
     function attempt(retries) {
-      fetch(url).then(function(r){ return r.text(); }).then(function(text){
-        var j = null;
-        try { j = JSON.parse(text); } catch (e) { j = null; }
-        if (j) { onJson(j); return; }
-        if (retries > 0) { setTimeout(function(){ attempt(retries - 1); }, 1500); return; }
-        onFail();
-      }, function(){
-        if (retries > 0) { setTimeout(function(){ attempt(retries - 1); }, 1500); return; }
-        onFail();
-      });
+      var ctrl  = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      var quiet = false;
+      var timer = setTimeout(function(){ quiet = true; if (ctrl) ctrl.abort(); }, GAS_TIMEOUT_MS);
+      fetch(url, ctrl ? { signal: ctrl.signal } : undefined)
+        .then(function(r){ return r.text(); })
+        .then(function(text){
+          clearTimeout(timer);
+          var j = null;
+          try { j = JSON.parse(text); } catch (e) { j = null; }
+          if (j) { onJson(j); return; }
+          if (retries > 0) { setTimeout(function(){ attempt(retries - 1); }, 1500); return; }
+          onFail(false);
+        }, function(){
+          clearTimeout(timer);
+          if (quiet) { onFail(true); return; }
+          if (retries > 0) { setTimeout(function(){ attempt(retries - 1); }, 1500); return; }
+          onFail(false);
+        });
     }
     attempt(2);
+  }
+  function gasErrMsg(timedOut) {
+    return timedOut
+      ? 'The server took too long to answer. This is Google\'s side, not yours, and it passes. Wait a minute and press the button again.'
+      : 'Server is busy. Please try again in a moment.';
   }
 
   function sendOTP() {
@@ -341,7 +366,7 @@
           document.getElementById('otp-input').focus();
         } else { showAlert('email', res.message); }
       },
-      function() { setLoading('btn-send-otp', false); showAlert('email', 'Server is busy. Please try again in a moment.'); });
+      function(timedOut) { setLoading('btn-send-otp', false); showAlert('email', gasErrMsg(timedOut)); });
   }
 
   // The OTP is consumed on the first successful check, so guard against the
@@ -366,7 +391,7 @@
           showAlert('otp', res.message || 'Login failed. Please try again.');
         }
       },
-      function() { _verifying = false; setLoading('btn-verify', false); showAlert('otp', 'Server is busy. Please try again in a moment.'); });
+      function(timedOut) { _verifying = false; setLoading('btn-verify', false); showAlert('otp', gasErrMsg(timedOut)); });
   }
 
   function resendOTP() {
@@ -377,7 +402,7 @@
         if (res.success) { startTimer(600); document.getElementById('otp-input').focus(); }
         else showAlert('otp', res.message);
       },
-      function() { showAlert('otp', 'Server is busy. Please try again in a moment.'); });
+      function(timedOut) { showAlert('otp', gasErrMsg(timedOut)); });
   }
 
   function onOtpInput(el) {
