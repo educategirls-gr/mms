@@ -1798,17 +1798,7 @@
     if (kpo.said.length < 20) { showModalAlert('conduct', 'Please write a little more in question 2. What the official said is the part that matters most.'); return; }
     var outcome = document.getElementById('c-outcome').value;
     if (!outcome) { showModalAlert('conduct', 'Please choose what came out of this meeting.'); return; }
-    // The same check lives on the server, where it can be switched off without
-    // republishing this page. Blocking here as well meant the switch did not
-    // work, so this only warns, once, and lets the second press through.
-    var _fake = noteLooksFake_(kp);
-    var _fh = document.getElementById("c-kp-hint");
-    if (_fake && _fh && _fh.dataset.fakeWarned !== "1") {
-      _fh.dataset.fakeWarned = "1";
-      _fh.textContent = "This does not read like a record of a real meeting, " + _fake + ". Press Submit again if you meant it.";
-      _fh.style.display = "block";
-      return;
-    }
+
     // Thin but allowed: say so once and let them decide, rather than blocking.
     var hint = document.getElementById('c-kp-hint');
     if (kp.length < 120 && hint && hint.dataset.warned !== '1') {

@@ -385,7 +385,7 @@ function isAdmin_(email) {
 // Properties, not the document, so it costs nothing and nobody is locked out.
 //
 //   MAINT_on()   turn it on      MAINT_off()   turn it off
-var MAINT_KEY = 'MAINTENANCE_MODE';
+var MAINT_KEY = 'MAINTENANCE_MODE_2';   // renamed so the old 'on' from the outage cannot linger
 var MAINT_ALLOWED = { sendOTP:1, verifyOTP:1, getPlanDistricts:1, getDropdownData:1 };
 
 function maintOn_() {
@@ -1628,12 +1628,9 @@ function conductMeeting(payload) {
     var tz  = Session.getScriptTimeZone();
     var now = new Date();
 
-    // Checked before a single thing is written. A note that says nothing used
-    // to be saved anyway and the corrected version was then turned away as a
-    // repeat, which is exactly backwards: the placeholder survived and the real
-    // account of the meeting was lost.
-    var fake = noteLooksFake_(payload.keyPoints);
-    if (fake) return { success: false, message: 'POOR_NOTE', reason: fake };
+    // The note quality check was removed on 17 Sep 2026 at Alok's request: it
+    // was refusing real conducts and costing more than it caught. Judging the
+    // notes is back to being a training matter, not the software's job.
 
     // A note reused word for word from an earlier meeting tells us nothing
     // about this one, and no length rule catches it: a pasted template can run
