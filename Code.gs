@@ -17,7 +17,10 @@ var ALLOWED_DOMAIN   = 'educategirls.ngo';
 //  CACHE HELPERS  (GAS CacheService - script-level, 6 hr max)
 // ============================================================
 var C_TTL_EMP    = 1800;  // 30 min - employee data (rarely changes)
-var C_TTL_LIVE   = 90;    // 90 sec - dashboard stats & reports
+var C_TTL_LIVE   = 600;   // 10 min - meeting lists, stats, reports. Safe to
+                          // hold this long because invalidateUser() below clears
+                          // every affected key on save, conduct, postpone,
+                          // cancel, delete and Govt MoM upload.
 var C_TTL_DROP   = 900;   // 15 min - dropdown / colleague lists
 
 function cGet(key) {
@@ -36,13 +39,37 @@ function cDel() {
   var keys = Array.prototype.slice.call(arguments);
   try { CacheService.getScriptCache().removeAll(keys); } catch(e) {}
 }
-function invalidateUser(email) {
-  cDel('emp_' + email,
+function invalidateUser(email, district) {
+  var keys = ['emp_' + email,
        'stats_' + email + '_0', 'stats_' + email + '_1',
        'rep_' + email,
        'mymt_' + email, 'allmymt_' + email,
        'mymtg_' + email, 'planmtg_' + email,
-       'stateMtg_all', 'docUrlMap', 'meetingZoneMap', 'reportData');
+       'stateMtg_all', 'docUrlMap', 'meetingZoneMap', 'reportData'];
+  // The district and zone lists are shared, not one person's. Clearing only the
+  // writer's own keys meant a meeting they had just filed stayed invisible to
+  // their district and zone leads until those caches expired by themselves.
+  // The employee is read before the keys go, so that lookup is still served warm.
+  try {
+    var ds = [];
+    var d0 = (district || '').toString().trim();
+    if (d0) ds.push(d0);
+    var me = getEmployeeByEmail(email);
+    if (me) {
+      if (me.district) ds.push(me.district.toString().trim());
+      (me.districts || []).forEach(function(x) { if (x) ds.push(x.toString().trim()); });
+    }
+    var seen = {};
+    ds.forEach(function(x) {
+      var k = x.toLowerCase();
+      if (!k || seen[k]) return;
+      seen[k] = 1;
+      keys.push('distMtg_' + k);            // matches getDistrictAllMeetings
+      var z = districtToZone_(x);
+      if (z) keys.push('zoneMtg_' + z);     // matches getZoneAllMeetings
+    });
+  } catch (e) { /* the user's own keys are cleared either way */ }
+  cDel.apply(null, keys);
 }
 
 // ------------------------------------------------------------
@@ -854,7 +881,7 @@ function saveMeeting(data) {
       try { sendColleagueNotification(data, mtgId); } catch(mailErr) { /* don't fail save if mail fails */ }
     }
 
-    invalidateUser((data.email || '').trim().toLowerCase());
+    invalidateUser((data.email || '').trim().toLowerCase(), data.district);
     return { success: true, meetingId: mtgId, docUrl: docFolderUrl };
   } catch (err) {
     return { success: false, message: err.message };
@@ -1339,7 +1366,7 @@ function conductMeeting(payload) {
       try { sendMOMNotification(payload, momUrl, photoFolderUrl, followUpId); } catch(mailErr) { /* don't fail conduct if mail fails */ }
     }
 
-    invalidateUser((payload.email || '').trim().toLowerCase());
+    invalidateUser((payload.email || '').trim().toLowerCase(), payload.district);
     return { success: true, momUrl: momUrl, photoFolderUrl: photoFolderUrl, followUpId: followUpId, photoError: photoError };
   } catch(err) {
     return { success: false, message: err.message };

@@ -1334,7 +1334,25 @@
                              // invalidateFrontCache() below.
   function invalidateFrontCache() {
     _manageCache.ts = 0; _mymCache.ts = 0; _distCache.ts = 0; _stateCache.ts = 0; _zoneCache.ts = 0;
-    try { sessionStorage.removeItem('eg_manage_list'); } catch (e) {}
+    try {
+      sessionStorage.removeItem('eg_manage_list');
+      for (var i = sessionStorage.length - 1; i >= 0; i--) {
+        var k = sessionStorage.key(i);
+        if (k && k.indexOf('eg_list_') === 0) sessionStorage.removeItem(k);
+      }
+    } catch (e) {}
+  }
+
+  // The in-page caches die on every page load, and moving between the app and
+  // the analytics pages is a full load, so each list was fetched from scratch
+  // every time. Keep the last one this tab saw, draw it immediately, and let
+  // the request correct it behind. Per tab only: nothing survives closing the
+  // browser, which matters on a shared phone.
+  function storedList(key) {
+    try { return JSON.parse(sessionStorage.getItem('eg_list_' + key) || 'null'); } catch (e) { return null; }
+  }
+  function storeList(key, list) {
+    try { sessionStorage.setItem('eg_list_' + key, JSON.stringify(list || [])); } catch (e) {}
   }
 
   // ── Manage Meetings ──────────────────────────────────────────
@@ -1805,8 +1823,8 @@
     for (var n = 1; n <= 5; n++) {
       var inp = document.getElementById('ph-inp-' + n);
       if (inp && inp.files && inp.files[0]) {
-        if (inp.files[0].size > 3 * 1024 * 1024) {
-          showModalAlert('conduct', 'Photo ' + n + ' exceeds the 3MB size limit. Please compress and retry.'); return;
+        if (inp.files[0].size > 15 * 1024 * 1024) {
+          showModalAlert('conduct', 'Photo ' + n + ' is unusually large. Please take it again at a normal setting.'); return;
         }
         allFiles.push(inp.files[0]);
       }
@@ -1815,18 +1833,63 @@
     var m   = _manageMeetings[MODAL_IDX];
     var btn = document.getElementById('conduct-submit-btn');
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span>' + (allFiles.length ? 'Uploading photos...' : 'Generating MoM...');
+    btn.innerHTML = '<span class="spinner"></span>' + (allFiles.length ? 'Preparing photos...' : 'Generating MoM...');
     if (allFiles.length === 0) { doSendConduct(m, date, btn, kp, [], followUp, outcome); return; }
-    var photos = [], done = 0;
+    var photos = [], shrunk = 0;
     allFiles.forEach(function(f) {
-      var reader = new FileReader();
-      reader.onload = function(e) {
-        photos.push({ name: f.name, type: f.type, data: e.target.result.split(',')[1] });
-        if (++done === allFiles.length) doSendConduct(m, date, btn, kp, photos, followUp, outcome);
-      };
-      reader.readAsDataURL(f);
+      compressPhoto(f, function(p) {
+        if (p && p.data) photos.push(p);
+        if (++shrunk < allFiles.length) return;
+        // Nothing usable came back from any of them: say so rather than filing
+        // the meeting silently without its photos.
+        if (!photos.length) {
+          btn.disabled = false; btn.innerHTML = '&#128190; Save &amp; Generate MoM';
+          showModalAlert('conduct', 'The photos could not be read. Please pick them again.');
+          return;
+        }
+        doSendConduct(m, date, btn, kp, photos, followUp, outcome);
+      });
     });
   }
+  // ── Photos ───────────────────────────────────────────────────
+  // A phone camera photo is three or four megabytes, and base64 adds a third
+  // again on the wire, so five of them was twenty megabytes going up a mobile
+  // connection while the officer stood outside an office watching a spinner.
+  // Resized to 1600px and saved as JPEG they come to roughly a tenth of that,
+  // and nothing in a meeting photo needs more than that. If anything at all
+  // goes wrong the original is sent untouched, because losing the photo would
+  // be far worse than sending a large one.
+  var PHOTO_MAX_PX = 1600, PHOTO_QUALITY = 0.75;
+  function readPhotoRaw(file, done) {
+    var r = new FileReader();
+    r.onload  = function(e) { done({ name: file.name, type: file.type, data: (e.target.result || '').split(',')[1] }); };
+    r.onerror = function() { done(null); };
+    r.readAsDataURL(file);
+  }
+  function compressPhoto(file, done) {
+    if (!file.type || file.type.indexOf('image/') !== 0) { readPhotoRaw(file, done); return; }
+    var url, img = new Image();
+    try { url = URL.createObjectURL(file); } catch (e) { readPhotoRaw(file, done); return; }
+    img.onload = function() {
+      try {
+        var w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+        if (!w || !h) { URL.revokeObjectURL(url); readPhotoRaw(file, done); return; }
+        var scale = Math.min(1, PHOTO_MAX_PX / Math.max(w, h));
+        var cv = document.createElement('canvas');
+        cv.width  = Math.max(1, Math.round(w * scale));
+        cv.height = Math.max(1, Math.round(h * scale));
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        var b64 = (cv.toDataURL('image/jpeg', PHOTO_QUALITY) || '').split(',')[1];
+        URL.revokeObjectURL(url);
+        // Already small, or the canvas gave us something bigger: keep the original.
+        if (!b64 || b64.length >= file.size) { readPhotoRaw(file, done); return; }
+        done({ name: (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg', type: 'image/jpeg', data: b64 });
+      } catch (e) { try { URL.revokeObjectURL(url); } catch (e2) {} readPhotoRaw(file, done); }
+    };
+    img.onerror = function() { try { URL.revokeObjectURL(url); } catch (e2) {} readPhotoRaw(file, done); };
+    img.src = url;
+  }
+
   function doSendConduct(m, date, btn, kp, photos, followUp, outcome) {
     btn.innerHTML = '<span class="spinner"></span>Generating MoM...';
     var time = getPickerTime('ct-h', 'ct-m', 'ct-ap');
@@ -1960,14 +2023,22 @@
       mymRender();
       return;
     }
-    document.getElementById('reports-content').innerHTML =
-      '<div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>';
-    document.getElementById('rep-count').textContent = '';
+    var _myStored = force ? null : storedList('mym');
+    if (_myStored && _myStored.length) {
+      _mymAll = _myStored;
+      mymRender();
+    } else {
+      document.getElementById('reports-content').innerHTML =
+        '<div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>';
+      document.getElementById('rep-count').textContent = '';
+    }
     gasFetch('getAllMyMeetings', { email: SESSION.email }, function(list) {
       _mymCache = { data: list || [], ts: Date.now() };
       _mymAll = _mymCache.data;
+      storeList('mym', _mymAll);
       mymRender();
     }, function() {
+      if (_myStored && _myStored.length) return;   // already showing something usable
       document.getElementById('reports-content').innerHTML =
         '<div class="empty-state"><p style="color:#DC2626;">Failed to load. Please try again.</p></div>';
     });
@@ -2232,14 +2303,23 @@
       dmRender();
       return;
     }
-    document.getElementById('dm-content').innerHTML =
-      '<div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>';
-    document.getElementById('dm-count').textContent = '';
+    var _dmKey = 'dist_' + (ACTIVE_DISTRICT || '').toLowerCase();
+    var _dmStored = force ? null : storedList(_dmKey);
+    if (_dmStored && _dmStored.length) {
+      _dmAll = _dmStored;
+      dmRender();
+    } else {
+      document.getElementById('dm-content').innerHTML =
+        '<div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>';
+      document.getElementById('dm-count').textContent = '';
+    }
     gasFetch('getDistrictAllMeetings', { district: ACTIVE_DISTRICT }, function(list) {
       _distCache = { data: list || [], ts: Date.now() };
       _dmAll = _distCache.data;
+      storeList(_dmKey, _dmAll);
       dmRender();
     }, function() {
+      if (_dmStored && _dmStored.length) return;
       document.getElementById('dm-content').innerHTML =
         '<div class="empty-state"><p style="color:#DC2626;">Failed to load. Please try again.</p></div>';
     });
@@ -2416,15 +2496,24 @@
       smRender();
       return;
     }
-    document.getElementById('sm-content').innerHTML =
-      '<div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>';
-    document.getElementById('sm-count').textContent = '';
+    var _smStored = force ? null : storedList('state');
+    if (_smStored && _smStored.length) {
+      _smAll = _smStored;
+      smBuildDistrictFilter();
+      smRender();
+    } else {
+      document.getElementById('sm-content').innerHTML =
+        '<div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>';
+      document.getElementById('sm-count').textContent = '';
+    }
     gasFetch('getStateAllMeetings', {}, function(list) {
       _stateCache = { data: list || [], ts: Date.now() };
       _smAll = _stateCache.data;
+      storeList('state', _smAll);
       smBuildDistrictFilter();
       smRender();
     }, function() {
+      if (_smStored && _smStored.length) return;
       document.getElementById('sm-content').innerHTML =
         '<div class="empty-state"><p style="color:#DC2626;">Failed to load. Please try again.</p></div>';
     });
@@ -2615,15 +2704,24 @@
       zmRender();
       return;
     }
-    document.getElementById('zm-content').innerHTML =
-      '<div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>';
-    document.getElementById('zm-count').textContent = '';
+    var _zmStored = force ? null : storedList('zone');
+    if (_zmStored && _zmStored.length) {
+      _zmAll = _zmStored;
+      zmBuildDistrictFilter();
+      zmRender();
+    } else {
+      document.getElementById('zm-content').innerHTML =
+        '<div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>';
+      document.getElementById('zm-count').textContent = '';
+    }
     gasFetch('getZoneAllMeetings', {}, function(list) {
       _zoneCache = { data: (list && list.length !== undefined) ? list : [], ts: Date.now() };
       _zmAll = _zoneCache.data;
+      storeList('zone', _zmAll);
       zmBuildDistrictFilter();
       zmRender();
     }, function() {
+      if (_zmStored && _zmStored.length) return;
       document.getElementById('zm-content').innerHTML =
         '<div class="empty-state"><p style="color:#DC2626;">Failed to load. Please try again.</p></div>';
     });
