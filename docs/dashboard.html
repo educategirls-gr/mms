@@ -1590,7 +1590,7 @@
     }
     if (overdue) {
       html += '<div style="font-size:12px;color:#991B1B;margin-top:8px;font-weight:600;">' +
-        overdue + ' meeting' + (overdue > 1 ? 's are' : ' is') + ' past its date below. Marking what happened keeps your record straight.</div>';
+        (overdue > 1 ? overdue + ' meetings are past their date' : 'One meeting is past its date') + ' below. Marking what happened keeps your record straight.</div>';
     }
     box.innerHTML = html;
     card.style.display = '';
