@@ -560,6 +560,42 @@ function setupDriveFolder() {
 // ------------------------------------------------------------
 //  OTP - SEND
 // ------------------------------------------------------------
+// Editor helper: why is no OTP arriving? Three separate things can stop it and
+// they look identical from the login page, so this reports all three at once.
+// Sends nothing. Run LOGIN_debug('alok.mohan@educategirls.ngo').
+function LOGIN_debug(email) {
+  var out = [];
+  email = (email || 'alok.mohan@educategirls.ngo').toString().trim().toLowerCase();
+
+  // 1. Mail quota. Once this hits zero MailApp throws and no code can go out,
+  //    however healthy everything else is. It resets on a rolling 24 hours.
+  var quota = 'could not read';
+  try { quota = MailApp.getRemainingDailyQuota(); } catch (e) { quota = 'ERROR: ' + e.message; }
+  out.push('Mail left today: ' + quota);
+
+  // 2. Is this person still in the employee sheet? sendOTP refuses first if not.
+  var emp = null;
+  try { emp = getEmployeeByEmail(email); } catch (e2) { out.push('employee lookup ERROR: ' + e2.message); }
+  out.push('Employee found: ' + (emp ? (emp.name + '  role ' + emp.role + '  district ' + emp.district) : 'NO - sendOTP would refuse'));
+
+  // 3. What is running on a timer. A job that has started failing every hour is
+  //    the usual reason a script runs out of room to answer anything.
+  try {
+    var ts = ScriptApp.getProjectTriggers();
+    out.push('Triggers installed: ' + ts.length);
+    ts.forEach(function(t) { out.push('     ' + t.getHandlerFunction()); });
+  } catch (e3) { out.push('triggers ERROR: ' + e3.message); }
+
+  // 4. Is a code already sitting in the cache for this person, unused?
+  try {
+    var held = CacheService.getScriptCache().get('OTP_' + email);
+    out.push('Code waiting in cache: ' + (held ? 'yes, and it is still valid' : 'no'));
+  } catch (e4) { out.push('cache ERROR: ' + e4.message); }
+
+  Logger.log(out.join(String.fromCharCode(10)));
+  return out.join(' | ');
+}
+
 function sendOTP(email) {
   email = email.trim().toLowerCase();
 
@@ -3801,7 +3837,13 @@ function syncCalendarEvents(mode, limit) {
   Logger.log('Calendar events created: ' + done); Logger.log(out.join('\n'));
   return { success:true, mode:mode, created:done, details:out };
 }
-function calendarJob() { return syncCalendarEvents('live', 30); }
+function calendarJob() {
+  // Keeps the sign-in copy of the employee master current, so a Sheets outage
+  // can never stop anyone logging in. Wrapped, because refreshing the copy is
+  // not worth failing the calendar sync over.
+  try { EMP_refreshMirror(); } catch (e) {}
+  return syncCalendarEvents('live', 30);
+}
 function installCalendarTrigger() {
   ScriptApp.getProjectTriggers().forEach(function(t){ if (t.getHandlerFunction()==='calendarJob') ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('calendarJob').timeBased().everyHours(1).create();
@@ -4785,53 +4827,125 @@ function insertSampleData() {
   Logger.log('✅ Sample data inserted: ' + planRows.length + ' planned, ' + condRows.length + ' conducted, ' + cancRows.length + ' cancelled.');
 }
 
-function getEmployeeByEmail(email) {
-  var key = 'emp_' + email;
-  var hit = cGet(key);
-  if (hit !== null) return hit;   // null-employee cached as JSON null → re-fetch only on miss
+// ── Employee master, with a copy that does not depend on Sheets ──────────
+// Signing in has to know who you are, which meant opening the employee sheet.
+// On the evening of 17 Sep 2026 the Sheets service began timing out on this
+// document, every OTP request hung for its full six minutes, and nobody could
+// sign in at all. A trimmed copy of the master now lives in Script Properties,
+// which has nothing to do with Sheets, and the sign-in path reads that. The
+// Sheet is opened only to refresh the copy: hourly from calendarJob, and on
+// demand from EMP_refreshMirror(). Run that after adding or changing anyone.
+var EMP_MIRROR_N     = 'EMP_MIRROR_N';
+var EMP_MIRROR_AT    = 'EMP_MIRROR_AT';
+var EMP_MIRROR_CHUNK = 8000;            // Script Properties hold 9KB per value
 
-  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var sheet = ss.getSheetByName(EMPLOYEE_SHEET);
-  if (!sheet) return null;
+function empMirrorWrite_(map) {
+  try {
+    var s = JSON.stringify(map), out = {}, parts = 0;
+    for (var i = 0; i < s.length; i += EMP_MIRROR_CHUNK) {
+      out['EMP_MIRROR_' + parts] = s.slice(i, i + EMP_MIRROR_CHUNK);
+      parts++;
+    }
+    out[EMP_MIRROR_N]  = String(parts);
+    out[EMP_MIRROR_AT] = new Date().toISOString();
+    PropertiesService.getScriptProperties().setProperties(out);
+    return parts;
+  } catch (e) { return 0; }
+}
 
-  var data = sheet.getDataRange().getValues();
-  // Columns: District(0), Block(1), Employee Name(2), Designation(3), Email(4), Role(5)
-  var result = null;
-  for (var i = 1; i < data.length; i++) {
-    var rowEmail = data[i][4] ? data[i][4].toString().trim().toLowerCase() : '';
-    if (rowEmail === email) {
+function empMirrorRead_() {
+  try {
+    var all = PropertiesService.getScriptProperties().getProperties();
+    var n = parseInt(all[EMP_MIRROR_N], 10);
+    if (!n) return null;
+    var s = '';
+    for (var i = 0; i < n; i++) {
+      if (all['EMP_MIRROR_' + i] == null) return null;   // a half written copy is no copy
+      s += all['EMP_MIRROR_' + i];
+    }
+    return JSON.parse(s);
+  } catch (e) { return null; }
+}
+
+// The one place that opens the employee sheet. Returns null when Sheets will not
+// answer, so callers can fall back instead of treating an outage as "no staff".
+function empReadFromSheet_() {
+  try {
+    var sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(EMPLOYEE_SHEET);
+    if (!sheet) return null;
+    var data = sheet.getDataRange().getValues(), map = {};
+    for (var i = 1; i < data.length; i++) {
+      var em = data[i][4] ? data[i][4].toString().trim().toLowerCase() : '';
+      if (!em) continue;
       var primaryDist = (data[i][0] || '').toString().trim();
-      // Col H (index 7) = "Additional Districts" - extra charge, comma/semicolon separated.
-      // districts[] = primary + any extras (deduped, case-insensitive). Empty col H → single district.
+      // Col H = "Additional Districts", extra charge, comma or semicolon separated
       var districts = [primaryDist];
       (data[i][7] || '').toString().split(/[,;]/).forEach(function(x) {
         var d = x.toString().trim();
-        if (d && districts.map(function(z){ return z.toLowerCase(); }).indexOf(d.toLowerCase()) === -1) {
-          districts.push(d);
-        }
+        if (d && districts.map(function(z){ return z.toLowerCase(); }).indexOf(d.toLowerCase()) === -1) districts.push(d);
       });
-      result = {
+      map[em] = {
         district:    primaryDist,
-        districts:   districts,               // all districts this user has charge of
+        districts:   districts,
         block:       (data[i][1] || '').toString().trim(),
         name:        (data[i][2] || '').toString().trim(),
         designation: (data[i][3] || '').toString().trim(),
         email:       (data[i][4] || '').toString().trim(),
         role:        normalizeRole_(data[i][5]),
-        zone:        (data[i][6] || '').toString().trim()  // G = Zone
+        zone:        (data[i][6] || '').toString().trim()
       };
-      break;
     }
-  }
-  cPut(key, result, C_TTL_EMP);
-  return result;
+    return map;
+  } catch (e) { return null; }
 }
 
-// ------------------------------------------------------------
-//  BULK UPDATE EMPLOYEE_DB - POST action: bulkUpdateEmployeeDB
-//  Accepts { rows: [[District,Block,Name,Designation,Email,Role], ...] }
-//  Clears existing data (except header) and writes new rows
-// ------------------------------------------------------------
+// Editor helper: take a fresh copy of the employee master. One attempt only,
+// because a Sheets timeout eats the whole six minutes an execution is allowed.
+// If it says the service will not answer, just run it again in a minute.
+function EMP_refreshMirror() {
+  var map = empReadFromSheet_();
+  if (!map) {
+    Logger.log('Could not read the employee sheet - the Sheets service is not answering. Run this again in a minute.');
+    return 0;
+  }
+  var people = 0;
+  for (var k in map) people++;
+  var chunks = empMirrorWrite_(map);
+  Logger.log('Employee copy refreshed: ' + people + ' people, ' + chunks + ' chunk(s). Sign-in no longer needs the Sheet.');
+  return people;
+}
+
+function EMP_mirrorStatus() {
+  var all = PropertiesService.getScriptProperties().getProperties();
+  var m = empMirrorRead_();
+  var n = 0; for (var k in (m || {})) n++;
+  Logger.log('Copy taken at: ' + (all[EMP_MIRROR_AT] || 'never') + String.fromCharCode(10) + 'People in the copy: ' + n);
+  return n;
+}
+
+function getEmployeeByEmail(email) {
+  email = (email || '').toString().trim().toLowerCase();
+  if (!email) return null;
+  var key = 'emp_' + email;
+  var hit = cGet(key);
+  if (hit !== null) return hit;   // null-employee cached as JSON null
+
+  // The copy first. A Sheets outage must not be able to stop anyone signing in.
+  var mirror = empMirrorRead_();
+  if (mirror && Object.prototype.hasOwnProperty.call(mirror, email)) {
+    cPut(key, mirror[email], C_TTL_EMP);
+    return mirror[email];
+  }
+
+  // Not in the copy, so this is someone new: the Sheet is the only answer.
+  var map = empReadFromSheet_();
+  if (!map) return null;
+  empMirrorWrite_(map);
+  var res = map[email] || null;
+  cPut(key, res, C_TTL_EMP);
+  return res;
+}
+
 function bulkUpdateEmployeeDB(rows) {
   try {
     var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
