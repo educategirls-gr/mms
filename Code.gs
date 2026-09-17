@@ -1133,11 +1133,52 @@ function getRootMeetingsFolder() {
 // ------------------------------------------------------------
 //  CONDUCT MEETING - saves to Conducted sheet, Drive, MoM
 // ------------------------------------------------------------
+// Does this read like a record of a real meeting, or like someone filling the
+// box to get past it? Deterministic on purpose: it runs before anything is
+// written, and before the browser sends anything at all, so a poor note costs
+// nobody a round trip and, above all, never reaches the sheet. Returns '' when
+// the note is fine, or a short reason when it is not.
+var NOTE_PLACEHOLDERS = {
+  test:1, testing:1, tests:1, abc:1, xyz:1, asdf:1, qwerty:1, sample:1, dummy:1,
+  na:1, none:1, nil:1, nothing:1, ok:1, okay:1, done:1, yes:1, no:1, good:1,
+  check:1, checking:1, demo:1, blah:1, kuch:1, nahi:1, koi:1
+};
+function noteLooksFake_(text) {
+  var t = (text || '').toString().toLowerCase();
+  // The form's own labels are not the officer's words
+  t = t.replace(/discussed:/g, ' ').replace(/official said:/g, ' ').replace(/next step:/g, ' ');
+  var words = t.split(/\s+/)
+    .map(function(w) { return w.replace(/[.,;:!?()\[\]'"\/\_-]+/g, ''); })
+    .filter(function(w) { return w.length > 1; });
+  if (words.length < 4) return 'it is only a few words';
+
+  var count = {}, uniq = 0, top = 0;
+  words.forEach(function(w) {
+    if (!count[w]) { count[w] = 0; uniq++; }
+    count[w]++;
+    if (count[w] > top) top = count[w];
+  });
+  if (uniq < 4) return 'it is the same few words over and over';
+  if (top >= 4 && (top / words.length) > 0.45) return 'one word is repeated over and over';
+
+  var real = 0;
+  for (var w2 in count) { if (!NOTE_PLACEHOLDERS[w2]) real++; }
+  if (real < 3) return 'it is filler words rather than what happened';
+  return '';
+}
+
 function conductMeeting(payload) {
   try {
     var ss  = SpreadsheetApp.openById(SPREADSHEET_ID);
     var tz  = Session.getScriptTimeZone();
     var now = new Date();
+
+    // Checked before a single thing is written. A note that says nothing used
+    // to be saved anyway and the corrected version was then turned away as a
+    // repeat, which is exactly backwards: the placeholder survived and the real
+    // account of the meeting was lost.
+    var fake = noteLooksFake_(payload.keyPoints);
+    if (fake) return { success: false, message: 'POOR_NOTE', reason: fake };
 
     // A note reused word for word from an earlier meeting tells us nothing
     // about this one, and no length rule catches it: a pasted template can run
