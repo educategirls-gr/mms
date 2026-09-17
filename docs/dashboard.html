@@ -672,7 +672,9 @@
           <div class="form-section-label" style="margin-bottom:12px;color:#166534;">✅ Conduct Details</div>
           <div class="form-row">
             <div class="field">
-              <label>Conduct Date <span class="req">*</span></label>
+              <label>Conduct Date <span class="req">*</span>
+                <span style="color:#9CA3AF;font-weight:400;font-size:11px;">the day it actually happened</span>
+              </label>
               <input type="date" id="c-date">
             </div>
             <div class="field">
@@ -1220,7 +1222,7 @@
       document.getElementById('p-block-row').style.display = 'flex';
     }
 
-    var today = new Date().toISOString().split('T')[0];
+    var today = dayStr();
     document.getElementById('meetingDate').value = today;
     document.getElementById('meetingDate').min   = today;
 
@@ -1496,9 +1498,14 @@
     document.getElementById('modal-mtg-title').textContent = m.adhikariName;
     document.getElementById('modal-mtg-sub').textContent   = 'Date: ' + m.date + (m.meetingTime ? '  ' + m.meetingTime : '') + ' | ' + m.meetingId;
     setModalPhase('options');
-    var today = new Date().toISOString().split('T')[0];
-    document.getElementById('c-date').value    = today;
-    document.getElementById('c-date').readOnly = true;
+    // Today by default, because most meetings are filed the day they happen,
+    // but editable: plenty are filed a day or two later and the record should
+    // carry the day the meeting actually took place. Never a future date.
+    var today = dayStr();
+    var _cd = document.getElementById('c-date');
+    _cd.value    = today;
+    _cd.readOnly = false;
+    _cd.max      = today;
     document.getElementById('ct-h').value  = '';
     document.getElementById('ct-m').value  = '';
     document.getElementById('ct-ap').value = '';
@@ -1520,7 +1527,7 @@
     var mpTs = toTs(mp.date);
     if (mpTs) {
       var minD = new Date(mpTs); minD.setDate(minD.getDate() + 1);
-      document.getElementById('p-newdate').min = minD.toISOString().split('T')[0];
+      document.getElementById('p-newdate').min = dayStr(minD);
     }
     document.getElementById('p-newdate').value = '';
     document.getElementById('p-reason').value  = '';
@@ -1596,8 +1603,8 @@
     sec.style.display = cb.checked ? '' : 'none';
     if (cb.checked) {
       var tom = new Date(); tom.setDate(tom.getDate() + 1);
-      document.getElementById('c-fu-date').min   = tom.toISOString().split('T')[0];
-      document.getElementById('c-fu-date').value = tom.toISOString().split('T')[0];
+      document.getElementById('c-fu-date').min   = dayStr(tom);
+      document.getElementById('c-fu-date').value = dayStr(tom);
     }
   }
 
@@ -1737,6 +1744,7 @@
     var kpo  = buildKeyPoints();
     var kp   = kpo.text;
     if (!date) { showModalAlert('conduct', 'Please select a conduct date.'); return; }
+    if (date > dayStr()) { showModalAlert('conduct', 'A meeting cannot be conducted on a future date. Please pick the day it actually happened.'); return; }
     if (kpo.what.length < 20) { showModalAlert('conduct', 'Please write a little more in question 1, at least a full sentence.'); return; }
     if (kpo.said.length < 20) { showModalAlert('conduct', 'Please write a little more in question 2. What the official said is the part that matters most.'); return; }
     var outcome = document.getElementById('c-outcome').value;
@@ -3004,6 +3012,13 @@
   }
 
   // ── Helpers ──────────────────────────────────────────────────
+  // Today as YYYY-MM-DD in the phone's own calendar. toISOString() works in UTC,
+  // which between midnight and 5.30am IST still reads as yesterday, and would
+  // date a meeting a day early for anyone filing late at night.
+  function dayStr(d) {
+    d = d || new Date();
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
   function v(id)  { var el = document.getElementById(id); return el ? el.value.trim() : ''; }
   function esc(s) { return s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;') : ''; }
 
@@ -3071,7 +3086,7 @@
     selectedDuration    = '';
     document.querySelectorAll('.mtg-type-card').forEach(function(c) { c.classList.remove('selected'); });
     document.querySelectorAll('.dur-btn').forEach(function(b) { b.classList.remove('selected'); });
-    var today = new Date().toISOString().split('T')[0];
+    var today = dayStr();
     document.getElementById('meetingDate').value = today;
     document.getElementById('meetingDate').min   = today;
     document.getElementById('row-other-post').style.display    = 'none';
