@@ -611,6 +611,13 @@
 
     <!-- View: Manage Meetings -->
     <div id="view-manage" class="view">
+      <!-- The officer's own month. Leadership can see all of this; the person
+           doing the work could not see any of it. -->
+      <div class="card" id="my-month-card" style="display:none;margin-bottom:14px;">
+        <div class="card-title" style="background:#1F4E79;">📈 My Month</div>
+        <div id="my-month" style="padding:14px 16px;"></div>
+      </div>
+
       <div class="card">
         <div class="card-title" style="background:#B45309;">⚙️ Manage Meetings</div>
         <div id="manage-content">
@@ -1346,6 +1353,7 @@
     });
     html += '</tbody></table></div>';
     document.getElementById('manage-content').innerHTML = html;
+    ensureMyMonth();
     document.getElementById('manage-content').addEventListener('click', function(e) {
       var prep = e.target.closest('.btn-prep');
       if (prep) { openPrepModal(parseInt(prep.dataset.idx)); return; }
@@ -1539,6 +1547,63 @@
   }
 
   // ── Conduct ──────────────────────────────────────────────────
+  // ── My Month ─────────────────────────────────────────────────
+  // Leadership can see all of this in the reports and the portal. The officer
+  // doing the work could see none of it. No comparison with anyone else, on
+  // purpose: this is their own mirror, not a league table.
+  var _OUTCOME_DONE = { Commitment:1, Information:1, Permission:1 };
+  function renderMyMonth(all) {
+    var card = document.getElementById('my-month-card');
+    var box  = document.getElementById('my-month');
+    if (!card || !box) return;
+    var now = new Date();
+    var mk = _MON_NAMES[now.getMonth()] + ' ' + now.getFullYear();
+    function inThisMonth(d) {
+      var p = String(d || '').trim().split(' ');
+      return p.length === 3 && (p[1] + ' ' + p[2]) === mk;
+    }
+    var conducted = (all || []).filter(function(m){
+      return m.status === 'Conducted' && inThisMonth(m.conductDate || m.date);
+    });
+    var answered = conducted.filter(function(m){ return String(m.outcome || '').trim(); });
+    var produced = answered.filter(function(m){ return _OUTCOME_DONE[String(m.outcome).trim()]; });
+    var overdue  = _manageMeetings.filter(function(m){
+      var ts = toTs(m.date); var t0 = new Date(); t0.setHours(0,0,0,0);
+      return ts && ts < t0.getTime();
+    }).length;
+
+    if (!conducted.length && !overdue) { card.style.display = 'none'; return; }
+
+    function tile(n, l, c) {
+      return '<div style="flex:1;min-width:120px;border-left:4px solid ' + c + ';background:#F9FAFB;border-radius:8px;padding:10px 14px;">' +
+             '<div style="font-size:22px;font-weight:800;color:' + c + ';">' + n + '</div>' +
+             '<div style="font-size:11.5px;color:#6B7280;">' + l + '</div></div>';
+    }
+    var html = '<div style="display:flex;flex-wrap:wrap;gap:10px;">' +
+      tile(conducted.length, 'Meetings this month', '#1F4E79') +
+      tile(produced.length,  'Produced something',  '#166534') +
+      (overdue ? tile(overdue, 'Past their date', '#991B1B') : '') +
+      '</div>';
+    if (answered.length && produced.length < answered.length) {
+      html += '<div style="font-size:12px;color:#6B7280;margin-top:10px;">' +
+        produced.length + ' of ' + answered.length + ' meetings you recorded an outcome for produced something concrete. A courtesy visit is a normal part of the work.</div>';
+    }
+    if (overdue) {
+      html += '<div style="font-size:12px;color:#991B1B;margin-top:8px;font-weight:600;">' +
+        overdue + ' meeting' + (overdue > 1 ? 's are' : ' is') + ' past its date below. Marking what happened keeps your record straight.</div>';
+    }
+    box.innerHTML = html;
+    card.style.display = '';
+  }
+  var _MON_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function ensureMyMonth() {
+    if (_mymCache.data) { renderMyMonth(_mymCache.data); return; }
+    gasFetch('getAllMyMeetings', { email: SESSION.email }, function(list) {
+      _mymCache = { data: list, ts: Date.now() };
+      renderMyMonth(list);
+    }, function(){ /* the card simply stays hidden */ });
+  }
+
   // ── Conduct draft ────────────────────────────────────────────
   // An officer fills this in standing outside an office on a phone, and the
   // Apps Script front door drops roughly a third of requests. Losing what they

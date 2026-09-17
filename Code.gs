@@ -853,10 +853,8 @@ function saveMeeting(data) {
 // ------------------------------------------------------------
 function getMyMeetings(email) {
   try {
-    // Reading the whole plan sheet to pull out one officer's handful of rows is
-    // cache was wired up long ago and simply never filled in. Reading the whole
-    // plan sheet to pull out one officer's handful of rows is the slow part of
-    // opening Manage Meetings.
+    // Reading the whole plan sheet to pull out one officer's handful of rows
+    // is the slow part of opening Manage Meetings.
     var _ck = 'planmtg_' + (email || '').trim().toLowerCase();   // mymtg_ belongs to getAllMyMeetings
     var _hit = cGet(_ck);
     if (_hit) return _hit;
@@ -1730,6 +1728,7 @@ function getAllMyMeetings(email) {
           photoLink:    (cd[j][16] || '').toString(),
           momLink:      (cd[j][17] || '').toString(),
           govtMom:      (cd[j][21] || '').toString(),   // V = Govt MoM (comma-separated PDF urls)
+          outcome:      (cd[j][COL_CON_OUTCOME-1] || '').toString(),   // AF
           priority:     (cd[j][22] || '').toString(),   // W..AB = AI tags
           flag:         (cd[j][23] || '').toString(),
           nextAction:   (cd[j][24] || '').toString(),
