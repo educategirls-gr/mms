@@ -495,7 +495,7 @@
               <span style="color:#9CA3AF;font-weight:400;font-size:11px;">Which district is this meeting in?</span>
             </label>
             <select id="plan-district">
-              <option value="">Loading districts...</option>
+              <option value="">- Select District -</option>
             </select>
           </div>
         </div>
@@ -967,7 +967,44 @@
 
 <script>
   var GAS_URL = 'https://script.google.com/macros/s/AKfycbw2JJ5xmZ-zLUolbZJb7eApczsZjsXwzVY6uXpAYO-7h8j9CyNF9y5Upgxji8rD2oJb/exec';
-  var _myDistricts = [];   // full district list for this role's scope (State→all, Zone→zone's) from getPlanDistricts
+  var _myDistricts = [];   // full district list for this role's scope (State→all, Zone→zone's)
+
+  // ── District list ────────────────────────────────────────────
+  // Same mapping as ZONE_DISTRICTS / STATE_EXTRA_DISTRICTS in Code.gs, kept here
+  // so the Meeting District dropdown is ready the instant the page opens instead
+  // of waiting for a round trip to Apps Script. WHEN A DISTRICT IS ADDED OR MOVED,
+  // CHANGE IT IN BOTH PLACES: Code.gs (ZONE_DISTRICTS) and here. The server is still
+  // asked in the background and its answer wins, so a forgotten edit here only means
+  // the dropdown is briefly out of date, never wrong once the answer lands.
+  var ZONE_DISTRICTS = {
+    'UP ZONE-1': ['BANDA','CHITRAKOOT','FATEHPUR','RAE BARELI','UNNAO','BHADOHI','KAUSHAMBI','MIRZAPUR','PRAYAGRAJ','SONBHADRA'],
+    'UP ZONE-2': ['BAHRAICH','SHRAVASTI','BALRAMPUR','GONDA','KUSHINAGAR','MAHARAJGANJ'],
+    'UP ZONE-3': ['BUDAUN','FARRUKHABAD','HARDOI','LAKHIMPUR KHERI','SHAHJAHANPUR','BARA BANKI','SITAPUR']
+  };
+  // Selectable by everyone when planning, but not part of any zone
+  var STATE_EXTRA_DISTRICTS = ['LUCKNOW'];
+
+  // Mirrors getPlanDistricts() in Code.gs: this role's scope plus the state-only extras.
+  function planDistrictsLocal() {
+    var role = (SESSION && SESSION.role || '').toString().trim(), base = [];
+    if (role === 'Zone') {
+      var zn = (SESSION.zone || '').toString().trim().toUpperCase().replace(/\s+/g, '');
+      for (var z in ZONE_DISTRICTS) {
+        if (z.toUpperCase().replace(/\s+/g, '') === zn) { base = ZONE_DISTRICTS[z].slice(); break; }
+      }
+    } else if (role === 'State') {
+      for (var z2 in ZONE_DISTRICTS) base = base.concat(ZONE_DISTRICTS[z2]);
+    } else {
+      base = MY_DISTRICTS.slice();   // District / Field → their own district(s)
+    }
+    base = base.concat(STATE_EXTRA_DISTRICTS);
+    var seen = {}, out = [];
+    base.forEach(function(d) {
+      var k = (d || '').toString().trim();
+      if (k && !seen[k.toUpperCase()]) { seen[k.toUpperCase()] = 1; out.push(k); }
+    });
+    return out.sort();
+  }
 
   var SESSION = (function() {
     try { return JSON.parse(sessionStorage.getItem('eg_grm_session') || 'null'); } catch(e) { return null; }
@@ -1133,10 +1170,7 @@
 
     // Every role can pick the meeting's district (own scope + state-level extras like LUCKNOW),
     // so anyone can file a meeting held in Lucknow even without a district team there.
-    // The list is tiny and the server builds it in memory, so the wait is pure
-    // round trip. The last one is kept per user: the field is filled from it at
-    // once, and the server's answer only refreshes it.
-    var _pdKey = 'eg_pdist_' + ((SESSION && SESSION.email) || '');
+    // Filled at once from the local mapping above, then corrected by the server.
     function fillPlanDistricts(list) {
       if (!list || !list.length) return false;
       _myDistricts = list.slice();   // full district list for this role's scope (used by Zone/State filters)
@@ -1158,17 +1192,14 @@
       refreshBlockOptions();
       return true;
     }
-    try {
-      var _pdCached = JSON.parse(localStorage.getItem(_pdKey) || 'null');
-      if (_pdCached && _pdCached.length) fillPlanDistricts(_pdCached);
-    } catch (e) {}
+    fillPlanDistricts(planDistrictsLocal());
     gasFetch('getPlanDistricts', {}, function(list) {
-      if (!fillPlanDistricts(list)) return;
-      try { localStorage.setItem(_pdKey, JSON.stringify(list)); } catch (e) {}
+      // The server has the last word, so a district added there but not in the
+      // mapping above still shows up, one round trip later.
+      if (list && list.length && list.join('|') !== _myDistricts.join('|')) fillPlanDistricts(list);
     }, function() {
-      // Front door refused even after the retries: keep the cached list if there
-      // is one, otherwise let them at least plan in their own district.
-      if (!_myDistricts.length && ACTIVE_DISTRICT) fillPlanDistricts([ACTIVE_DISTRICT]);
+      // Front door refused even after the retries. The local list is already on
+      // screen, so there is nothing to tell the user.
     });
 
     // Field role: hide "Delete Meeting" - prevents fake-meeting create-then-delete (keeps full audit trail)
