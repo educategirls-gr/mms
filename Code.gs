@@ -3145,6 +3145,41 @@ function COMMIT_dryRun(limit) {
 // These are the old duplicate-conduct rows, from before conductMeeting refused a
 // second record. Reports only. Delete the row holding the weaker note and keep
 // the real one.
+// Editor helper: every row any sheet holds for one meeting, with its row number.
+// Before deleting anything, this is how you confirm you are looking at the right
+// sheet and the right row. Row numbers are per sheet: row 127 of Conducted
+// Meetings is a different meeting from row 127 of Plan Meetings.
+//   MTG_trace('MTG-20260807-195551')
+function MTG_trace(meetingId) {
+  var want = (meetingId || '').toString().trim().toUpperCase();
+  if (!want) return 'Pass a meeting id, e.g. MTG_trace("MTG-20260807-195551")';
+  var ss  = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var log = ['Tracing ' + want, ''];
+  [MEETINGS_SHEET, CONDUCTED_SHEET, POSTPONED_SHEET, CANCELLED_SHEET].forEach(function(name) {
+    var sh = ss.getSheetByName(name);
+    if (!sh) { log.push(name + '  -  sheet not found'); log.push(''); return; }
+    var d = sh.getDataRange().getValues(), hits = 0;
+    for (var i = 1; i < d.length; i++) {
+      if ((d[i][0] || '').toString().trim().toUpperCase() !== want) continue;
+      hits++;
+      log.push(name + '   ROW ' + (i + 1));
+      log.push('     district: ' + (d[i][1] || '') + '    officer: ' + (d[i][2] || ''));
+      log.push('     official: ' + (d[i][9] || '') + '    purpose: ' + (d[i][11] || ''));
+      if (name === MEETINGS_SHEET) {
+        log.push('     status:   ' + (d[i][13] || '(blank)') + '    planned for: ' + (d[i][5] || ''));
+      }
+      if (name === CONDUCTED_SHEET) {
+        log.push('     conducted on: ' + (d[i][13] || '') + '    filed at: ' + (d[i][20] || ''));
+        log.push('     note: ' + (d[i][15] || '').toString().replace(/\s+/g, ' ').slice(0, 120));
+      }
+      log.push('');
+    }
+    if (!hits) { log.push(name + '  -  not present'); log.push(''); }
+  });
+  Logger.log(log.join(String.fromCharCode(10)));
+  return 'done';
+}
+
 // Editor helper: clears the exact copies out of the Conducted sheet.
 //
 // CONDUCT_cleanDupes()          shows what it would do, changes nothing
