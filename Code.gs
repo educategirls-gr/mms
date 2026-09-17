@@ -41,7 +41,7 @@ function invalidateUser(email) {
        'stats_' + email + '_0', 'stats_' + email + '_1',
        'rep_' + email,
        'mymt_' + email, 'allmymt_' + email,
-       'mymtg_' + email,
+       'mymtg_' + email, 'planmtg_' + email,
        'stateMtg_all', 'docUrlMap', 'meetingZoneMap', 'reportData');
 }
 
@@ -853,11 +853,11 @@ function saveMeeting(data) {
 // ------------------------------------------------------------
 function getMyMeetings(email) {
   try {
-    // invalidateUser already clears mymtg_<email> on every write path, so the
+    // Reading the whole plan sheet to pull out one officer's handful of rows is
     // cache was wired up long ago and simply never filled in. Reading the whole
     // plan sheet to pull out one officer's handful of rows is the slow part of
     // opening Manage Meetings.
-    var _ck = 'mymtg_' + (email || '').trim().toLowerCase();
+    var _ck = 'planmtg_' + (email || '').trim().toLowerCase();   // mymtg_ belongs to getAllMyMeetings
     var _hit = cGet(_ck);
     if (_hit) return _hit;
 
