@@ -1585,7 +1585,20 @@ var NOTE_PLACEHOLDERS = {
   na:1, none:1, nil:1, nothing:1, ok:1, okay:1, done:1, yes:1, no:1, good:1,
   check:1, checking:1, demo:1, blah:1, kuch:1, nahi:1, koi:1
 };
+// Turned off with NOTE_gate_off() and back on with NOTE_gate_on(). It was
+// asked for in the afternoon and got in the way the same night, so it is a
+// switch rather than a decision taken once.
+function noteGateOn_() {
+  try { return PropertiesService.getScriptProperties().getProperty('NOTE_GATE') !== 'off'; }
+  catch (e) { return true; }
+}
+function NOTE_gate_off() { PropertiesService.getScriptProperties().setProperty('NOTE_GATE', 'off');
+                           Logger.log('Note check OFF. Whatever is written will save.'); return 'off'; }
+function NOTE_gate_on()  { PropertiesService.getScriptProperties().deleteProperty('NOTE_GATE');
+                           Logger.log('Note check ON again.'); return 'on'; }
+
 function noteLooksFake_(text) {
+  if (!noteGateOn_()) return '';
   var t = (text || '').toString().toLowerCase();
   // The form's own labels are not the officer's words
   t = t.replace(/discussed:/g, ' ').replace(/official said:/g, ' ').replace(/next step:/g, ' ');

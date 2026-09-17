@@ -1798,11 +1798,15 @@
     if (kpo.said.length < 20) { showModalAlert('conduct', 'Please write a little more in question 2. What the official said is the part that matters most.'); return; }
     var outcome = document.getElementById('c-outcome').value;
     if (!outcome) { showModalAlert('conduct', 'Please choose what came out of this meeting.'); return; }
-    // Caught here as well as on the server, so a note that says nothing costs
-    // no waiting at all. Nothing is sent and nothing is recorded.
+    // The same check lives on the server, where it can be switched off without
+    // republishing this page. Blocking here as well meant the switch did not
+    // work, so this only warns, once, and lets the second press through.
     var _fake = noteLooksFake_(kp);
-    if (_fake) {
-      showModalAlert('conduct', 'This does not read like a record of a real meeting, ' + _fake + '. Nothing has been saved. Please write what was actually discussed and what the official said, in your own words.');
+    var _fh = document.getElementById("c-kp-hint");
+    if (_fake && _fh && _fh.dataset.fakeWarned !== "1") {
+      _fh.dataset.fakeWarned = "1";
+      _fh.textContent = "This does not read like a record of a real meeting, " + _fake + ". Press Submit again if you meant it.";
+      _fh.style.display = "block";
       return;
     }
     // Thin but allowed: say so once and let them decide, rather than blocking.
