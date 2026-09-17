@@ -3145,6 +3145,69 @@ function COMMIT_dryRun(limit) {
 // These are the old duplicate-conduct rows, from before conductMeeting refused a
 // second record. Reports only. Delete the row holding the weaker note and keep
 // the real one.
+// Editor helper: clears the exact copies out of the Conducted sheet.
+//
+// CONDUCT_cleanDupes()          shows what it would do, changes nothing
+// CONDUCT_cleanDupes('DELETE')  actually deletes
+//
+// It only removes a row whose note is character for character the same as
+// another row for the same meeting, so nothing anyone actually wrote is lost.
+// Where two rows for one meeting hold genuinely different notes it deletes
+// neither and says so: choosing which account of a meeting is the real one is
+// not a decision code should make. Deletes from the bottom up, so the row
+// numbers above each deletion stay valid while it works.
+function CONDUCT_cleanDupes(confirm) {
+  var sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(CONDUCTED_SHEET);
+  if (!sh) return 'No conducted sheet';
+  var rows = sh.getDataRange().getValues();
+  var groups = {};
+  for (var i = 1; i < rows.length; i++) {
+    var id = (rows[i][0] || '').toString().trim();
+    if (!id) continue;
+    if (!groups[id]) groups[id] = [];
+    groups[id].push({ row: i + 1, note: (rows[i][15] || '').toString().trim().replace(/\s+/g, ' ') });
+  }
+
+  var copies = [], log = [], yours = 0;
+  for (var id2 in groups) {
+    var g = groups[id2];
+    if (g.length < 2) continue;
+    var kept = {}, distinct = [];
+    for (var j = 0; j < g.length; j++) {
+      if (kept[g[j].note]) { copies.push(g[j]); continue; }
+      kept[g[j].note] = 1;
+      distinct.push(g[j]);
+    }
+    if (distinct.length > 1) {
+      yours++;
+      log.push(id2 + '  -  ' + distinct.length + ' different notes, this one is your call:');
+      for (var k = 0; k < distinct.length; k++) {
+        log.push('     row ' + distinct[k].row + '   ' + distinct[k].note.slice(0, 100));
+      }
+      log.push('');
+    }
+  }
+
+  copies.sort(function(a, b) { return a.row - b.row; });
+  log.push('Exact copies, safe to remove: ' + copies.length);
+  for (var c = 0; c < copies.length; c++) {
+    log.push('     row ' + copies[c].row + '   ' + copies[c].note.slice(0, 70));
+  }
+  log.push('');
+
+  if (confirm === 'DELETE') {
+    for (var dI = copies.length - 1; dI >= 0; dI--) sh.deleteRow(copies[dI].row);
+    cDel('reportData', 'stateMtg_all');
+    log.push('DELETED ' + copies.length + ' rows. Caches cleared.');
+    log.push(yours + ' meeting(s) still need you to pick which note to keep.');
+  } else {
+    log.push('Preview only, nothing was deleted.');
+    log.push('Run CONDUCT_cleanDupes("DELETE") to remove the ' + copies.length + ' exact copies.');
+  }
+  Logger.log(log.join(String.fromCharCode(10)));
+  return copies.length;
+}
+
 function CONDUCT_findDupes() {
   var sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(CONDUCTED_SHEET);
   if (!sh) return 0;
