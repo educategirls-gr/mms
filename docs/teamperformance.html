@@ -345,6 +345,12 @@
         <div class="section-label">Key Insights</div>
         <div class="insight-grid" id="ov-insights" style="margin-bottom:20px;"></div>
 
+        <!-- The only place on this portal that answers "compared with when?" -->
+        <div class="card" style="margin-bottom:18px;">
+          <div class="card-title">Conducted By Month<span class="card-title-line"></span></div>
+          <div id="ov-trend"></div>
+        </div>
+
         <!-- What came out of the meetings, not just how many were held -->
         <div class="card" style="margin-bottom:18px;">
           <div class="card-title">Meeting Outcomes <span style="font-weight:400;color:#9CA3AF;text-transform:none;letter-spacing:0;font-size:11px;">(reported by the officer)</span><span class="card-title-line"></span></div>
@@ -547,7 +553,11 @@
   var EG = '#8B1212';
   // A meeting with no district is a state level one, met by the state team.
   // Showing an empty cell just looks like missing data.
-  function distLabel(d) { return String(d == null ? '' : d).trim() || 'State'; }
+  function distLabel(d) {
+    var t = String(d == null ? '' : d).trim();
+    if (!t) return 'State';
+    return t.toLowerCase().replace(/(^|[\s\-])([a-z])/g, function(_, pre, ch) { return pre + ch.toUpperCase(); });
+  }
   function esc(s) { return s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
   // Robust JSON fetch - GAS occasionally returns an HTML error page; retry once, then fail gracefully.
@@ -734,6 +744,46 @@
              '</div></div>';
     }).join('');
 
+    // ─ Month by month, so a number can be read against the month before ─
+    var _MONS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var _now  = new Date();
+    var thisMonthKey = _MONS[_now.getMonth()] + ' ' + _now.getFullYear();
+    var mt = (d.monthTrend || []).slice(-12);
+    var trendBox = document.getElementById('ov-trend');
+    if (trendBox) {
+      if (!mt.length) {
+        trendBox.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:12px 0;">No conducted meetings yet</div>';
+      } else {
+        var peak = 1;
+        mt.forEach(function(m) { if ((m.count || 0) > peak) peak = m.count; });
+        var bars = mt.map(function(m) {
+          var running = (m.month === thisMonthKey);
+          var h = Math.max(5, Math.round((m.count / peak) * 120));
+          return '<div style="flex:1 1 0;min-width:52px;display:flex;flex-direction:column;align-items:center;">' +
+            '<div style="font-size:14px;font-weight:800;color:#111827;margin-bottom:6px;">' + m.count + '</div>' +
+            '<div style="width:100%;max-width:56px;height:120px;display:flex;align-items:flex-end;">' +
+              '<div style="width:100%;height:' + h + 'px;background:' + (running ? '#C98A8A' : EG) + ';border-radius:4px 4px 0 0;"></div>' +
+            '</div>' +
+            '<div style="font-size:11px;color:#6B7280;margin-top:8px;white-space:nowrap;">' + esc(m.month) + '</div>' +
+            '<div style="font-size:10px;color:#9CA3AF;height:13px;">' + (running ? 'so far' : '') + '</div>' +
+          '</div>';
+        }).join('');
+        var cur  = mt[mt.length - 1];
+        var prev = mt.length >= 2 ? mt[mt.length - 2] : null;
+        var line = '';
+        if (prev) {
+          // The month in progress is not a fair match for a finished one, so the
+          // sentence says which is which rather than printing a percentage.
+          line = cur.month === thisMonthKey
+            ? cur.count + ' conducted in ' + esc(cur.month) + ' so far, against ' + prev.count + ' in all of ' + esc(prev.month) + '.'
+            : cur.count + ' conducted in ' + esc(cur.month) + ', against ' + prev.count + ' in ' + esc(prev.month) + '.';
+        }
+        trendBox.innerHTML =
+          '<div style="overflow-x:auto;"><div style="display:flex;gap:10px;align-items:flex-end;min-width:' + (mt.length * 62) + 'px;">' + bars + '</div></div>' +
+          (line ? '<div style="font-size:12px;color:#6B7280;margin-top:12px;">' + line + '</div>' : '');
+      }
+    }
+
     // ─ District Rank Board - ALL districts (incl. those with no meeting) ─
     var dstat = {};
     dists.forEach(function(x){
@@ -796,19 +846,19 @@
     document.getElementById('ov-recent').innerHTML = rec.length === 0
       ? '<div style="color:#9CA3AF;font-size:13px;padding:20px 0;text-align:center;">No conducted meetings yet</div>'
       : '<table class="rep-table"><thead><tr>' +
-        '<th>Meeting ID</th><th>District</th><th>Employee</th><th>Role</th>' +
-        '<th>Met With</th><th>Designation</th><th>Purpose</th><th>Type</th><th>Date</th>' +
+        '<th>Date</th><th>District</th><th>Met With</th><th>Designation</th>' +
+        '<th>Employee</th><th>Role</th><th>Purpose</th><th>Type</th><th>Meeting ID</th>' +
         '</tr></thead><tbody>' +
         rec.map(function(r) {
-          return '<tr><td><span style="font-size:11px;font-weight:800;color:'+EG+';">'+r.meetingId+'</span></td>' +
+          return '<tr><td style="white-space:nowrap;font-size:11.5px;font-weight:600;">'+esc(r.conductDate)+'</td>' +
                  '<td><span style="font-weight:600;">'+esc(distLabel(r.district))+'</span></td>' +
-                 '<td>'+r.employeeName+'</td>' +
-                 '<td style="font-size:11px;color:#6B7280;">'+r.post+'</td>' +
-                 '<td><strong>'+r.stakeholderName+'</strong></td>' +
-                 '<td style="font-size:11px;color:#6B7280;">'+r.stakeholderPost+'</td>' +
-                 '<td>'+r.purpose+'</td>' +
-                 '<td><span class="badge-type">'+r.meetingType+'</span></td>' +
-                 '<td style="white-space:nowrap;font-size:11.5px;">'+r.conductDate+'</td></tr>';
+                 '<td><strong>'+esc(r.stakeholderName)+'</strong></td>' +
+                 '<td style="font-size:11px;color:#6B7280;">'+esc(r.stakeholderPost)+'</td>' +
+                 '<td>'+esc(r.employeeName)+'</td>' +
+                 '<td style="font-size:11px;color:#6B7280;">'+esc(r.post)+'</td>' +
+                 '<td>'+esc(r.purpose)+'</td>' +
+                 '<td><span class="badge-type">'+esc(r.meetingType)+'</span></td>' +
+                 '<td><span style="font-size:10.5px;color:#9CA3AF;white-space:nowrap;">'+esc(r.meetingId)+'</span></td></tr>';
         }).join('') + '</tbody></table>';
 
     ensureOutcomes();
@@ -846,11 +896,22 @@
       box.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:12px 0;">No outcomes recorded yet. The question was added to the conduct form on 16 September, so this fills up as new meetings are conducted.</div>';
       return;
     }
-    var rate = Math.round(concrete / answered * 100);
-    var html = '<div class="kpi-grid" style="margin-bottom:14px;">' +
-      '<div class="kpi-card" style="border-top:4px solid #065F46;"><div class="kpi-num" style="color:#065F46;">' + rate + '%</div><div class="kpi-lbl">Produced Something</div></div>' +
-      '<div class="kpi-card" style="border-top:4px solid #1D4ED8;"><div class="kpi-num" style="color:#1D4ED8;">' + concrete + '</div><div class="kpi-lbl">Concrete Outcomes</div></div>' +
-      '<div class="kpi-card" style="border-top:4px solid #6B7280;"><div class="kpi-num" style="color:#6B7280;">' + answered + '</div><div class="kpi-lbl">Meetings Answered</div></div>' +
+    var conductedTotal = 0;
+    _allMeetings.forEach(function(m) {
+      if (pick && String(m.district || '').trim() !== pick) return;
+      if (m.status === 'Conducted') conductedTotal++;
+    });
+    var rate  = Math.round(concrete / answered * 100);
+    var share = conductedTotal ? Math.round(answered / conductedTotal * 100) : 0;
+    var html =
+      '<div style="font-size:13px;color:#374151;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:10px 14px;margin-bottom:14px;">' +
+        '<strong>' + answered + ' of ' + conductedTotal + '</strong> conducted meetings have answered this question so far (' + share + '%). ' +
+        'The figures below describe those ' + answered + ', not the whole ' + conductedTotal + '.' +
+      '</div>' +
+      '<div class="kpi-grid" style="margin-bottom:14px;">' +
+      '<div class="kpi-card" style="border-top:4px solid #065F46;"><div class="kpi-num" style="color:#065F46;">' + rate + '%</div><div class="kpi-lbl">Produced Something</div><span class="kpi-chip" style="background:#E5E7EB;color:#4B5563;">of the ' + answered + ' answered</span></div>' +
+      '<div class="kpi-card" style="border-top:4px solid #1D4ED8;"><div class="kpi-num" style="color:#1D4ED8;">' + concrete + '</div><div class="kpi-lbl">Concrete Outcomes</div><span class="kpi-chip" style="background:#DBEAFE;color:#1E40AF;">commitment, data, permission</span></div>' +
+      '<div class="kpi-card" style="border-top:4px solid #6B7280;"><div class="kpi-num" style="color:#6B7280;">' + answered + '</div><div class="kpi-lbl">Meetings Answered</div><span class="kpi-chip" style="background:#E5E7EB;color:#4B5563;">out of ' + conductedTotal + '</span></div>' +
       '</div><div style="display:flex;flex-wrap:wrap;gap:10px;">';
     Object.keys(OUTCOME_LABEL).forEach(function(k) {
       if (!counts[k]) return;

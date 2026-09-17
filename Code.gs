@@ -3141,6 +3141,32 @@ function COMMIT_dryRun(limit) {
 // Editor helper: rows that look like one plan saved more than once (same officer,
 // official, date and purpose). Reports only, it deletes nothing; remove the extras
 // from Manage Meetings so the app keeps its own record straight.
+// Editor helper: meeting ids written more than once into the Conducted sheet.
+// These are the old duplicate-conduct rows, from before conductMeeting refused a
+// second record. Reports only. Delete the row holding the weaker note and keep
+// the real one.
+function CONDUCT_findDupes() {
+  var sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(CONDUCTED_SHEET);
+  if (!sh) return 0;
+  var rows = sh.getDataRange().getValues();
+  var seen = {}, out = [], extra = 0;
+  for (var i = 1; i < rows.length; i++) {
+    var id = (rows[i][0] || '').toString().trim();
+    if (!id) continue;
+    if (!seen[id]) { seen[id] = []; }
+    seen[id].push({ row: i + 1, note: (rows[i][15] || '').toString().slice(0, 70) });
+  }
+  for (var k in seen) {
+    if (seen[k].length < 2) continue;
+    extra += seen[k].length - 1;
+    out.push(k + '  (' + seen[k].length + ' rows)');
+    seen[k].forEach(function(x) { out.push('     row ' + x.row + '   ' + x.note); });
+  }
+  Logger.log(out.length ? out.join('\n') : 'No duplicate conducted rows found.');
+  Logger.log('Extra rows beyond one per meeting: ' + extra);
+  return extra;
+}
+
 function PLAN_findDupes() {
   var sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(MEETINGS_SHEET);
   var rows  = sheet.getDataRange().getValues();
@@ -4220,6 +4246,25 @@ function getReportData() {
       }
     }
 
+    // One meeting, one row. These four sheets are event logs, not one ledger:
+    // a meeting postponed and then held is written in both, and until the
+    // duplicate guards went in, a save that never reported back could leave two
+    // conducted rows for the same meeting. Counting them flat made the portal's
+    // district, team and stakeholder pages disagree with its own Overview,
+    // which reads the current state of each meeting from the plan sheet.
+    var STATUS_RANK = { 'Conducted':4, 'Cancelled':3, 'Postponed':2, 'Follow-up':1, 'Planned':1 };
+    var byId = {}, idOrder = [];
+    meetings.forEach(function(m) {
+      var id = (m.meetingId || '').toString().trim();
+      if (!id) return;
+      if (!byId[id]) { byId[id] = m; idOrder.push(id); return; }
+      // The furthest a meeting actually got wins. Between two rows at the same
+      // stage the later one wins, which is the corrected note when an officer
+      // wrote it twice.
+      if ((STATUS_RANK[m.status] || 0) >= (STATUS_RANK[byId[id].status] || 0)) byId[id] = m;
+    });
+    meetings = idOrder.map(function(id) { return byId[id]; });
+
     var out = { success: true, meetings: meetings };
     cPut(cacheKey, out, C_TTL_LIVE);
     return out;
@@ -4400,7 +4445,10 @@ function getDashboardStats(email, allDistricts, activeDistrict) {
       if (!distMap[dKey]) distMap[dKey] = {total:0,conducted:0,planned:0,cancelled:0,postponed:0};
       distMap[dKey].total++;
       if      (status === 'conducted') distMap[dKey].conducted++;
-      else if (status === 'planned')   distMap[dKey].planned++;
+      // A follow-up is a planned meeting that came out of an earlier one. It was
+      // counted in the total but in none of the four buckets, so the cards on
+      // the portal added up to eleven less than the total they sat under.
+      else if (status === 'planned' || status === 'follow-up') distMap[dKey].planned++;
       else if (status === 'cancelled') distMap[dKey].cancelled++;
       else if (status === 'postponed') distMap[dKey].postponed++;
 
