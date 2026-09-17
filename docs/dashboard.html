@@ -1439,6 +1439,7 @@
     var _oc = document.getElementById('c-outcome'); if (_oc) _oc.value = '';
     var _kph = document.getElementById('c-kp-hint');
     if (_kph) { _kph.style.display = 'none'; _kph.dataset.warned = ''; }
+    restoreConductDraft(m.meetingId);
     initPhotoBoxes();
     document.getElementById('c-fu-toggle').checked        = false;
     document.getElementById('c-fu-section').style.display = 'none';
@@ -1532,6 +1533,65 @@
   }
 
   // ── Conduct ──────────────────────────────────────────────────
+  // ── Conduct draft ────────────────────────────────────────────
+  // An officer fills this in standing outside an office on a phone, and the
+  // Apps Script front door drops roughly a third of requests. Losing what they
+  // typed means they write less the second time, or nothing at all, and we
+  // never find out. So keep it as they type and put it back if the save fails.
+  // Photos are deliberately not kept: five files at 3MB each would not fit in
+  // browser storage, so the message says to pick them again.
+  var _DRAFT_FIELDS = ['ct-h','ct-m','ct-ap','c-kp-what','c-kp-said','c-kp-next','c-outcome','c-fu-date','cft-h','cft-m','cft-ap'];
+  function draftKey(meetingId) {
+    return 'eg_draft_' + ((SESSION && SESSION.email) || '') + '_' + (meetingId || '');
+  }
+  function saveConductDraft() {
+    var m = _manageMeetings[MODAL_IDX];
+    if (!m) return;
+    var d = {};
+    _DRAFT_FIELDS.forEach(function(id){ var el = document.getElementById(id); if (el) d[id] = el.value; });
+    var fu = document.getElementById('c-fu-toggle');
+    d._fu = !!(fu && fu.checked);
+    var any = _DRAFT_FIELDS.some(function(id){ return (d[id] || '').toString().trim(); });
+    try {
+      if (any) localStorage.setItem(draftKey(m.meetingId), JSON.stringify(d));
+      else localStorage.removeItem(draftKey(m.meetingId));
+    } catch (e) {}
+  }
+  function restoreConductDraft(meetingId) {
+    var d = null;
+    try { d = JSON.parse(localStorage.getItem(draftKey(meetingId)) || 'null'); } catch (e) { d = null; }
+    if (!d) return;
+    _DRAFT_FIELDS.forEach(function(id){
+      var el = document.getElementById(id);
+      if (el && d[id]) el.value = d[id];
+    });
+    var fu = document.getElementById('c-fu-toggle');
+    if (fu && d._fu) { fu.checked = true; document.getElementById('c-fu-section').style.display = ''; }
+    var hint = document.getElementById('c-kp-hint');
+    if (hint) {
+      hint.textContent = 'Restored what you had typed earlier for this meeting. Photos need to be picked again.';
+      hint.style.display = 'block';
+      hint.dataset.warned = '';      // the short-note nudge can still fire later
+    }
+  }
+  function clearConductDraft(meetingId) {
+    try { localStorage.removeItem(draftKey(meetingId)); } catch (e) {}
+  }
+  // Bound once; the fields themselves are reused by every meeting. Bound now if
+  // the document is already parsed, since this script may run after that point
+  // and a listener attached too late would never save anything.
+  function bindDraftFields() {
+    _DRAFT_FIELDS.concat(['c-fu-toggle']).forEach(function(id) {
+      var el = document.getElementById(id);
+      if (!el || el.dataset.draftBound) return;
+      el.dataset.draftBound = '1';
+      el.addEventListener('input', saveConductDraft);
+      el.addEventListener('change', saveConductDraft);
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindDraftFields);
+  else bindDraftFields();
+
   // Three small boxes instead of one blank one. They are joined into the same
   // single field the sheet already stores, with the labels kept, which also
   // gives the tagging and prep features something structured to read.
@@ -1611,6 +1671,7 @@
     }, function(res) {
       btn.disabled = false; btn.innerHTML = '💾 Save &amp; Generate MoM';
       if (res.success) {
+        clearConductDraft(m.meetingId);
         invalidateFrontCache();
         closeActionModal();
         if (res.photoError) showToast('⚠️ Photo upload failed: ' + res.photoError, 6000);
@@ -1621,7 +1682,8 @@
       } else { showModalAlert('conduct', res.message || 'An error occurred.'); }
     }, function(e) {
       btn.disabled = false; btn.innerHTML = '💾 Save &amp; Generate MoM';
-      showModalAlert('conduct', 'Error: ' + e.message);
+      saveConductDraft();
+      showModalAlert('conduct', 'Could not save. What you typed is safe, so try again when you have signal. If you close the app it will still be here.');
     });
   }
   function showConductSuccess(momUrl, photoUrl, followUpId, followUp) {
