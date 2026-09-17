@@ -3,6 +3,11 @@
 //  Google Apps Script | Bound to Employee_DB Spreadsheet
 // ============================================================
 
+// Switched on the night of 17 Sep 2026. The original document
+// (1a7068K07gE40PLkxIs39A6OJvalCK7IgDJTZB5NQH40) stopped opening from Apps Script
+// with 'Service Spreadsheets timed out' while a brand new sheet opened in a
+// second, so a copy was made from the browser and the script pointed at it.
+// The original is untouched and kept as an archive; nothing writes to it now.
 var SPREADSHEET_ID   = '1a7068K07gE40PLkxIs39A6OJvalCK7IgDJTZB5NQH40';
 var EMPLOYEE_SHEET   = 'Employee_DB';
 var MEETINGS_SHEET   = 'Plan Meetings';
@@ -369,6 +374,35 @@ function isAdmin_(email) {
   return false;
 }
 
+// ── Maintenance switch ──────────────────────────────────────────────────
+// When SpreadsheetApp cannot open the document, every request that needs it
+// holds an execution for its full six minutes. Other people's open tabs keep
+// sending those requests, so the script never gets a free slot and even work
+// that needs no sheet at all cannot run. This turns the sheet-backed actions
+// away at the door in a few milliseconds, which lets the queue drain.
+//
+// Signing in is deliberately still allowed: it reads the copy in Script
+// Properties, not the document, so it costs nothing and nobody is locked out.
+//
+//   MAINT_on()   turn it on      MAINT_off()   turn it off
+var MAINT_KEY = 'MAINTENANCE_MODE';
+var MAINT_ALLOWED = { sendOTP:1, verifyOTP:1, getPlanDistricts:1, getDropdownData:1 };
+
+function maintOn_() {
+  try { return PropertiesService.getScriptProperties().getProperty(MAINT_KEY) === 'on'; }
+  catch (e) { return false; }
+}
+function MAINT_on() {
+  PropertiesService.getScriptProperties().setProperty(MAINT_KEY, 'on');
+  Logger.log('Maintenance ON. Sign-in still works; anything that reads the sheet is turned away at once.');
+  return 'on';
+}
+function MAINT_off() {
+  PropertiesService.getScriptProperties().deleteProperty(MAINT_KEY);
+  Logger.log('Maintenance OFF. Everything is served normally again.');
+  return 'off';
+}
+
 function apiResponse(e, method) {
   var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : '';
   var result;
@@ -387,7 +421,11 @@ function apiResponse(e, method) {
     var PUBLIC = { sendOTP: 1, verifyOTP: 1, getDashboardStats: 1, getDistrictReport: 1, getReportData: 1, getEmployeeMaster: 1 };
     var ADMIN  = { bulkUpdateEmployeeDB: 1, importFromSource: 1, peekSourceSheet: 1 };
 
-    if (bodyBroken) {
+    // Turned away at the door while the document is unreachable, so the queue
+    // can empty. Signing in is on the allowed list and keeps working.
+    if (maintOn_() && !MAINT_ALLOWED[action]) {
+      result = { success:false, message:'The system is being repaired right now. Please try again in a little while. Nothing you have saved is affected.' };
+    } else if (bodyBroken) {
       result = { success:false, message:'Your request did not arrive complete. Nothing was saved. Please try again.' };
     } else if (PUBLIC[action]) {
       // ── No auth required ──────────────────────────────────────
@@ -563,6 +601,291 @@ function setupDriveFolder() {
 // Editor helper: why is no OTP arriving? Three separate things can stop it and
 // they look identical from the login page, so this reports all three at once.
 // Sends nothing. Run LOGIN_debug('alok.mohan@educategirls.ngo').
+// Editor helper: is Sheets refusing everything, or only our document?
+// Tries a brand new throwaway spreadsheet FIRST, because if our document hangs
+// it eats the whole six minutes and nothing after it would ever run. The
+// throwaway is deleted again straight away.
+// Editor helper: how big is each tab, without reading a single cell.
+// getMaxRows/getLastRow are metadata, so this answers in a second even on a
+// document that getDataRange().getValues() cannot get through. "empty tail" is
+// the part that holds nothing and still gets dragged along on every read.
+// ── Reading the document through the Sheets REST API ────────────────────
+// SpreadsheetApp.openById builds the whole document in memory before it will
+// answer, and on the night of 17 Sep 2026 it stopped being able to do that for
+// this document at all: a one line script with no other code hung on it just as
+// the app did, while a brand new sheet opened in a second. The REST API is a
+// different road to the same data and asks only for the range named, so it can
+// come back when the other cannot.
+function sheetsApiGet_(range) {
+  var url = 'https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID +
+            '/values/' + encodeURIComponent(range) + '?majorDimension=ROWS';
+  var res = UrlFetchApp.fetch(url, {
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    muteHttpExceptions: true
+  });
+  if (res.getResponseCode() !== 200) {
+    // Hiding this cost an hour once. Whatever the API objects to, say it.
+    Logger.log('Sheets API refused ' + range + ': HTTP ' + res.getResponseCode() +
+               String.fromCharCode(10) + res.getContentText().slice(0, 400));
+    return null;
+  }
+  var j = JSON.parse(res.getContentText());
+  return j.values || [];
+}
+
+// The API's own error body, because "refused" told us nothing: a wrong tab name
+// and a missing permission look identical from outside and need opposite fixes.
+function sheetsApiRaw_(path) {
+  var res = UrlFetchApp.fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + path, {
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    muteHttpExceptions: true
+  });
+  return { code: res.getResponseCode(), body: res.getContentText() };
+}
+
+// ── Reading and writing the document without SpreadsheetApp ──────────────
+// Switched on with SHEETS_API_on() and off again with SHEETS_API_off(), so the
+// normal path comes straight back the moment openById works again. Nothing here
+// changes what is stored or how; it is the same rows through a different door.
+var SHEETS_API_KEY = 'USE_SHEETS_API';
+
+function sheetsApiOn_() {
+  try { return PropertiesService.getScriptProperties().getProperty(SHEETS_API_KEY) === 'on'; }
+  catch (e) { return false; }
+}
+function SHEETS_API_on()  { PropertiesService.getScriptProperties().setProperty(SHEETS_API_KEY, 'on');
+                            Logger.log('Reads and writes now go through the Sheets API.'); return 'on'; }
+function SHEETS_API_off() { PropertiesService.getScriptProperties().deleteProperty(SHEETS_API_KEY);
+                            Logger.log('Back to the normal SpreadsheetApp path.'); return 'off'; }
+
+// Every row of a tab, the way getDataRange().getValues() would have given them.
+// Rows the API returns are ragged, so they are padded out to a fixed width and
+// the callers that index by column keep working unchanged.
+function apiValues_(tabName, width) {
+  var rows = sheetsApiGet_("'" + tabName + "'");
+  if (rows === null) return null;
+  var w = width || 40, out = [];
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i] || [];
+    while (r.length < w) r.push('');
+    out.push(r);
+  }
+  return out;
+}
+
+function colLetter_(n) {
+  var s = '';
+  while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+
+// appendRow's replacement. The API appends after the last filled row of the
+// tab, which is what appendRow does, so ordering and the row number match.
+function apiAppend_(tabName, row) {
+  var url = 'https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID +
+            '/values/' + encodeURIComponent("'" + tabName + "'!A1") +
+            ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS';
+  var res = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    payload: JSON.stringify({ values: [row] }),
+    muteHttpExceptions: true
+  });
+  if (res.getResponseCode() !== 200) return null;
+  // "'Plan Meetings'!A413:X413" -> 413, so callers that then write one more cell
+  // into that row know where it landed.
+  var m = /![A-Z]+(\d+)/.exec((JSON.parse(res.getContentText()).updates || {}).updatedRange || '');
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+// Writing one cell, for the follow-up columns the save path fills in after.
+function apiSetCell_(tabName, row, col, value) {
+  var a1 = "'" + tabName + "'!" + colLetter_(col) + row;
+  var url = 'https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID +
+            '/values/' + encodeURIComponent(a1) + '?valueInputOption=USER_ENTERED';
+  var res = UrlFetchApp.fetch(url, {
+    method: 'put',
+    contentType: 'application/json',
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    payload: JSON.stringify({ values: [[value]] }),
+    muteHttpExceptions: true
+  });
+  return res.getResponseCode() === 200;
+}
+
+// Editor helper: prove the three operations work before anything depends on them.
+function SHEETS_API_selftest() {
+  var out = [];
+  var t = new Date().getTime();
+  var rows = apiValues_(MEETINGS_SHEET, 24);
+  out.push('read Plan Meetings : ' + (rows === null ? 'refused' : rows.length + ' rows') +
+           ' in ' + (new Date().getTime() - t) + ' ms');
+  t = new Date().getTime();
+  var emp = apiValues_(EMPLOYEE_SHEET, 8);
+  out.push('read Employee_DB   : ' + (emp === null ? 'refused' : emp.length + ' rows') +
+           ' in ' + (new Date().getTime() - t) + ' ms');
+  out.push('');
+  out.push('Nothing was written. If both read, the API path is ready.');
+  Logger.log(out.join(String.fromCharCode(10)));
+  return out.join(' || ');
+}
+
+// Editor helper: ask the document what its tabs are actually called. This is a
+// metadata call, so it comes back even while the document will not open.
+function SHEET_apiTabs() {
+  var t = new Date().getTime();
+  var r = sheetsApiRaw_('?fields=properties.title,sheets.properties(title,gridProperties)');
+  var out = ['HTTP ' + r.code + ' in ' + (new Date().getTime() - t) + ' ms'];
+  if (r.code !== 200) {
+    out.push(r.body.slice(0, 600));
+  } else {
+    var j = JSON.parse(r.body);
+    out.push('Document: ' + (j.properties && j.properties.title));
+    out.push('');
+    (j.sheets || []).forEach(function(s) {
+      var g = s.properties.gridProperties || {};
+      out.push('  "' + s.properties.title + '"   ' + (g.rowCount || '?') + ' rows x ' + (g.columnCount || '?') + ' cols');
+    });
+  }
+  Logger.log(out.join(String.fromCharCode(10)));
+  return r.code;
+}
+
+// Editor helper: does the other road work? Reads five rows and reports.
+function SHEET_apiTest() {
+  var out = [];
+  ['Employee', 'Plan Meetings'].forEach(function(name) {
+    var t = new Date().getTime();
+    try {
+      var rows = sheetsApiGet_("'" + name + "'!A1:F5");
+      out.push(name + ': ' + (rows === null ? 'refused' : rows.length + ' rows') +
+               ' in ' + (new Date().getTime() - t) + ' ms');
+      if (rows && rows.length) out.push('    first row: ' + rows[0].join(' | '));
+    } catch (e) {
+      out.push(name + ': FAILED after ' + (new Date().getTime() - t) + ' ms - ' + e.message);
+    }
+  });
+  out.push('');
+  out.push('Tab names must match exactly. If one says refused, tell me the real tab name.');
+  Logger.log(out.join(String.fromCharCode(10)));
+  return out.join(' || ');
+}
+
+// Fills the sign-in copy for EVERYONE, through the REST API, without
+// SpreadsheetApp ever being asked to open the document. This is what makes
+// other people able to log in while the document itself is unreachable.
+function EMP_refreshViaApi(tabName) {
+  tabName = tabName || EMPLOYEE_SHEET;   // the Run button passes nothing, so this default matters
+  var rows = sheetsApiGet_("'" + tabName + "'");
+  if (rows === null) {
+    Logger.log('The API refused, or the tab name is wrong. Tab tried: ' + tabName);
+    return 0;
+  }
+  var map = {}, n = 0;
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i] || [];
+    var em = (r[4] || '').toString().trim().toLowerCase();
+    if (!em) continue;
+    var primaryDist = (r[0] || '').toString().trim();
+    var districts = [primaryDist];
+    (r[7] || '').toString().split(/[,;]/).forEach(function(x) {
+      var d = x.toString().trim();
+      if (d && districts.map(function(z){ return z.toLowerCase(); }).indexOf(d.toLowerCase()) === -1) districts.push(d);
+    });
+    map[em] = {
+      district:    primaryDist,
+      districts:   districts,
+      block:       (r[1] || '').toString().trim(),
+      name:        (r[2] || '').toString().trim(),
+      designation: (r[3] || '').toString().trim(),
+      email:       (r[4] || '').toString().trim(),
+      role:        normalizeRole_(r[5]),
+      zone:        (r[6] || '').toString().trim()
+    };
+    n++;
+  }
+  if (!n) { Logger.log('Read the tab but found no email addresses in column E. Tab: ' + tabName); return 0; }
+  var chunks = empMirrorWrite_(map);
+  Logger.log('Sign-in copy filled from the API: ' + n + ' people, ' + chunks + ' chunk(s).' +
+             String.fromCharCode(10) + 'Everyone can sign in now.');
+  return n;
+}
+
+function SHEET_sizes() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var out = [], worst = 0;
+  ss.getSheets().forEach(function(sh) {
+    var maxR = sh.getMaxRows(), lastR = sh.getLastRow();
+    var maxC = sh.getMaxColumns(), lastC = sh.getLastColumn();
+    var tail = maxR - lastR;
+    if (tail > worst) worst = tail;
+    out.push(pad_(sh.getName(), 26) +
+             ' rows ' + pad_(lastR + ' of ' + maxR, 16) +
+             ' cols ' + pad_(lastC + ' of ' + maxC, 10) +
+             (tail > 1000 ? '   <-- ' + tail + ' empty rows to delete' : ''));
+  });
+  out.push('');
+  out.push(worst > 1000 ? 'Delete the empty rows on the tabs marked above.'
+                        : 'Every tab looks trim. The size is not the problem any more.');
+  Logger.log(out.join(String.fromCharCode(10)));
+  return worst;
+}
+function pad_(s, n) { s = String(s); while (s.length < n) s += ' '; return s; }
+
+// Editor helper: removes the empty tail from every tab, using only row counts,
+// never a data read. Preview first, then pass 'DELETE'. It never touches a row
+// at or above getLastRow(), so nothing that holds anything can be removed.
+function SHEET_trimTail(confirm) {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var log = [], total = 0;
+  ss.getSheets().forEach(function(sh) {
+    var maxR = sh.getMaxRows(), lastR = sh.getLastRow();
+    var keep = Math.max(lastR, 1) + 50;        // a little room to append into
+    if (maxR <= keep) { log.push(sh.getName() + ': already trim (' + maxR + ' rows)'); return; }
+    var from = keep + 1, count = maxR - keep;
+    total += count;
+    if (confirm === 'DELETE') {
+      sh.deleteRows(from, count);
+      log.push(sh.getName() + ': deleted rows ' + from + '-' + maxR + '  (' + count + ' empty rows)');
+    } else {
+      log.push(sh.getName() + ': would delete rows ' + from + '-' + maxR + '  (' + count + ' empty rows)');
+    }
+  });
+  log.push('');
+  log.push(confirm === 'DELETE' ? ('Removed ' + total + ' empty rows in total.')
+                                : ('Preview only. Run SHEET_trimTail("DELETE") to remove ' + total + ' empty rows.'));
+  Logger.log(log.join(String.fromCharCode(10)));
+  return total;
+}
+
+function SHEET_probe() {
+  var out = [];
+
+  var t1 = new Date().getTime();
+  try {
+    var tmp = SpreadsheetApp.create('EG probe ' + t1);
+    tmp.getSheets()[0].getRange(1, 1).setValue('ok');
+    var id = tmp.getId();
+    out.push('A BRAND NEW SHEET : worked in ' + (new Date().getTime() - t1) + ' ms');
+    try { DriveApp.getFileById(id).setTrashed(true); } catch (e0) {}
+  } catch (e1) {
+    out.push('A BRAND NEW SHEET : FAILED after ' + (new Date().getTime() - t1) + ' ms - ' + e1.message);
+  }
+
+  var t2 = new Date().getTime();
+  try {
+    var sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(EMPLOYEE_SHEET);
+    out.push('OUR DOCUMENT      : opened, ' + (sh ? sh.getLastRow() + ' rows' : 'sheet missing') +
+             ', in ' + (new Date().getTime() - t2) + ' ms');
+  } catch (e2) {
+    out.push('OUR DOCUMENT      : FAILED after ' + (new Date().getTime() - t2) + ' ms - ' + e2.message);
+  }
+
+  Logger.log(out.join(String.fromCharCode(10)));
+  return out.join(' || ');
+}
+
 function LOGIN_debug(email) {
   var out = [];
   email = (email || 'alok.mohan@educategirls.ngo').toString().trim().toLowerCase();
@@ -766,6 +1089,69 @@ function checkAccess(email) {
 // ------------------------------------------------------------
 //  DROPDOWN DATA - Stakeholder Type (hardcoded) + Meeting Purpose (sheet)
 // ------------------------------------------------------------
+// ── Meeting purposes, with a copy that does not depend on Sheets ─────────
+var PURPOSES_KEY = 'PURPOSES_MIRROR';
+
+function purposesRead_() {
+  var cache = CacheService.getScriptCache();
+  var cached = cache.get('EG_PURPOSES');
+  if (cached) { try { return JSON.parse(cached); } catch (e) {} }
+
+  var copy = null;
+  try { copy = JSON.parse(PropertiesService.getScriptProperties().getProperty(PURPOSES_KEY) || 'null'); } catch (e2) {}
+  if (copy && copy.length) {
+    try { cache.put('EG_PURPOSES', JSON.stringify(copy), 600); } catch (e3) {}
+    return copy;
+  }
+
+  var list = purposesReadFromSheet_();
+  if (!list) return [];                    // Sheets will not answer and there is no copy yet
+  purposesWrite_(list);
+  return list;
+}
+
+function purposesReadFromSheet_() {
+  try {
+    var ws = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Meeting Purpose');
+    if (!ws) return null;
+    var d = ws.getDataRange().getValues(), out = [];
+    for (var i = 1; i < d.length; i++) { if (d[i][0]) out.push(d[i][0].toString().trim()); }
+    return out;
+  } catch (e) { return null; }
+}
+
+function purposesWrite_(list) {
+  try {
+    PropertiesService.getScriptProperties().setProperty(PURPOSES_KEY, JSON.stringify(list));
+    CacheService.getScriptCache().put('EG_PURPOSES', JSON.stringify(list), 600);
+    return list.length;
+  } catch (e) { return 0; }
+}
+
+// Editor helper: refresh the purpose copy from the Sheet. calendarJob does this
+// hourly; run it yourself after editing the Meeting Purpose sheet.
+function PURPOSE_refresh() {
+  var list = purposesReadFromSheet_();
+  if (!list) { Logger.log('Could not read the Meeting Purpose sheet - Sheets is not answering. Try again in a minute.'); return 0; }
+  purposesWrite_(list);
+  Logger.log('Purpose copy refreshed: ' + list.length + ' purposes.' + String.fromCharCode(10) + list.join(', '));
+  return list.length;
+}
+
+// Editor helper for the case this was written in: Sheets is refusing the
+// document, so the copy cannot be taken from it. This puts the purposes people
+// have actually been choosing all year into the copy, so the form works tonight.
+// The hourly refresh replaces it with the real sheet the moment Sheets answers.
+function PURPOSE_seedFallback() {
+  var list = ['Enrollment','Learning','Introductory Meeting','MPR Submission','Review Meeting',
+              'School Liasioning','Courtesy Meeting','Retention','DTF','Feedback letter',
+              'Invitation','Task Force Meeting'];
+  purposesWrite_(list);
+  Logger.log('Seeded ' + list.length + ' purposes as a stand-in:' + String.fromCharCode(10) + list.join(', ') +
+             String.fromCharCode(10) + 'The real sheet replaces this automatically once Sheets answers.');
+  return list.length;
+}
+
 function getDropdownData(email) {
   // Re-verify access on every page load
   if (email && !getEmployeeByEmail(email.trim().toLowerCase())) {
@@ -781,30 +1167,23 @@ function getDropdownData(email) {
     'ABSA', 'ARP', 'Head Teacher', 'Teacher', 'Other'
   ];
 
-  var purposes = [];
-  var cache = CacheService.getScriptCache();
-  var cached = cache.get('EG_PURPOSES');
-  if (cached) {
-    purposes = JSON.parse(cached);
-  } else {
-    var ss  = SpreadsheetApp.openById(SPREADSHEET_ID);
-    var ws2 = ss.getSheetByName('Meeting Purpose');
-    if (ws2) {
-      var d2 = ws2.getDataRange().getValues();
-      for (var i = 1; i < d2.length; i++) {
-        if (d2[i][0]) purposes.push(d2[i][0].toString().trim());
-      }
-    }
-    cache.put('EG_PURPOSES', JSON.stringify(purposes), 600);
-  }
+  // Cache, then the copy in Script Properties, and only then the Sheet. When
+  // Sheets stopped answering on 17 Sep 2026 this read hung for six minutes and
+  // took the whole Plan Meeting form down with it, including the posts, which
+  // are not even stored in a sheet.
+  var purposes = purposesRead_();
 
   // Blocks per district, so the plan form can offer the block a block-level
-  // official actually sits in. Taken from the employee master, which is where
-  // the block names are already maintained.
+  // official actually sits in. Built from the sign-in copy rather than by
+  // reopening the employee sheet.
+  // The copy already carries each person's district and block, and an empty
+  // block list only means the optional block dropdown has nothing to offer.
   var blocksByDistrict = {};
   try {
-    var em = getEmployeeMaster();
-    ((em && em.employees) || []).forEach(function(e) {
+    var _mir = empMirrorRead_() || {};
+    var _emps = [];
+    for (var _k in _mir) _emps.push(_mir[_k]);
+    _emps.forEach(function(e) {
       var d = (e.district || '').toString().trim();
       var b = (e.block || '').toString().trim();
       if (!d || !b) return;
@@ -3842,6 +4221,7 @@ function calendarJob() {
   // can never stop anyone logging in. Wrapped, because refreshing the copy is
   // not worth failing the calendar sync over.
   try { EMP_refreshMirror(); } catch (e) {}
+  try { PURPOSE_refresh(); }   catch (e) {}
   return syncCalendarEvents('live', 30);
 }
 function installCalendarTrigger() {
@@ -3851,6 +4231,56 @@ function installCalendarTrigger() {
 }
 // ---- Run from the editor ----
 // Which automatic triggers are actually installed right now?
+// ── Letting a besieged document breathe ─────────────────────────────────
+// SHEET_probe showed the Sheets service healthy and only our document refusing
+// to open. Everything that opens it holds it for up to eight minutes while it
+// waits, and the hourly jobs, the half hourly snapshot and every app request
+// kept arriving before the last ones had died, so the document never came free.
+// These two take the hourly jobs off for a while and put them back exactly as
+// they were. The monthly report and the weekly nudge are left alone.
+var HOURLY_JOBS = ['taggingJob', 'escalationJob', 'calendarJob'];
+
+function TRIGGERS_pauseHourly() {
+  var removed = [];
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    var fn = t.getHandlerFunction();
+    if (HOURLY_JOBS.indexOf(fn) >= 0) { ScriptApp.deleteTrigger(t); removed.push(fn); }
+  });
+  PropertiesService.getScriptProperties().setProperty('PAUSED_HOURLY', JSON.stringify(removed));
+  Logger.log('Paused: ' + (removed.join(', ') || 'nothing was installed') +
+             String.fromCharCode(10) + 'Put them back later with TRIGGERS_restoreHourly().');
+  return removed;
+}
+
+function TRIGGERS_restoreHourly() {
+  var was = [];
+  try { was = JSON.parse(PropertiesService.getScriptProperties().getProperty('PAUSED_HOURLY') || '[]'); } catch (e) {}
+  var have = ScriptApp.getProjectTriggers().map(function(t) { return t.getHandlerFunction(); });
+  var back = [];
+  if (was.indexOf('taggingJob')    >= 0 && have.indexOf('taggingJob')    < 0) { installTaggingTrigger();    back.push('taggingJob'); }
+  if (was.indexOf('escalationJob') >= 0 && have.indexOf('escalationJob') < 0) { installEscalationTrigger(); back.push('escalationJob'); }
+  if (was.indexOf('calendarJob')   >= 0 && have.indexOf('calendarJob')   < 0) { installCalendarTrigger();   back.push('calendarJob'); }
+  PropertiesService.getScriptProperties().deleteProperty('PAUSED_HOURLY');
+  Logger.log('Restored: ' + (back.join(', ') || 'nothing to restore'));
+  return back;
+}
+
+// ── Plan B: a fresh copy of the document ────────────────────────────────
+// Goes through Drive rather than Sheets, so it can copy a document that Sheets
+// itself will not open. Prints the new id and url. NOTHING is switched over by
+// this: the script keeps using the old document until SPREADSHEET_ID in the code
+// is changed to the new id and redeployed. The old file stays where it is.
+function SHEET_makeCopy() {
+  var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm');
+  var src   = DriveApp.getFileById(SPREADSHEET_ID);
+  var copy  = src.makeCopy(src.getName() + ' (copy ' + stamp + ')');
+  Logger.log('Copied.' + String.fromCharCode(10) +
+             'New id : ' + copy.getId() + String.fromCharCode(10) +
+             'New url: ' + copy.getUrl() + String.fromCharCode(10) +
+             'Send the id back to switch the script over to it.');
+  return copy.getId();
+}
+
 function TRIGGER_status() {
   var t = ScriptApp.getProjectTriggers().map(function(x){ return x.getHandlerFunction(); });
   var want = ['monthlyReportJob','taggingJob','escalationJob','calendarJob','nudgeJob'];
@@ -4913,6 +5343,40 @@ function EMP_refreshMirror() {
   var chunks = empMirrorWrite_(map);
   Logger.log('Employee copy refreshed: ' + people + ' people, ' + chunks + ' chunk(s). Sign-in no longer needs the Sheet.');
   return people;
+}
+
+// Editor helper: write one person into the sign-in copy WITHOUT opening the
+// Sheet. For the case this was written in: the Sheets service is refusing the
+// document, so EMP_refreshMirror() cannot run, and nobody can sign in because
+// sign-in has to look the person up. This puts one known person in by hand so
+// they are not locked out. It adds to the copy, it does not replace it, and the
+// hourly refresh overwrites the lot with the real sheet as soon as Sheets is
+// answering again. Nothing here grants anything the sheet does not already say.
+function EMP_seedOne(email, name, role, district, designation, zone) {
+  email = (email || '').toString().trim().toLowerCase();
+  if (!email) { Logger.log('Pass an email.'); return 0; }
+  var map = empMirrorRead_() || {};
+  map[email] = {
+    district:    (district || '').toString().trim(),
+    districts:   (district || '').toString().trim() ? [(district || '').toString().trim()] : [],
+    block:       '',
+    name:        (name || email.split('@')[0]).toString().trim(),
+    designation: (designation || role || '').toString().trim(),
+    email:       email,
+    role:        normalizeRole_(role || 'State'),
+    zone:        (zone || '').toString().trim()
+  };
+  var chunks = empMirrorWrite_(map);
+  var n = 0; for (var k in map) n++;
+  Logger.log('Seeded ' + email + String.fromCharCode(10) +
+             JSON.stringify(map[email]) + String.fromCharCode(10) +
+             'Copy now holds ' + n + ' person(s) in ' + chunks + ' chunk(s). Sign-in will use this.');
+  return n;
+}
+
+// The one this was needed for. Run EMP_seedMe() and sign in.
+function EMP_seedMe() {
+  return EMP_seedOne('alok.mohan@educategirls.ngo', 'Alok Mohan', 'State', '', 'State Lead', '');
 }
 
 function EMP_mirrorStatus() {
