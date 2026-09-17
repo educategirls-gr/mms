@@ -313,6 +313,12 @@
       /* Modal: full width on mobile */
       /* Same flex layout on small screens: the body scrolls, not the box. */
       .modal-box { width: 96vw; max-width: 96vw; max-height: 90vh; overflow: visible; top: 5vh; transform: translateX(-50%); }
+      /* This form is filled on a phone, often one handed and standing up, so
+         the things you tap need to be worth aiming at. Back was 14px tall and
+         the follow-up row 18px. */
+      .modal-back-btn { padding: 10px 6px; margin-bottom: 8px; }
+      .fu-label { padding: 10px 0; }
+      #mphase-conduct textarea { min-height: 84px; }
 
       /* Action option cards: 3 columns stay */
       .aoc-icon  { font-size: 24px; }
@@ -718,7 +724,7 @@
           </div>
           <!-- Follow-up -->
           <div style="margin-bottom:12px;">
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;">
+            <label class="fu-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;">
               <input type="checkbox" id="c-fu-toggle" onchange="toggleFollowUp(this)"
                      style="width:16px;height:16px;accent-color:#1D4ED8;cursor:pointer;">
               <span style="font-size:13px;font-weight:600;color:#1D4ED8;">📅 Schedule a Follow-up Meeting?</span>
