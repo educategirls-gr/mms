@@ -608,6 +608,7 @@
         <div class="submit-bar">
           <button class="btn-reset" onclick="resetForm()">Reset</button>
           <button class="btn-submit" id="btn-submit" onclick="submitMeeting()">Save Meeting Plan</button>
+          <div id="save-slow-note" style="display:none;margin-top:10px;font-size:13px;line-height:1.5;color:#92400E;background:#FEF3C7;border:1px solid #FDE68A;border-radius:8px;padding:10px 12px;"></div>
         </div>
       </div>
     </div>
@@ -2982,6 +2983,7 @@
       loading(false);
       if (res.success) {
         invalidateFrontCache();
+        if (res.duplicate) showToast('This plan was already saved, so it was not filed a second time.');
         showSuccessModal(res.meetingId);
         resetForm();
       } else if (res.message === 'ACCESS_REVOKED') {
@@ -3038,10 +3040,27 @@
     document.getElementById('alert-err').className = 'alert alert-error';
     document.getElementById('alert-ok').className  = 'alert alert-success';
   }
+  var _savingTimers = [];
   function loading(on) {
     var b = document.getElementById('btn-submit');
     b.disabled = on;
     b.innerHTML = on ? '<span class="spinner"></span>Saving...' : 'Save Meeting Plan';
+    _savingTimers.forEach(clearTimeout);
+    _savingTimers = [];
+    var note = document.getElementById('save-slow-note');
+    if (!on) { if (note) note.style.display = 'none'; return; }
+    // Google's front door can take half a minute on a weak connection. Without a
+    // word on screen people assume it failed and save again, and the same
+    // meeting lands in the sheet twice.
+    function say(ms, text) {
+      _savingTimers.push(setTimeout(function() {
+        if (!note) return;
+        note.textContent = text;
+        note.style.display = 'block';
+      }, ms));
+    }
+    say(8000,  'Still saving. The server is slow right now, please do not press Save again.');
+    say(25000, 'Still saving. Nothing is lost, and pressing Save again would only file the meeting twice.');
   }
   function resetForm() {
     ['mt-h','mt-m','mt-ap','adhikariName','adhikariPost','otherPost',

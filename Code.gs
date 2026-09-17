@@ -780,6 +780,14 @@ function saveMeeting(data) {
     var sheet = ss.getSheetByName(MEETINGS_SHEET);
     if (!sheet) return { success: false, message: 'Meetings sheet not found.' };
 
+    // ── The same plan twice ───────────────────────────────────
+    // Apps Script's front door is slow and sometimes answers with an error page
+    // even though the script has already written the row, so an officer who
+    // never sees a confirmation presses Save again. Instead of letting that
+    // become a second meeting, hand back the one already in the sheet.
+    var dupId = findRecentPlan_(sheet, data);
+    if (dupId) return { success: true, meetingId: dupId, duplicate: true };
+
     var now   = new Date();
     var mtgId = 'MTG-' + now.getFullYear() +
                 ('0'+(now.getMonth()+1)).slice(-2) +
@@ -832,9 +840,14 @@ function saveMeeting(data) {
     ];
 
     sheet.appendRow(row);
-    sheet.getRange(sheet.getLastRow(), 7).setNumberFormat('@'); // keep Meeting Time as text
-    if (!sheet.getRange(1, COL_PLAN_SKBLOCK).getValue()) sheet.getRange(1, COL_PLAN_SKBLOCK).setValue('Stakeholder Block');
-    if (data.adhikariBlock) sheet.getRange(sheet.getLastRow(), COL_PLAN_SKBLOCK).setValue(data.adhikariBlock);
+    var newRow = sheet.getLastRow();
+    sheet.getRange(newRow, 7).setNumberFormat('@'); // keep Meeting Time as text
+    // Only touched when a block was actually picked, so the usual save costs
+    // neither the header read nor the extra write.
+    if (data.adhikariBlock) {
+      if (!sheet.getRange(1, COL_PLAN_SKBLOCK).getValue()) sheet.getRange(1, COL_PLAN_SKBLOCK).setValue('Stakeholder Block');
+      sheet.getRange(newRow, COL_PLAN_SKBLOCK).setValue(data.adhikariBlock);
+    }
 
     // ── Colleague email notification ──────────────────────────
     if (data.colleagueName && data.colleagueName.trim()) {
@@ -846,6 +859,41 @@ function saveMeeting(data) {
   } catch (err) {
     return { success: false, message: err.message };
   }
+}
+
+// The moment encoded in a meeting id (MTG-YYYYMMDD-HHMMSS); 0 if it will not parse
+function mtgIdTime_(id) {
+  var m = /^MTG-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/.exec((id || '').toString().trim());
+  if (!m) return 0;
+  return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime();
+}
+
+// A plan by the same officer, for the same official, the same date and the same
+// purpose, saved minutes ago: that is the same save arriving twice, not a second
+// meeting. Returns its meeting id, or '' when this really is a new plan.
+var DUP_PLAN_WINDOW_MS = 10 * 60 * 1000;
+function findRecentPlan_(sheet, data) {
+  try {
+    var last = sheet.getLastRow();
+    if (last < 2) return '';
+    var from = Math.max(2, last - 200);   // a resend is always among the newest rows
+    var rows = sheet.getRange(from, 1, last - from + 1, 14).getValues();
+    function key(email, date, name, purpose) {
+      return [(email || '').toString().trim().toLowerCase(),
+              fmtDateVal(date),
+              (name || '').toString().trim().toLowerCase(),
+              (purpose || '').toString().trim().toLowerCase()].join('|');
+    }
+    var mine   = key(data.email, data.meetingDate, data.adhikariName, data.purpose);
+    var cutoff = Date.now() - DUP_PLAN_WINDOW_MS;
+    for (var i = rows.length - 1; i >= 0; i--) {
+      var r = rows[i];
+      if ((r[13] || '').toString().trim() !== 'Planned') continue;      // N  Status
+      if (mtgIdTime_(r[0]) < cutoff) continue;                          // A  Meeting ID
+      if (key(r[4], r[5], r[9], r[11]) === mine) return (r[0] || '').toString().trim();
+    }
+  } catch (e) { /* a guard that fails must never block a genuine save */ }
+  return '';
 }
 
 // ------------------------------------------------------------
@@ -3003,6 +3051,36 @@ function COMMIT_dryRun(limit) {
 // ------------------------------------------------------------
 // Find rows in Plan Meetings that render as a blank line in Manage Meetings:
 // no id, or an id with the core fields missing. Reads only, writes nothing.
+// Editor helper: rows that look like one plan saved more than once (same officer,
+// official, date and purpose). Reports only, it deletes nothing; remove the extras
+// from Manage Meetings so the app keeps its own record straight.
+function PLAN_findDupes() {
+  var sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(MEETINGS_SHEET);
+  var rows  = sheet.getDataRange().getValues();
+  var groups = {};
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    if (!(r[0] || '').toString().trim()) continue;
+    var k = [(r[4] || '').toString().trim().toLowerCase(),
+             fmtDateVal(r[5]),
+             (r[9] || '').toString().trim().toLowerCase(),
+             (r[11] || '').toString().trim().toLowerCase()].join('|');
+    if (!groups[k]) groups[k] = [];
+    groups[k].push({ row: i + 1, id: (r[0] || '').toString().trim(), status: (r[13] || '').toString().trim() });
+  }
+  var out = [], total = 0;
+  for (var g in groups) {
+    if (groups[g].length < 2) continue;
+    total += groups[g].length - 1;
+    var p = g.split('|');
+    out.push(p[2] + '  |  ' + p[1] + '  |  ' + p[0] + '  |  ' + p[3]);
+    groups[g].forEach(function(x) { out.push('     row ' + x.row + '   ' + x.id + '   ' + x.status); });
+  }
+  Logger.log(out.length ? out.join('\n') : 'No duplicate plans found.');
+  Logger.log('Extra rows beyond one per meeting: ' + total);
+  return total;
+}
+
 function PLAN_findBlank() {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID), sh = ss.getSheetByName(MEETINGS_SHEET);
   if (!sh) return { success:false, message:'no plan sheet' };
