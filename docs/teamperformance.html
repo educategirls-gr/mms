@@ -16,7 +16,11 @@
       --sidebar-w:  264px;
       --topbar-h:   58px;
     }
-    body { font-family: 'Segoe UI', Arial, sans-serif; background: #F5F5F5; display: flex; flex-direction: row; height: 100vh; overflow: hidden; }
+    /* 100vh on a phone is taller than what you can actually see, because the
+       browser chrome is not counted. That pushed the foot of the page below the
+       screen and left the document itself scrollable, so scrollIntoView dragged
+       the header out of view. 100dvh is the real visible height. */
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #F5F5F5; display: flex; flex-direction: row; height: 100vh; height: 100dvh; overflow: hidden; }
 
     /* ── Sidebar ─────────────────────────────────────────────── */
     .sidebar {
@@ -243,7 +247,7 @@
     @media (max-width: 960px) {
       .sidebar { display: none; }
       .mob-nav { display: block; }
-      .content-area { padding: 14px 14px 76px; }
+      .content-area { padding: 14px 14px 92px; }
       .kpi-grid, .insight-grid { grid-template-columns: repeat(2,1fr) !important; }
       .two-col, .three-col { grid-template-columns: 1fr !important; }
       .topbar { padding: 0 14px; gap: 10px; }
@@ -1339,7 +1343,7 @@
     }
     populateReportMonths();
     applyReportFilters();
-    document.getElementById('rp-detail').scrollIntoView({ behavior:'smooth', block:'start' });
+    scrollAreaTo(document.getElementById('rp-detail'));
   }
 
   // Extract "Apr 2026" from "15 Apr 2026"
@@ -1598,7 +1602,15 @@
   // ── Conducted-meetings pagination ─────────────────────────────
   var _rpConducted = [], _rpPage = 0, _rpEmptyMsg = '';
   var RP_PAGE = 20;
-  function rpPage(delta){ _rpPage += delta; renderRpTable(); document.getElementById('rp-table').scrollIntoView({ behavior:'smooth', block:'start' }); }
+  // Scrolls the content panel only. scrollIntoView would also move the document
+  // when it has any slack, which takes the header off the top of the screen.
+  function scrollAreaTo(el) {
+    var area = document.querySelector('.content-area');
+    if (!el || !area) return;
+    var r = el.getBoundingClientRect(), a = area.getBoundingClientRect();
+    area.scrollTo({ top: area.scrollTop + (r.top - a.top) - 10, behavior: 'smooth' });
+  }
+  function rpPage(delta){ _rpPage += delta; renderRpTable(); scrollAreaTo(document.getElementById('rp-table')); }
   function renderRpTable(){
     var host = document.getElementById('rp-table');
     var total = _rpConducted.length;
