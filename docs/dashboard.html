@@ -783,6 +783,11 @@
             <div style="font-size:11px;color:#6B7280;">A new meeting will be created with the same stakeholder. It will receive a new Meeting ID linked to this one.</div>
           </div>
           <div id="conduct-alert" class="alert alert-error"></div>
+          <label class="fu-label" style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer;">
+            <input type="checkbox" id="c-make-mom" checked onchange="onMomToggle()" style="width:16px;height:16px;">
+            <span style="font-size:13px;font-weight:600;color:#374151;">Create the MoM document</span>
+          </label>
+          <div style="font-size:11px;color:#6B7280;margin-left:24px;">Writing it is the slowest part of saving. Leave it off for a meeting that does not need one.</div>
           <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
             <button class="btn-reset" onclick="closeActionModal()">Cancel</button>
             <button class="btn-submit" id="conduct-submit-btn" onclick="submitConduct()" style="padding:10px 24px;background:#166534;font-size:13px;">💾 Save &amp; Generate MoM</button>
@@ -1824,14 +1829,6 @@
     var outcome = document.getElementById('c-outcome').value;
     if (!outcome) { showModalAlert('conduct', 'Please choose what came out of this meeting.'); return; }
 
-    // Thin but allowed: say so once and let them decide, rather than blocking.
-    var hint = document.getElementById('c-kp-hint');
-    if (kp.length < 120 && hint && hint.dataset.warned !== '1') {
-      hint.dataset.warned = '1';
-      hint.textContent = 'This is quite short. A line or two more, especially on what the official said, makes the follow-up reminders and the meeting prep far more useful. Press Submit again to save it as it is.';
-      hint.style.display = 'block';
-      return;
-    }
     var followUp = null;
     if (document.getElementById('c-fu-toggle').checked) {
       var fuDate = document.getElementById('c-fu-date').value;
@@ -1862,7 +1859,7 @@
         // Nothing usable came back from any of them: say so rather than filing
         // the meeting silently without its photos.
         if (!photos.length) {
-          btn.disabled = false; btn.innerHTML = '&#128190; Save &amp; Generate MoM';
+          btn.disabled = false; btn.innerHTML = momBtnLabel();
           showModalAlert('conduct', 'The photos could not be read. Please pick them again.');
           return;
         }
@@ -1909,8 +1906,19 @@
     img.src = url;
   }
 
+  // One place decides what the button says, so it can never promise a document
+  // that was switched off.
+  function momBtnLabel() {
+    return ((document.getElementById('c-make-mom') || {}).checked)
+      ? '💾 Save &amp; Generate MoM' : '💾 Save Meeting';
+  }
+  function onMomToggle() {
+    var b = document.getElementById('conduct-submit-btn');
+    if (b && !b.disabled) b.innerHTML = momBtnLabel();
+  }
   function doSendConduct(m, date, btn, kp, photos, followUp, outcome) {
-    btn.innerHTML = '<span class="spinner"></span>Generating MoM...';
+    var wantMom = (document.getElementById('c-make-mom') || {}).checked;
+    btn.innerHTML = '<span class="spinner"></span>' + (wantMom ? 'Generating MoM...' : 'Saving...');
     var time = getPickerTime('ct-h', 'ct-m', 'ct-ap');
     gasPost('conductMeeting', {
       meetingId: m.meetingId, district: m.district || ACTIVE_DISTRICT,
@@ -1921,9 +1929,10 @@
       colleagueName: m.colleagueName || '', colleaguePost: m.colleaguePost || '',
       conductDate: date, conductTime: time, keyPoints: kp, photos: photos,
       outcome: outcome || '',
+      skipMom: !(document.getElementById('c-make-mom') || {}).checked,
       followUp: followUp || null
     }, function(res) {
-      btn.disabled = false; btn.innerHTML = '💾 Save &amp; Generate MoM';
+      btn.disabled = false; btn.innerHTML = momBtnLabel();
       if (res.success) {
         clearConductDraft(m.meetingId);
         invalidateFrontCache();
@@ -1946,7 +1955,7 @@
         showModalAlert('conduct', 'This note is word for word the same as one of your earlier meetings. Please write what actually happened in this one.');
       } else { showModalAlert('conduct', res.message || 'An error occurred.'); }
     }, function(e) {
-      btn.disabled = false; btn.innerHTML = '💾 Save &amp; Generate MoM';
+      btn.disabled = false; btn.innerHTML = momBtnLabel();
       saveConductDraft();
       showModalAlert('conduct', 'Could not save. What you typed is safe, so try again when you have signal. If you close the app it will still be here.');
     });

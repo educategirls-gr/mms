@@ -1974,7 +1974,12 @@ function conductMeeting(payload) {
 
     // 4. Create MoM Google Doc (includes follow-up info)
     payload.followUpId = followUpId;
-    try { momUrl = createMoMDoc(payload, photoFolderUrl); } catch(e) { momUrl = ''; }
+    // Writing the document is the slowest thing this request does, four to six
+    // seconds of Google Docs calls, so the officer gets to say whether this
+    // meeting needs one. The column simply stays empty when it does not.
+    if (!payload.skipMom) {
+      try { momUrl = createMoMDoc(payload, photoFolderUrl); } catch(e) { momUrl = ''; }
+    }
 
     // 5. Save to Conducted Meetings sheet
     var cSheet = ss.getSheetByName(CONDUCTED_SHEET);
