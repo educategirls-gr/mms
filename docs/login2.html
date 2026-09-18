@@ -312,8 +312,8 @@
                onkeydown="if(event.key==='Enter') doSetPassword()">
         <p class="hint">Eight characters or more. Not your name, and nothing anyone would guess.</p>
         <button id="btn-setpw" class="btn-primary" onclick="doSetPassword()">Save password and continue</button>
-        <div style="text-align:center;margin-top:14px;">
-          <a onclick="goToApp()" style="color:#6B7280;font-size:13px;cursor:pointer;text-decoration:underline;">Skip for now</a>
+        <div id="setpw-escape" style="display:none;text-align:center;margin-top:14px;">
+          <a onclick="goToApp()" style="color:#6B7280;font-size:13px;cursor:pointer;text-decoration:underline;">Continue without setting one</a>
         </div>
       </div>
 
@@ -525,12 +525,13 @@
     postJson('setPassword', { token: (_session && _session.token) || '' }, { password: a },
       function(res) {
         setLoading('btn-setpw', false);
-        if (res.success) goToApp();
-        else showAlert('setpw', res.message || 'Could not save it. You are signed in, so you can skip for now.');
+        if (res.success) { goToApp(); return; }
+        showAlert('setpw', res.message || 'Could not save that one. Please try another.');
       },
       function() {
         setLoading('btn-setpw', false);
-        showAlert('setpw', 'Could not reach the server. You are signed in, so you can skip for now.');
+        showAlert('setpw', 'Could not reach the server. You are already signed in, so you can carry on and set a password next time.');
+        document.getElementById('setpw-escape').style.display = '';
       });
   }
 
