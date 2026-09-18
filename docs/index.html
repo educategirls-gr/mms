@@ -255,14 +255,23 @@
 
       <div id="step-email">
         <h2>Sign In</h2>
-        <p class="tagline">Enter your official email to receive OTP</p>
+        <p class="tagline">Sign in with your office email and password</p>
         <div id="alert-email" class="alert alert-error"></div>
         <label class="form-label">Email Address <span class="req">*</span></label>
         <input id="email-input" type="email" class="form-input"
                placeholder="your@educategirls.ngo"
-               onkeydown="if(event.key==='Enter') sendOTP()">
-        <p class="hint">Enter your official @educategirls.ngo email address</p>
-        <button id="btn-send-otp" class="btn-primary" onclick="sendOTP()">Send OTP</button>
+               onkeydown="if(event.key==='Enter') document.getElementById('pw-input').focus()">
+        <label class="form-label" style="margin-top:12px;">Password <span class="req">*</span></label>
+        <input id="pw-input" type="password" class="form-input"
+               placeholder="Your password" autocomplete="current-password"
+               onkeydown="if(event.key==='Enter') doPasswordLogin()">
+        <button id="btn-pw-login" class="btn-primary" style="margin-top:14px;" onclick="doPasswordLogin()">Login</button>
+        <div style="text-align:center;margin-top:16px;">
+          <a id="lnk-getcode" onclick="sendOTP()" style="color:#8B1212;font-weight:600;font-size:13px;cursor:pointer;text-decoration:underline;">
+            First time here, or forgotten your password? Get a code
+          </a>
+        </div>
+        <button id="btn-send-otp" class="btn-primary" style="display:none;" onclick="sendOTP()">Send OTP</button>
         <div id="have-code-row" style="display:none;text-align:center;margin-top:14px;">
           <a onclick="iHaveACode()" style="color:#8B1212;font-weight:600;font-size:13px;cursor:pointer;text-decoration:underline;">The code did arrive, let me enter it</a>
         </div>
@@ -286,6 +295,22 @@
           <a id="resend-link" style="display:none;" onclick="resendOTP()">Resend OTP</a>
         </div>
         <button id="btn-verify" class="btn-primary" onclick="verifyOTP()">Verify &amp; Login</button>
+      </div>
+
+      <div id="step-setpw" style="display:none;">
+        <h2>Choose a password</h2>
+        <p class="tagline">From now on you can sign in with this instead of waiting for a code.</p>
+        <div id="alert-setpw" class="alert alert-error"></div>
+        <label class="form-label">New password <span class="req">*</span></label>
+        <input id="newpw-input" type="password" class="form-input" placeholder="At least 8 characters" autocomplete="new-password">
+        <label class="form-label" style="margin-top:12px;">Type it again <span class="req">*</span></label>
+        <input id="newpw2-input" type="password" class="form-input" placeholder="Same password again" autocomplete="new-password"
+               onkeydown="if(event.key==='Enter') doSetPassword()">
+        <p class="hint">Eight characters or more. Not your name, and nothing anyone would guess.</p>
+        <button id="btn-setpw" class="btn-primary" onclick="doSetPassword()">Save password and continue</button>
+        <div id="setpw-escape" style="display:none;text-align:center;margin-top:14px;">
+          <a onclick="goToApp()" style="color:#6B7280;font-size:13px;cursor:pointer;text-decoration:underline;">Continue without setting one</a>
+        </div>
       </div>
 
     </div>
@@ -357,12 +382,12 @@
     var email = document.getElementById('email-input').value.trim();
     if (!email) { showAlert('email', 'Please enter your email address.'); return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showAlert('email', 'Please enter a valid email address.'); return; }
-    setLoading('btn-send-otp', true);
+    setSendingCode(true);
     hideAlert('email');
     currentEmail = email;
     gasGet(GAS_URL + '?action=sendOTP&email=' + encodeURIComponent(email),
       function(res) {
-        setLoading('btn-send-otp', false);
+        setSendingCode(false);
         if (res.success) {
           document.getElementById('otp-sent-msg').textContent = 'OTP sent to: ' + email;
           showStep('otp'); startTimer(600);
@@ -370,7 +395,7 @@
         } else { showAlert('email', res.message); }
       },
       function(timedOut) {
-        setLoading('btn-send-otp', false);
+        setSendingCode(false);
         if (!timedOut) { showAlert('email', gasErrMsg(false)); return; }
         // Going quiet is not the same as failing. The script may well have run
         // and sent the code before the answer was lost on the way back, so
@@ -394,9 +419,15 @@
     gasGet(GAS_URL + '?action=verifyOTP&email=' + encodeURIComponent(currentEmail) + '&otp=' + otp,
       function(res) {
         if (res.success) {
-          try { sessionStorage.setItem('eg_grm_token', res.token); } catch(e) {}
-          try { sessionStorage.setItem('eg_grm_session', JSON.stringify(res)); } catch(e) {}
-          window.location.href = DASH_URL + '?token=' + encodeURIComponent(res.token);
+          keepSession(res);
+          // They are signed in either way. The only question is whether they
+          // want to skip the code next time, so ask before going through.
+          _verifying = false;
+          setLoading('btn-verify', false);
+          clearInterval(timerInterval);
+          hideAlert('setpw');
+          showStep('setpw');
+          document.getElementById('newpw-input').focus();
         } else {
           _verifying = false;
           setLoading('btn-verify', false);
@@ -404,6 +435,100 @@
         }
       },
       function(timedOut) { _verifying = false; setLoading('btn-verify', false); showAlert('otp', gasErrMsg(timedOut)); });
+  }
+
+  // Both ways in end up here, so nothing downstream can tell them apart.
+  function keepSession(res) {
+    try { sessionStorage.setItem('eg_grm_token', res.token); } catch(e) {}
+    try { sessionStorage.setItem('eg_grm_session', JSON.stringify(res)); } catch(e) {}
+    _session = res;
+  }
+  function goToApp() {
+    if (!_session || !_session.token) { showStep('email'); return; }
+    window.location.href = DASH_URL + '?token=' + encodeURIComponent(_session.token);
+  }
+  var _session = null;
+
+  // The Send OTP button is hidden on this page, so the wait has to show on the
+  // link that was actually pressed. Thirty seconds of nothing reads as broken.
+  function setSendingCode(on) {
+    var a = document.getElementById('lnk-getcode');
+    if (!a) return;
+    if (on) {
+      a.dataset.was = a.innerHTML;
+      a.innerHTML = 'Sending a code to your email, this can take a moment...';
+      a.style.pointerEvents = 'none';
+      a.style.opacity = '0.6';
+    } else {
+      if (a.dataset.was) a.innerHTML = a.dataset.was;
+      a.style.pointerEvents = '';
+      a.style.opacity = '';
+    }
+  }
+
+  function doPasswordLogin() {
+    var email = document.getElementById('email-input').value.trim();
+    var pw    = document.getElementById('pw-input').value;
+    if (!email) { showAlert('email', 'Please enter your email address.'); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showAlert('email', 'Please enter a valid email address.'); return; }
+    if (!pw) { showAlert('email', 'Please enter your password, or ask for a code below.'); return; }
+    currentEmail = email;
+    setLoading('btn-pw-login', true); hideAlert('email');
+    // Sent in the body, never in the address. A query string is written into
+    // server logs and browser history; a password has no business in either.
+    postJson('loginPassword', { email: email }, { password: pw },
+      function(res) {
+        setLoading('btn-pw-login', false);
+        if (res.success) { keepSession(res); goToApp(); }
+        else showAlert('email', res.message || 'Could not sign you in.');
+      },
+      function(timedOut) { setLoading('btn-pw-login', false); showAlert('email', gasErrMsg(timedOut)); });
+  }
+
+  // Same timeout and the same idea as gasGet, but the payload travels in the
+  // body. Not retried: a repeat is pointless for a login and unsafe for a save.
+  function postJson(action, params, body, onJson, onFail) {
+    var url = GAS_URL + '?action=' + encodeURIComponent(action);
+    for (var k in params) {
+      if (params.hasOwnProperty(k)) url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+    }
+    var ctrl  = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var quiet = false;
+    var timer = setTimeout(function(){ quiet = true; if (ctrl) ctrl.abort(); }, GAS_TIMEOUT_MS);
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(body || {}),
+      signal: ctrl ? ctrl.signal : undefined
+    })
+      .then(function(r){ return r.text(); })
+      .then(function(t){
+        clearTimeout(timer);
+        var j = null; try { j = JSON.parse(t); } catch (e) {}
+        if (j) onJson(j); else onFail(false);
+      }, function(){
+        clearTimeout(timer);
+        onFail(quiet);
+      });
+  }
+
+  function doSetPassword() {
+    var a = document.getElementById('newpw-input').value;
+    var b = document.getElementById('newpw2-input').value;
+    if (a.length < 8) { showAlert('setpw', 'Please choose at least 8 characters.'); return; }
+    if (a !== b)      { showAlert('setpw', 'The two do not match. Please type it again.'); return; }
+    setLoading('btn-setpw', true); hideAlert('setpw');
+    postJson('setPassword', { token: (_session && _session.token) || '' }, { password: a },
+      function(res) {
+        setLoading('btn-setpw', false);
+        if (res.success) { goToApp(); return; }
+        showAlert('setpw', res.message || 'Could not save that one. Please try another.');
+      },
+      function() {
+        setLoading('btn-setpw', false);
+        showAlert('setpw', 'Could not reach the server. You are already signed in, so you can carry on and set a password next time.');
+        document.getElementById('setpw-escape').style.display = '';
+      });
   }
 
   function resendOTP() {
@@ -450,8 +575,9 @@
     document.getElementById('otp-input').focus();
   }
   function showStep(s) {
-    document.getElementById('step-email').style.display = s === 'email' ? '' : 'none';
-    document.getElementById('step-otp').style.display   = s === 'otp'   ? '' : 'none';
+    document.getElementById('step-email').style.display  = s === 'email'  ? '' : 'none';
+    document.getElementById('step-otp').style.display    = s === 'otp'    ? '' : 'none';
+    document.getElementById('step-setpw').style.display  = s === 'setpw'  ? '' : 'none';
   }
   function goBack() {
     clearInterval(timerInterval);
@@ -464,8 +590,8 @@
   function hideAlert(s)    { document.getElementById('alert-' + s).className = 'alert alert-error'; }
   function setLoading(id, on) {
     var b = document.getElementById(id);
-    if (on) { b.disabled = true;  b.innerHTML = '<span class="spinner"></span>Please wait...'; }
-    else    { b.disabled = false; b.innerHTML = id === 'btn-verify' ? 'Verify &amp; Login' : 'Send OTP'; }
+    if (on) { b.dataset.was = b.innerHTML; b.disabled = true; b.innerHTML = '<span class="spinner"></span>Please wait...'; }
+    else    { b.disabled = false; b.innerHTML = b.dataset.was || (id === 'btn-verify' ? 'Verify &amp; Login' : 'Send OTP'); }
   }
 </script>
 </body>
