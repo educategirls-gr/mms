@@ -224,6 +224,22 @@
       background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px;
     }
     select#rp-district-sel { min-width: 220px; }
+
+    /* District filter that holds several districts at once */
+    .ds-box { flex: 1 1 240px; min-width: 240px; }
+    .ds-sum { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px;
+              border: 1.5px solid #E5E7EB; border-radius: 8px; background: #fff; cursor: pointer;
+              padding: 9px 12px; font-size: 13px; font-weight: 600; color: #374151; font-family: inherit; }
+    .ds-sum:hover { border-color: #C9A227; }
+    .ds-caret { color: #9CA3AF; font-size: 11px; }
+    .ds-panel { margin-top: 8px; padding: 10px; border: 1px solid #E5E7EB; border-radius: 8px;
+                background: #FAFAFA; display: flex; flex-wrap: wrap; gap: 6px; }
+    .ds-chip { border: 1.5px solid #E5E7EB; background: #fff; color: #4B5563; border-radius: 20px;
+               padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .ds-chip.on { border-color: #8B1212; background: #FBEAEA; color: #8B1212; }
+    .ds-actions { width: 100%; display: flex; gap: 14px; margin-top: 2px; }
+    .ds-act { border: none; background: none; color: #8B1212; font-size: 12px; font-weight: 700;
+              cursor: pointer; text-decoration: underline; padding: 2px 0; font-family: inherit; }
     select#rp-district-sel:focus, select.rp-sel:focus { border-color: var(--eg-orange); }
 
     /* ── Mobile bottom nav ───────────────────────────────────── */
@@ -390,9 +406,7 @@
       <div class="card" style="margin-bottom:18px;">
         <div class="card-title">Select District, Block &amp; Month<span class="card-title-line"></span></div>
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-          <select id="rp-district-sel" onchange="onReportDistrictChange()">
-            <option value="">All Districts</option>
-          </select>
+          <div id="rp-district-sel" class="ds-box"></div>
           <select id="rp-block-sel" class="rp-sel" onchange="onReportBlockChange()">
             <option value="">All Blocks</option>
           </select>
@@ -450,7 +464,7 @@
       <div class="card" style="margin-bottom:18px;">
         <div class="card-title">Filter - Who Did How Many Meetings<span class="card-title-line"></span></div>
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-          <select id="pf-district" class="rp-sel" onchange="renderPerf()"><option value="">All Districts</option></select>
+          <div id="pf-district" class="ds-box"></div>
           <select id="pf-month" class="rp-sel" onchange="renderPerf()"><option value="">All Months</option></select>
           <select id="pf-status" class="rp-sel" onchange="renderPerf()">
             <option value="Conducted">Conducted</option>
@@ -500,9 +514,7 @@
       <div class="card" style="margin-bottom:18px;">
         <div class="card-title">Select District<span class="card-title-line"></span></div>
         <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-          <select id="rel-district" onchange="renderRelations()">
-            <option value="">All Districts</option>
-          </select>
+          <div id="rel-district" class="ds-box"></div>
           <select id="rel-block" onchange="renderRelations()">
             <option value="">All Blocks</option>
           </select>
@@ -553,6 +565,80 @@
   var EG = '#8B1212';
   // A meeting with no district is a state level one, met by the state team.
   // Showing an empty cell just looks like missing data.
+  // ── District filter that can hold several districts at once ───────────
+  // A single select could say one district or every district and nothing in
+  // between, so comparing three neighbouring districts meant reading three
+  // pages one after another. These are tap-on tap-off chips behind a summary
+  // button: a native multiple select is close to unusable on a phone, and a
+  // phone is where most of this team reads reports. Picking nothing still
+  // means every district, so anyone who never opens it sees what they always
+  // saw.
+  var _dsPick = {};
+
+  function dsGet(id) {
+    var p = _dsPick[id] || {}, out = [];
+    for (var k in p) { if (p[k]) out.push(k); }
+    return out;
+  }
+  // The one place that decides whether a meeting is in scope. pick may be a
+  // single district, a list of them, or nothing at all, which means all.
+  function distMiss(pick, d) {
+    if (!pick || !pick.length) return false;
+    d = String(d == null ? '' : d).trim();
+    if (typeof pick === 'string') return d !== pick;
+    return pick.indexOf(d) < 0;
+  }
+  function dsOne(id)   { var p = dsGet(id); return p.length === 1 ? p[0] : ''; }
+  function dsLabel(id) {
+    var p = dsGet(id);
+    return p.length === 0 ? 'All Districts' : (p.length === 1 ? p[0] : p.length + ' districts');
+  }
+  function dsRender(id, values, onChange) {
+    var box = document.getElementById(id);
+    if (!box) return;
+    if (!_dsPick[id]) _dsPick[id] = {};
+    box._dsValues = values || [];
+    box._dsChange = onChange;
+    dsPaint(id);
+  }
+  function dsPaint(id) {
+    var box = document.getElementById(id);
+    if (!box) return;
+    var vals = box._dsValues || [], picks = dsGet(id), open = !!box._dsOpen;
+    var chips = vals.map(function(v) {
+      return '<button type="button" class="ds-chip' + (picks.indexOf(v) >= 0 ? ' on' : '') +
+             '" data-v="' + esc(v) + '">' + esc(v) + '</button>';
+    }).join('');
+    box.innerHTML =
+      '<button type="button" class="ds-sum">' + esc(dsLabel(id)) +
+        '<span class="ds-caret">' + (open ? '&#9650;' : '&#9660;') + '</span></button>' +
+      (open ? '<div class="ds-panel">' + chips +
+        '<div class="ds-actions">' +
+          '<button type="button" class="ds-act" data-act="clear">Clear</button>' +
+          '<button type="button" class="ds-act" data-act="all">Select all</button>' +
+        '</div></div>' : '');
+    box.querySelector('.ds-sum').onclick = function() { box._dsOpen = !open; dsPaint(id); };
+    if (!open) return;
+    Array.prototype.forEach.call(box.querySelectorAll('.ds-chip'), function(b) {
+      b.onclick = function() {
+        var v = b.getAttribute('data-v');
+        _dsPick[id][v] = !_dsPick[id][v];
+        dsPaint(id);
+        if (box._dsChange) box._dsChange();
+      };
+    });
+    Array.prototype.forEach.call(box.querySelectorAll('.ds-act'), function(b) {
+      b.onclick = function() {
+        _dsPick[id] = {};
+        if (b.getAttribute('data-act') === 'all') {
+          (box._dsValues || []).forEach(function(v) { _dsPick[id][v] = true; });
+        }
+        dsPaint(id);
+        if (box._dsChange) box._dsChange();
+      };
+    });
+  }
+
   function distLabel(d) {
     var t = String(d == null ? '' : d).trim();
     if (!t) return 'State';
@@ -884,7 +970,7 @@
     if (!_allMeetings) { box.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:12px 0;">Loading…</div>'; return; }
     var counts = {}, answered = 0, concrete = 0;
     _allMeetings.forEach(function(m) {
-      if (pick && String(m.district || '').trim() !== pick) return;
+      if (distMiss(pick, m.district)) return;
       if (m.status !== 'Conducted') return;
       var o = String(m.outcome || '').trim();
       if (!o) return;                       // meetings recorded before the question existed
@@ -898,7 +984,7 @@
     }
     var conductedTotal = 0;
     _allMeetings.forEach(function(m) {
-      if (pick && String(m.district || '').trim() !== pick) return;
+      if (distMiss(pick, m.district)) return;
       if (m.status === 'Conducted') conductedTotal++;
     });
     var rate  = Math.round(concrete / answered * 100);
@@ -1105,7 +1191,7 @@
     var now = Date.now(), map = {}, blockPosts = relBlockLevelPosts();
     (_allMeetings || []).forEach(function(m) {
       if (m.status !== 'Conducted') return;
-      if (pick && String(m.district || '').trim() !== pick) return;
+      if (distMiss(pick, m.district)) return;
       var mBlock = String(m.stakeholderBlock || m.block || '').trim();
       if (pickBlock && mBlock !== pickBlock) return;
       // Keyed on the POST, not the person. Officers get transferred, but the
@@ -1199,7 +1285,7 @@
     var want = {};
     (_allMeetings || []).forEach(function(m) {
       if (m.status !== 'Conducted') return;
-      if (pick && String(m.district || '').trim() !== pick) return;
+      if (distMiss(pick, m.district)) return;
       var b = String(m.stakeholderBlock || m.block || '').trim();
       if (b) want[b] = 1;
     });
@@ -1219,7 +1305,7 @@
     var kpiEl = document.getElementById('rel-kpi'), tblEl = document.getElementById('rel-table');
     if (!kpiEl || !tblEl) return;
     if (!_allMeetings) { tblEl.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:16px 0;">Loading…</div>'; return; }
-    var pick = document.getElementById('rel-district').value;
+    var pick = dsGet('rel-district');
     var only = document.getElementById('rel-status').value;
     renderOutcomes('rel-outcomes', pick);
     relFillBlocks(pick);
@@ -1306,12 +1392,7 @@
 
   function loadRelations() {
     ensureEmployees(function(){
-      var sel = document.getElementById('rel-district');
-      if (sel && sel.options.length <= 1) {
-        allDistrictList().forEach(function(d){
-          var o = document.createElement('option'); o.value = d; o.textContent = d; sel.appendChild(o);
-        });
-      }
+      dsRender('rel-district', allDistrictList(), renderRelations);
     });
     if (_allMeetings) { renderRelations(); return; }
     document.getElementById('rel-loading').style.display = 'block';
@@ -1356,7 +1437,7 @@
       function(e){ document.getElementById('rp-sel-loading').style.display='none'; alert('Network error: '+e.message); });
   }
 
-  function curDist()  { return document.getElementById('rp-district-sel').value; }
+  function curDist()  { return dsGet('rp-district-sel'); }
   function curBlock() { return document.getElementById('rp-block-sel').value; }
   function curMonth() { return document.getElementById('rp-month-sel').value; }
 
@@ -1371,7 +1452,7 @@
   }
 
   function populateReportDistricts() {
-    fillSelect(document.getElementById('rp-district-sel'), allDistrictList(), true);
+    dsRender('rp-district-sel', allDistrictList(), onReportDistrictChange);
   }
 
   function populateReportBlocks() {
@@ -1434,7 +1515,7 @@
     if (!_allMeetings) return;
     var dist = curDist(), block = curBlock(), month = curMonth();
     var filtered = _allMeetings.filter(function(m){
-      if (dist  && m.district !== dist)  return false;
+      if (distMiss(dist, m.district))    return false;
       if (block && m.block    !== block) return false;
       if (month && monthKey(m.date) !== month) return false;
       return true;
@@ -1540,8 +1621,8 @@
 
     // Filename from current selection
     var parts = ['District_Report'];
-    var d = curDist(), b = curBlock(), mo = curMonth();
-    if (d)  parts.push(d);
+    var d = dsLabel('rp-district-sel'), b = curBlock(), mo = curMonth();
+    if (dsGet('rp-district-sel').length) parts.push(d);
     if (b)  parts.push(b);
     parts.push(mo ? mo : 'AllMonths');
     var fname = parts.join('_').replace(/[^A-Za-z0-9_\-]+/g, '_') + '.csv';
@@ -1560,7 +1641,9 @@
     document.getElementById('rp-detail').style.display = 'block';
     document.getElementById('rp-download-btn').style.display = meetings.length ? 'inline-flex' : 'none';
 
-    var parts = [ dist ? dist.toUpperCase() : 'ALL DISTRICTS' ];
+    var oneDist = (dist && dist.length === 1) ? dist[0] : '';
+    var distLbl = dsLabel('rp-district-sel');
+    var parts = [ distLbl.toUpperCase() ];
     if (block) parts.push(block.toUpperCase());
     parts.push(month ? month : 'All Months');
     document.getElementById('rp-dist-label').textContent = parts.join('  ·  ');
@@ -1582,7 +1665,7 @@
     countEl.style.display = 'block';
 
     var kpis = [
-      { n:t.total,     l:'Total Meetings', c:'#1D4ED8', chip:(dist||'All Districts') },
+      { n:t.total,     l:'Total Meetings', c:'#1D4ED8', chip:distLbl },
       { n:t.conducted, l:'Conducted',      c:'#065F46', chip:pct+'% success' },
       { n:pending,     l:'Pending',        c:'#92400E', chip:'Planned + Delayed' },
       { n:t.cancelled, l:'Cancelled',      c:'#991B1B', chip:'Need Follow-up' }
@@ -1597,7 +1680,7 @@
 
     // Block-wise breakdown - show when a district is chosen and no block is fixed
     var blockCard = document.getElementById('rp-byblock-card');
-    if (dist && !block) {
+    if (oneDist && !block) {
       var bMap = {};
       meetings.forEach(function(m){
         var bn = m.block || '- No Block (District-level) -';
@@ -1744,7 +1827,7 @@
   function _normDg(s){ return (s||'').toString().trim() || '-'; }
 
   function buildPerfFilters() {
-    fillSelect(document.getElementById('pf-district'), allDistrictList(), true);
+    dsRender('pf-district', allDistrictList(), renderPerf);
     if (!_allMeetings) return;   // months come from meetings; may load after the master
     var mset = {};
     _allMeetings.forEach(function(m){ var mk = monthKey(m.date); if (mk) mset[mk] = 1; });
@@ -1754,12 +1837,12 @@
 
   function renderPerf() {
     if (!_allMeetings) return;
-    var dist  = document.getElementById('pf-district').value;
+    var dist  = dsGet('pf-district');
     var month = document.getElementById('pf-month').value;
     var st    = document.getElementById('pf-status').value;
 
     var f = _allMeetings.filter(function(m){
-      if (dist  && m.district !== dist) return false;
+      if (distMiss(dist, m.district)) return false;
       if (month && monthKey(m.date) !== month) return false;
       if (st    && m.status !== st) return false;
       return true;
@@ -1767,9 +1850,9 @@
 
     document.getElementById('pf-count').textContent = f.length + ' meeting' + (f.length !== 1 ? 's' : '');
     document.getElementById('pf-label').textContent =
-      (dist ? dist.toUpperCase() : 'ALL DISTRICTS') + '  ·  ' + (month || 'All Months') + '  ·  ' + (st || 'All Statuses');
+      dsLabel('pf-district').toUpperCase() + '  ·  ' + (month || 'All Months') + '  ·  ' + (st || 'All Statuses');
 
-    renderCoverage(f, dist);
+    renderCoverage(f, dsOne('pf-district'));
 
     // ── KPI stat cards ──
     var uPeople = {}, uDesig = {}, uDist = {};

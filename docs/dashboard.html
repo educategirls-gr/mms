@@ -117,6 +117,21 @@
     }
     input:focus, select:focus, textarea:focus { border-color: #1F4E79; background: #fff; }
     textarea { resize: vertical; min-height: 68px; }
+
+    /* District filter that holds several districts at once */
+    .ds-box { flex: 1 1 200px; min-width: 180px; }
+    .ds-sum { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px;
+              border: 1.5px solid #E5E7EB; border-radius: 8px; background: #fff; cursor: pointer;
+              padding: 8px 10px; font-size: 13px; font-weight: 600; color: #374151; font-family: inherit; }
+    .ds-caret { color: #9CA3AF; font-size: 11px; }
+    .ds-panel { margin-top: 8px; padding: 10px; border: 1px solid #E5E7EB; border-radius: 8px;
+                background: #FAFAFA; display: flex; flex-wrap: wrap; gap: 6px; }
+    .ds-chip { border: 1.5px solid #E5E7EB; background: #fff; color: #4B5563; border-radius: 20px;
+               padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .ds-chip.on { border-color: #8B1212; background: #FBEAEA; color: #8B1212; }
+    .ds-actions { width: 100%; display: flex; gap: 14px; margin-top: 2px; }
+    .ds-act { border: none; background: none; color: #8B1212; font-size: 12px; font-weight: 700;
+              cursor: pointer; text-decoration: underline; padding: 2px 0; font-family: inherit; }
     /* The length rule, said out loud under the box instead of only on Submit */
     .char-note { font-size: 11px; margin-top: 4px; color: #9CA3AF; }
 
@@ -911,9 +926,7 @@
 
         <!-- District Filter + Status Filter + Search + Download -->
         <div class="rep-search-bar">
-          <select id="sm-district" onchange="smRender()" style="flex-shrink:0;padding:8px 10px;font-size:13px;border:1.5px solid #E5E7EB;border-radius:8px;background:#fff;">
-            <option value="">All Districts</option>
-          </select>
+          <div id="sm-district" class="ds-box"></div>
           <select id="sm-status" onchange="smRender()" style="flex-shrink:0;padding:8px 10px;font-size:13px;border:1.5px solid #E5E7EB;border-radius:8px;background:#fff;">
             <option value="">All Status</option>
             <option value="Planned">Planned</option>
@@ -947,9 +960,7 @@
 
         <!-- District Filter + Status Filter + Search + Download -->
         <div class="rep-search-bar">
-          <select id="zm-district" onchange="zmRender()" style="flex-shrink:0;padding:8px 10px;font-size:13px;border:1.5px solid #E5E7EB;border-radius:8px;background:#fff;">
-            <option value="">All Districts</option>
-          </select>
+          <div id="zm-district" class="ds-box"></div>
           <select id="zm-status" onchange="zmRender()" style="flex-shrink:0;padding:8px 10px;font-size:13px;border:1.5px solid #E5E7EB;border-radius:8px;background:#fff;">
             <option value="">All Status</option>
             <option value="Planned">Planned</option>
@@ -2514,17 +2525,9 @@
   }
 
   function smBuildDistrictFilter() {
-    var sel = document.getElementById('sm-district');
-    var cur = sel.value;
     var districts = {};
     _smAll.forEach(function(r) { if (r.district) districts[r.district] = 1; });
-    sel.innerHTML = '<option value="">All Districts</option>';
-    Object.keys(districts).sort().forEach(function(d) {
-      var o = document.createElement('option');
-      o.value = d; o.textContent = d;
-      if (d === cur) o.selected = true;
-      sel.appendChild(o);
-    });
+    dsRender('sm-district', Object.keys(districts).sort(), smRender);
   }
 
   function smUpdateLabel() {
@@ -2548,7 +2551,7 @@
 
   function smRender() {
     var q   = (document.getElementById('sm-search').value || '').trim().toLowerCase();
-    var dst = document.getElementById('sm-district').value;
+    var dst = dsGet('sm-district');
     var st  = document.getElementById('sm-status').value;
     var monthStart = new Date(_smYear, _smMonth, 1).getTime();
     var monthEnd   = new Date(_smYear, _smMonth + 1, 0, 23, 59, 59).getTime();
@@ -2556,7 +2559,7 @@
     var filtered = _smAll.filter(function(r) {
       var ts = smGetDate(r);
       if (ts < monthStart || ts > monthEnd) return false;
-      if (dst && (r.district || '').toLowerCase() !== dst.toLowerCase()) return false;
+      if (distMiss(dst, r.district)) return false;
       if (st  && r.status !== st) return false;
       if (q) {
         var hay = [r.meetingId, r.district, r.employeeName, r.designation,
@@ -2722,20 +2725,12 @@
   }
 
   function zmBuildDistrictFilter() {
-    var sel = document.getElementById('zm-district');
-    var cur = sel.value;
     var districts = {};
-    // Show ALL districts of the zone (from _myDistricts), even those with no meetings yet,
-    // plus any extra district that appears in the data.
+    // Every district of the zone, including those with no meeting yet, plus
+    // any extra district that turns up in the data.
     _myDistricts.forEach(function(d) { if (d) districts[d.toUpperCase()] = 1; });
     _zmAll.forEach(function(r) { if (r.district) districts[r.district.toUpperCase()] = 1; });
-    sel.innerHTML = '<option value="">All Districts</option>';
-    Object.keys(districts).sort().forEach(function(d) {
-      var o = document.createElement('option');
-      o.value = d; o.textContent = d;
-      if (d === cur) o.selected = true;
-      sel.appendChild(o);
-    });
+    dsRender('zm-district', Object.keys(districts).sort(), zmRender);
   }
 
   function zmUpdateLabel() {
@@ -2759,7 +2754,7 @@
 
   function zmRender() {
     var q   = (document.getElementById('zm-search').value || '').trim().toLowerCase();
-    var dst = document.getElementById('zm-district').value;
+    var dst = dsGet('zm-district');
     var st  = document.getElementById('zm-status').value;
     var monthStart = new Date(_zmYear, _zmMonth, 1).getTime();
     var monthEnd   = new Date(_zmYear, _zmMonth + 1, 0, 23, 59, 59).getTime();
@@ -2767,7 +2762,7 @@
     var filtered = _zmAll.filter(function(r) {
       var ts = zmGetDate(r);
       if (ts < monthStart || ts > monthEnd) return false;
-      if (dst && (r.district || '').toLowerCase() !== dst.toLowerCase()) return false;
+      if (distMiss(dst, r.district)) return false;
       if (st  && r.status !== st) return false;
       if (q) {
         var hay = [r.meetingId, r.district, r.employeeName, r.designation,
@@ -2784,7 +2779,7 @@
       : '';
 
     if (!filtered.length) {
-      var _where = dst ? esc(dst) : 'this zone';
+      var _where = dst.length ? esc(dsLabel('zm-district')) : 'this zone';
       document.getElementById('zm-content').innerHTML =
         '<div class="empty-state"><div class="empty-icon">🧭</div>' +
         '<p>No meetings in ' + _where + ' for ' + _MONTHS[_zmMonth] + ' ' + _zmYear + '</p></div>';
@@ -3184,6 +3179,79 @@
     for (var w2 in count) { if (!NOTE_PLACEHOLDERS[w2]) real++; }
     if (real < 3) return 'it is filler words rather than what happened';
     return '';
+  }
+
+  // ── District filter that can hold several districts at once ───────────
+  // A single select could say one district or every district and nothing in
+  // between, so comparing three neighbouring districts meant reading three
+  // screens one after another. These are tap-on tap-off chips behind a summary
+  // button: a native multiple select is close to unusable on a phone, which is
+  // where this is mostly read. Picking nothing still means every district, so
+  // anyone who never opens it sees what they always saw.
+  var _dsPick = {};
+
+  function dsGet(id) {
+    var p = _dsPick[id] || {}, out = [];
+    for (var k in p) { if (p[k]) out.push(k); }
+    return out;
+  }
+  // The one place that decides whether a row is in scope. Compared without
+  // case, because the district columns are not written consistently.
+  function distMiss(pick, d) {
+    if (!pick || !pick.length) return false;
+    d = String(d == null ? '' : d).trim().toLowerCase();
+    if (typeof pick === 'string') return d !== pick.toLowerCase();
+    for (var i = 0; i < pick.length; i++) { if (String(pick[i]).toLowerCase() === d) return false; }
+    return true;
+  }
+  function dsLabel(id) {
+    var p = dsGet(id);
+    return p.length === 0 ? 'All Districts' : (p.length === 1 ? p[0] : p.length + ' districts');
+  }
+  function dsRender(id, values, onChange) {
+    var box = document.getElementById(id);
+    if (!box) return;
+    if (!_dsPick[id]) _dsPick[id] = {};
+    box._dsValues = values || [];
+    box._dsChange = onChange;
+    dsPaint(id);
+  }
+  function dsPaint(id) {
+    var box = document.getElementById(id);
+    if (!box) return;
+    var vals = box._dsValues || [], picks = dsGet(id), open = !!box._dsOpen;
+    var chips = vals.map(function(v) {
+      return '<button type="button" class="ds-chip' + (picks.indexOf(v) >= 0 ? ' on' : '') +
+             '" data-v="' + esc(v) + '">' + esc(v) + '</button>';
+    }).join('');
+    box.innerHTML =
+      '<button type="button" class="ds-sum">' + esc(dsLabel(id)) +
+        '<span class="ds-caret">' + (open ? '&#9650;' : '&#9660;') + '</span></button>' +
+      (open ? '<div class="ds-panel">' + chips +
+        '<div class="ds-actions">' +
+          '<button type="button" class="ds-act" data-act="clear">Clear</button>' +
+          '<button type="button" class="ds-act" data-act="all">Select all</button>' +
+        '</div></div>' : '');
+    box.querySelector('.ds-sum').onclick = function() { box._dsOpen = !open; dsPaint(id); };
+    if (!open) return;
+    Array.prototype.forEach.call(box.querySelectorAll('.ds-chip'), function(b) {
+      b.onclick = function() {
+        var v = b.getAttribute('data-v');
+        _dsPick[id][v] = !_dsPick[id][v];
+        dsPaint(id);
+        if (box._dsChange) box._dsChange();
+      };
+    });
+    Array.prototype.forEach.call(box.querySelectorAll('.ds-act'), function(b) {
+      b.onclick = function() {
+        _dsPick[id] = {};
+        if (b.getAttribute('data-act') === 'all') {
+          (box._dsValues || []).forEach(function(v) { _dsPick[id][v] = true; });
+        }
+        dsPaint(id);
+        if (box._dsChange) box._dsChange();
+      };
+    });
   }
 
   // ── How much to write ────────────────────────────────────────
