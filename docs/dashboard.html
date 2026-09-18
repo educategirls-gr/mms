@@ -1122,7 +1122,21 @@
         body: JSON.stringify(data)
       })
         .then(parseGasJson)
-        .then(function(res){ if (res && res.message === 'AUTH_REQUIRED') { logout(); return; } onSuccess(res); })
+        .then(function(res){
+          if (res && res.message === 'AUTH_REQUIRED') { logout(); return; }
+          // The front door sometimes hands the script a POST with no body. The
+          // script says so and writes nothing, so sending it again is safe and
+          // is the only thing that helps. Doing it here spares people an error
+          // about details that did not arrive, which reads like their fault.
+          if (res && res.message === 'BODY_MISSING' && retriesLeft > 0) {
+            setTimeout(function(){ attempt(retriesLeft - 1); }, 800);
+            return;
+          }
+          if (res && res.message === 'BODY_MISSING') {
+            res = { success:false, message:'The connection dropped the details on the way. Nothing was saved. Please press Save once more.' };
+          }
+          onSuccess(res);
+        })
         .catch(function(e){
           if (e && e.serverBusy && retriesLeft > 0) { setTimeout(function(){ attempt(retriesLeft - 1); }, 1200); return; }
           (onFail || function(e2) {

@@ -499,6 +499,13 @@ function apiResponse(e, method) {
   var result;
   try {
     var body = {}, bodyBroken = false;
+    // The front door delivers a POST without its body often enough to be the
+    // commonest complaint about saving: the script then sees no date, no name,
+    // no purpose and rightly refuses. Nothing is written when that happens, so
+    // the honest answer is to say the body never arrived and let the browser
+    // send it again, rather than making someone press Save a second time and
+    // wonder what they did wrong.
+    if (method === 'POST' && (!e.postData || !e.postData.contents)) bodyBroken = true;
     if (method === 'POST' && e.postData && e.postData.contents) {
       // A truncated or malformed body used to fall through as {} and the write
       // went ahead anyway, stamping the session fields onto an otherwise empty
@@ -517,7 +524,7 @@ function apiResponse(e, method) {
     if (maintOn_() && !MAINT_ALLOWED[action]) {
       result = { success:false, message:'The system is being repaired right now. Please try again in a little while. Nothing you have saved is affected.' };
     } else if (bodyBroken) {
-      result = { success:false, message:'Your request did not arrive complete. Nothing was saved. Please try again.' };
+      result = { success:false, message:'BODY_MISSING' };
     } else if (PUBLIC[action]) {
       // ── No auth required ──────────────────────────────────────
       if      (action === 'sendOTP')           result = sendOTP(e.parameter.email || '');

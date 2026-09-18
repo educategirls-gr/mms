@@ -510,6 +510,11 @@
         .then(function(t){
           clearTimeout(timer);
           var j = null; try { j = JSON.parse(t); } catch (e) {}
+          // The front door sometimes delivers a POST without its body. The
+          // server says so and does nothing, so sending it again is safe.
+          if (j && j.message === 'BODY_MISSING' && retriesLeft > 0) {
+            setTimeout(function(){ attempt(retriesLeft - 1); }, 800); return;
+          }
           if (j) { onJson(j); return; }
           if (retriesLeft > 0) { setTimeout(function(){ attempt(retriesLeft - 1); }, 1200); return; }
           onFail(false);
