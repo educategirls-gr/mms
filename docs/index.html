@@ -486,30 +486,41 @@
   }
 
   // Same timeout and the same idea as gasGet, but the payload travels in the
-  // body. Not retried: a repeat is pointless for a login and unsafe for a save.
+  // body. An error page instead of a reply means the front door threw the
+  // request away before the script ran, so that is retried: without it a wrong
+  // password came back as "server is busy", which sends people looking for a
+  // fault that is not there. A request that goes quiet is not retried, because
+  // that one may well have run.
   function postJson(action, params, body, onJson, onFail) {
     var url = GAS_URL + '?action=' + encodeURIComponent(action);
     for (var k in params) {
       if (params.hasOwnProperty(k)) url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
     }
-    var ctrl  = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-    var quiet = false;
-    var timer = setTimeout(function(){ quiet = true; if (ctrl) ctrl.abort(); }, GAS_TIMEOUT_MS);
-    fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(body || {}),
-      signal: ctrl ? ctrl.signal : undefined
-    })
-      .then(function(r){ return r.text(); })
-      .then(function(t){
-        clearTimeout(timer);
-        var j = null; try { j = JSON.parse(t); } catch (e) {}
-        if (j) onJson(j); else onFail(false);
-      }, function(){
-        clearTimeout(timer);
-        onFail(quiet);
-      });
+    function attempt(retriesLeft) {
+      var ctrl  = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      var quiet = false;
+      var timer = setTimeout(function(){ quiet = true; if (ctrl) ctrl.abort(); }, GAS_TIMEOUT_MS);
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(body || {}),
+        signal: ctrl ? ctrl.signal : undefined
+      })
+        .then(function(r){ return r.text(); })
+        .then(function(t){
+          clearTimeout(timer);
+          var j = null; try { j = JSON.parse(t); } catch (e) {}
+          if (j) { onJson(j); return; }
+          if (retriesLeft > 0) { setTimeout(function(){ attempt(retriesLeft - 1); }, 1200); return; }
+          onFail(false);
+        }, function(){
+          clearTimeout(timer);
+          if (quiet) { onFail(true); return; }
+          if (retriesLeft > 0) { setTimeout(function(){ attempt(retriesLeft - 1); }, 1200); return; }
+          onFail(false);
+        });
+    }
+    attempt(2);
   }
 
   function doSetPassword() {
