@@ -1024,7 +1024,7 @@
     if (openKey) {
       var rows = _allMeetings.filter(function(m) {
         if (m.status !== 'Conducted') return false;
-        if (pick && String(m.district || '').trim() !== pick) return false;
+        if (distMiss(pick, m.district)) return false;
         return String(m.outcome || '').trim() === openKey;
       }).sort(function(a, b){ return relDayTs(b.conductDate || b.date) - relDayTs(a.conductDate || a.date); });
       var det = box.querySelector('.oc-detail');
@@ -1330,7 +1330,7 @@
     var covEl = document.getElementById('rel-coverage');
     if (covEl) {
       var cov = relCoverage();
-      if (pick) cov = cov.filter(function(c){ return c.district === pick; });
+      if (pick.length) cov = cov.filter(function(c){ return !distMiss(pick, c.district); });
       var gaps = cov.filter(function(c){ return c.missingCount; });
       if (!gaps.length) {
         covEl.innerHTML = '<div style="color:#065F46;font-size:13px;padding:6px 0;">Every district has met all the offices that other districts meet.</div>';
