@@ -44,6 +44,59 @@ function cDel() {
   var keys = Array.prototype.slice.call(arguments);
   try { CacheService.getScriptCache().removeAll(keys); } catch(e) {}
 }
+// ── Not letting one stuck document take the day down ────────────────────
+// On the night of 17 Sep 2026 the sheet stopped answering, and every request
+// that touched it sat there for the full six minutes Apps Script allows before
+// giving up. Sixty of those is the entire daily runtime allowance, so the
+// failure fed itself: the more people tried, the less was left for anyone.
+//
+// The first failure now trips a breaker for five minutes. While it is tripped
+// nothing even attempts the document: requests come back in milliseconds
+// saying so. The flag is simply a cache entry with a five minute life, so it
+// clears itself, and the first request after that tries for real. If the
+// document is still stuck that one request pays the six minutes and trips it
+// again, which is one hang every five minutes instead of all of them.
+//
+// Signing in and the open portal are untouched by this, because neither reads
+// the document: one reads Script Properties, the other a published file.
+var SHEET_TRIP_KEY  = 'SHEET_TRIPPED';
+var SHEET_TRIP_SECS = 300;
+var SHEET_BUSY_MSG  = 'The meetings sheet is not responding at the moment. Nothing was lost. Please try again in a few minutes.';
+
+function sheetBreakerTripped_() {
+  try { return CacheService.getScriptCache().get(SHEET_TRIP_KEY) === '1'; }
+  catch (e) { return false; }
+}
+function sheetBreakerTrip_() {
+  try { CacheService.getScriptCache().put(SHEET_TRIP_KEY, '1', SHEET_TRIP_SECS); } catch (e) {}
+}
+function sheetBreakerClear_() {
+  try { CacheService.getScriptCache().remove(SHEET_TRIP_KEY); } catch (e) {}
+}
+
+// A request that has already spent a long time must not start another read that
+// could cost six more minutes. getReportData opens five sheets; if the first one
+// hangs there is no sense attempting the other four.
+var REQ_START_MS  = new Date().getTime();
+var REQ_BUDGET_MS = 60000;
+var IS_WEB_REQUEST = false;   // set by apiResponse; the timed jobs leave it false
+function requestBudgetSpent_() {
+  return IS_WEB_REQUEST && (new Date().getTime() - REQ_START_MS) > REQ_BUDGET_MS;
+}
+
+// Thrown rather than returned, so a caller can never mistake "could not read"
+// for "there is nothing there" and show an empty screen as if it were the truth.
+function sheetBusy_() { throw new Error(SHEET_BUSY_MSG); }
+
+// Editor helpers, for when someone wants to look or to let people back in early.
+function BREAKER_status() {
+  var on = sheetBreakerTripped_();
+  Logger.log(on ? 'Tripped. The sheet is being left alone; it clears itself within five minutes.'
+                : 'Clear. The sheet is being read normally.');
+  return on ? 'tripped' : 'clear';
+}
+function BREAKER_reset() { sheetBreakerClear_(); Logger.log('Breaker cleared. The next request will try the sheet.'); return 'clear'; }
+
 // ── One read per sheet, shared by everyone ──────────────────────────────
 // The caches held each person's finished answer, so fifty people opening My
 // Meetings meant the same three sheets were read fifty times over inside ten
@@ -101,12 +154,20 @@ function sheetRowsStore_(name, rows) {
 // this instead. Same array of arrays, same order, same types.
 function sheetRows_(name) {
   var hit = sheetRowsCached_(name);
-  if (hit) return hit;
-  var sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(name);
-  if (!sh) return null;
-  var rows = sh.getDataRange().getValues();
-  sheetRowsStore_(name, rows);
-  return rows;
+  if (hit) return hit;                      // the copy is free, breaker or not
+  if (sheetBreakerTripped_()) sheetBusy_();
+  if (requestBudgetSpent_())  sheetBusy_();
+  try {
+    var sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(name);
+    if (!sh) return null;                   // a missing tab is not a stuck sheet
+    var rows = sh.getDataRange().getValues();
+    sheetRowsStore_(name, rows);
+    sheetBreakerClear_();                   // it answered, so let everyone back in
+    return rows;
+  } catch (e) {
+    sheetBreakerTrip_();
+    sheetBusy_();
+  }
 }
 
 // Called after every write, so nobody is served a copy that predates it.
@@ -495,6 +556,7 @@ function MAINT_off() {
 }
 
 function apiResponse(e, method) {
+  IS_WEB_REQUEST = true;   // somebody is waiting at a screen for this one
   var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : '';
   var result;
   try {
@@ -1456,6 +1518,7 @@ function saveMeeting(data) {
       return { success: false, message: 'Nothing was saved, the meeting details did not arrive (' + req.join(', ') + '). Please try again.' };
     }
 
+    if (sheetBreakerTripped_()) return { success: false, message: SHEET_BUSY_MSG };
     var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
     var sheet = ss.getSheetByName(MEETINGS_SHEET);
     if (!sheet) return { success: false, message: 'Meetings sheet not found.' };
@@ -1862,6 +1925,7 @@ function noteLooksFake_(text) {
 
 function conductMeeting(payload) {
   try {
+    if (sheetBreakerTripped_()) return { success: false, message: SHEET_BUSY_MSG };
     var ss  = SpreadsheetApp.openById(SPREADSHEET_ID);
     var tz  = Session.getScriptTimeZone();
     var now = new Date();
@@ -5553,6 +5617,7 @@ function empMirrorRead_() {
 // The one place that opens the employee sheet. Returns null when Sheets will not
 // answer, so callers can fall back instead of treating an outage as "no staff".
 function empReadFromSheet_() {
+  if (sheetBreakerTripped_()) return null;
   try {
     var sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(EMPLOYEE_SHEET);
     if (!sheet) return null;
@@ -5579,7 +5644,7 @@ function empReadFromSheet_() {
       };
     }
     return map;
-  } catch (e) { return null; }
+  } catch (e) { sheetBreakerTrip_(); return null; }
 }
 
 // Editor helper: take a fresh copy of the employee master. One attempt only,
