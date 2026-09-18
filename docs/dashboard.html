@@ -1031,6 +1031,12 @@
   }
 
   var SESSION = (function() {
+    // localStorage first, so reopening the app does not mean signing in again.
+    // sessionStorage is still read for anyone who signed in before this change.
+    try {
+      var s = localStorage.getItem('eg_grm_session');
+      if (s) return JSON.parse(s);
+    } catch(e) {}
     try { return JSON.parse(sessionStorage.getItem('eg_grm_session') || 'null'); } catch(e) { return null; }
   })();
   if (!SESSION) { window.location.href = 'index.html'; }
@@ -3423,7 +3429,16 @@
   }
 
   // ── Logout ───────────────────────────────────────────────────
-  function logout()       { try { sessionStorage.clear(); } catch(e) {} window.location.href = 'index.html'; }
+  function logout() {
+    try { sessionStorage.clear(); } catch(e) {}
+    // The remembered session has to go too, or logging out would not log out.
+    try {
+      localStorage.removeItem('eg_grm_token');
+      localStorage.removeItem('eg_grm_session');
+      localStorage.removeItem('eg_grm_saved_at');
+    } catch(e) {}
+    window.location.href = 'index.html';
+  }
   function forceLogout(msg) { alert(msg); logout(); }
 </script>
 </body>

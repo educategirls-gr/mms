@@ -325,10 +325,21 @@
   var timerInterval;
 
   (function() {
+    // Signing in costs one POST, and a POST through the Apps Script front door
+    // has been taking thirty to eighty seconds while a plain GET takes four.
+    // The server keeps a session for an hour and renews it on every call, so
+    // holding on to it here means most days start already signed in, with no
+    // request at all. Kept for twelve hours at most, and the server remains the
+    // authority: a token it no longer knows sends the person back here.
     try {
-      var saved = sessionStorage.getItem('eg_grm_token');
-      if (saved) {
+      var saved = localStorage.getItem('eg_grm_token');
+      var when  = parseInt(localStorage.getItem('eg_grm_saved_at') || '0', 10);
+      if (saved && when && (Date.now() - when) < 12 * 60 * 60 * 1000) {
         window.location.href = DASH_URL + '?token=' + encodeURIComponent(saved);
+      } else if (saved) {
+        localStorage.removeItem('eg_grm_token');
+        localStorage.removeItem('eg_grm_session');
+        localStorage.removeItem('eg_grm_saved_at');
       }
     } catch(e) {}
   })();
@@ -439,6 +450,14 @@
 
   // Both ways in end up here, so nothing downstream can tell them apart.
   function keepSession(res) {
+    // localStorage, so closing the tab does not mean signing in again. The
+    // meeting lists stay in sessionStorage, where they belong: those die with
+    // the tab, which matters if a phone is passed around.
+    try {
+      localStorage.setItem('eg_grm_token', res.token);
+      localStorage.setItem('eg_grm_session', JSON.stringify(res));
+      localStorage.setItem('eg_grm_saved_at', String(Date.now()));
+    } catch(e) {}
     try { sessionStorage.setItem('eg_grm_token', res.token); } catch(e) {}
     try { sessionStorage.setItem('eg_grm_session', JSON.stringify(res)); } catch(e) {}
     _session = res;
