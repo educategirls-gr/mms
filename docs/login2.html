@@ -271,7 +271,7 @@
                onkeydown="if(event.key==='Enter') doPasswordLogin()">
         <button id="btn-pw-login" class="btn-primary" style="margin-top:14px;" onclick="doPasswordLogin()">Login</button>
         <div style="text-align:center;margin-top:16px;">
-          <a onclick="sendOTP()" style="color:#8B1212;font-weight:600;font-size:13px;cursor:pointer;text-decoration:underline;">
+          <a id="lnk-getcode" onclick="sendOTP()" style="color:#8B1212;font-weight:600;font-size:13px;cursor:pointer;text-decoration:underline;">
             First time here, or forgotten your password? Get a code
           </a>
         </div>
@@ -386,12 +386,12 @@
     var email = document.getElementById('email-input').value.trim();
     if (!email) { showAlert('email', 'Please enter your email address.'); return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showAlert('email', 'Please enter a valid email address.'); return; }
-    setLoading('btn-send-otp', true);
+    setSendingCode(true);
     hideAlert('email');
     currentEmail = email;
     gasGet(GAS_URL + '?action=sendOTP&email=' + encodeURIComponent(email),
       function(res) {
-        setLoading('btn-send-otp', false);
+        setSendingCode(false);
         if (res.success) {
           document.getElementById('otp-sent-msg').textContent = 'OTP sent to: ' + email;
           showStep('otp'); startTimer(600);
@@ -399,7 +399,7 @@
         } else { showAlert('email', res.message); }
       },
       function(timedOut) {
-        setLoading('btn-send-otp', false);
+        setSendingCode(false);
         if (!timedOut) { showAlert('email', gasErrMsg(false)); return; }
         // Going quiet is not the same as failing. The script may well have run
         // and sent the code before the answer was lost on the way back, so
@@ -452,6 +452,23 @@
     window.location.href = DASH_URL + '?token=' + encodeURIComponent(_session.token);
   }
   var _session = null;
+
+  // The Send OTP button is hidden on this page, so the wait has to show on the
+  // link that was actually pressed. Thirty seconds of nothing reads as broken.
+  function setSendingCode(on) {
+    var a = document.getElementById('lnk-getcode');
+    if (!a) return;
+    if (on) {
+      a.dataset.was = a.innerHTML;
+      a.innerHTML = 'Sending a code to your email, this can take a moment...';
+      a.style.pointerEvents = 'none';
+      a.style.opacity = '0.6';
+    } else {
+      if (a.dataset.was) a.innerHTML = a.dataset.was;
+      a.style.pointerEvents = '';
+      a.style.opacity = '';
+    }
+  }
 
   function doPasswordLogin() {
     var email = document.getElementById('email-input').value.trim();
