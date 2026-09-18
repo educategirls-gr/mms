@@ -1458,7 +1458,7 @@
   function populateReportBlocks() {
     var dist = curDist(), set = {};
     _allMeetings.forEach(function(m){
-      if (dist && m.district !== dist) return;
+      if (distMiss(dist, m.district)) return;
       if (m.block) set[m.block] = true;
     });
     fillSelect(document.getElementById('rp-block-sel'), Object.keys(set).sort(), true);
@@ -1467,7 +1467,7 @@
   function populateReportMonths() {
     var dist = curDist(), block = curBlock(), set = {};
     _allMeetings.forEach(function(m){
-      if (dist && m.district !== dist) return;
+      if (distMiss(dist, m.district)) return;
       if (block && m.block !== block) return;
       var mk = monthKey(m.date); if (mk) set[mk] = true;
     });
@@ -1726,7 +1726,7 @@
     }
     byPost.sort(function(a,b){ return b.count-a.count; });
 
-    var rpEmpty = (dist && meetings.length === 0) ? noMeetingMsg(month) : null;
+    var rpEmpty = (dist && dist.length && meetings.length === 0) ? noMeetingMsg(month) : null;
     document.getElementById('rp-bypost').innerHTML = byPost.length===0
       ? (rpEmpty || '<div style="color:#9CA3AF;font-size:13px;padding:12px 0;">No conducted meetings</div>')
       : byPost.map(function(bp){
