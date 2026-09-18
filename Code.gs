@@ -418,7 +418,7 @@ function apiResponse(e, method) {
     var token  = (e && e.parameter && e.parameter.token) ? e.parameter.token : '';
     // getDashboardStats / getDistrictReport are public - power the open
     // State Analytics Portal (report.html), which needs no login.
-    var PUBLIC = { sendOTP: 1, verifyOTP: 1, getDashboardStats: 1, getDistrictReport: 1, getReportData: 1, getEmployeeMaster: 1 };
+    var PUBLIC = { sendOTP: 1, verifyOTP: 1, loginPassword: 1, getDashboardStats: 1, getDistrictReport: 1, getReportData: 1, getEmployeeMaster: 1 };
     var ADMIN  = { bulkUpdateEmployeeDB: 1, importFromSource: 1, peekSourceSheet: 1 };
 
     // Turned away at the door while the document is unreachable, so the queue
@@ -431,6 +431,7 @@ function apiResponse(e, method) {
       // ── No auth required ──────────────────────────────────────
       if      (action === 'sendOTP')           result = sendOTP(e.parameter.email || '');
       else if (action === 'verifyOTP')         result = verifyOTP(e.parameter.email || '', e.parameter.otp || '');
+      else if (action === 'loginPassword')      result = loginPassword(e.parameter.email || '', (body.password || ''));   // body only: a password must never reach a log through the URL
       else if (action === 'getDashboardStats') result = getDashboardStats(e.parameter.email || '', e.parameter.all === '1');
       else if (action === 'getDistrictReport') result = getDistrictReport(e.parameter.district || '');
       else if (action === 'getReportData')     result = getReportData();
@@ -448,7 +449,8 @@ function apiResponse(e, method) {
         try { CacheService.getScriptCache().put('SESSION_' + token, JSON.stringify(session), 3600); } catch(se) {}
         var role = (session.role || '').toString();
 
-        if      (action === 'getDropdownData')      result = getDropdownData(session.email);
+        if      (action === 'setPassword')          result = setPassword(session.email, (body.password || ''));
+        else if (action === 'getDropdownData')      result = getDropdownData(session.email);
         else if (action === 'getMyMeetings')        result = getMyMeetings(session.email);
         else if (action === 'getAllMyMeetings')     result = getAllMyMeetings(session.email);
         else if (action === 'getMonthlyReport')     result = getMonthlyReport(session, e.parameter.month || '');
@@ -917,6 +919,132 @@ function LOGIN_debug(email) {
 
   Logger.log(out.join(String.fromCharCode(10)));
   return out.join(' | ');
+}
+
+// ── Password sign-in ────────────────────────────────────────────────────
+// A code by email needs two slow round trips through a front door that has been
+// taking half a minute, and every fresh code kills the one before it, so a
+// person who presses the button again while waiting is left holding a dead
+// code. A password needs one trip and nothing expires. The code stays, for the
+// first sign-in and for anyone who has forgotten theirs.
+//
+// The password itself is never stored. Each person gets their own random salt,
+// and only the salt and the SHA-256 of salt+password are kept. Nobody reading
+// the stored values, this script's author included, can work back to it.
+var PW_MIN_LEN   = 8;
+var PW_MAX_TRIES = 5;          // per email, per window
+var PW_WINDOW_S  = 900;        // 15 minutes
+var PW_OBVIOUS = {
+  'password':1, 'password1':1, '12345678':1, '123456789':1, '1234567890':1,
+  'qwertyui':1, 'educategirls':1, 'educate123':1, 'abcd1234':1, 'admin123':1
+};
+
+function pwHash_(salt, password) {
+  var raw = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + password, Utilities.Charset.UTF_8);
+  return Utilities.base64Encode(raw);
+}
+function pwKey_(email) { return 'PW_' + email.trim().toLowerCase(); }
+
+function pwStored_(email) {
+  try { return PropertiesService.getScriptProperties().getProperty(pwKey_(email)); }
+  catch (e) { return null; }
+}
+
+// Called by someone who has already proved who they are with a code, so the
+// session token is the authority here, not anything the browser says.
+function setPassword(email, password) {
+  password = (password || '').toString();
+  if (password.length < PW_MIN_LEN) {
+    return { success: false, message: 'Please choose at least ' + PW_MIN_LEN + ' characters.' };
+  }
+  if (PW_OBVIOUS[password.toLowerCase()]) {
+    return { success: false, message: 'That one is too easy to guess. Please choose another.' };
+  }
+  if (password.toLowerCase() === email.split('@')[0].toLowerCase()) {
+    return { success: false, message: 'Please do not use your own name as the password.' };
+  }
+  try {
+    var salt = Utilities.getUuid();
+    PropertiesService.getScriptProperties().setProperty(pwKey_(email), salt + '$' + pwHash_(salt, password));
+    CacheService.getScriptCache().remove('PWTRY_' + email.trim().toLowerCase());
+    return { success: true, message: 'Password saved. You can sign in with it from now on.' };
+  } catch (e) {
+    return { success: false, message: 'Could not save the password. Please try again.' };
+  }
+}
+
+// Public, so it is rate limited: anyone at all can reach this URL, and without
+// a limit a machine could work through passwords at its leisure.
+function loginPassword(email, password) {
+  email = (email || '').toString().trim().toLowerCase();
+  password = (password || '').toString();
+  if (!email || !password) return { success: false, message: 'Please enter your email and password.' };
+
+  var cache = CacheService.getScriptCache();
+  var tkey  = 'PWTRY_' + email;
+  var tries = parseInt(cache.get(tkey) || '0', 10);
+  if (tries >= PW_MAX_TRIES) {
+    return { success: false, message: 'Too many attempts. Please wait fifteen minutes, or sign in with a code instead.' };
+  }
+
+  var stored = pwStored_(email);
+  var emp    = getEmployeeByEmail(email);
+  // The same answer whether the email is unknown, has no password yet, or the
+  // password is wrong, so this cannot be used to find out who is registered.
+  function refuse() {
+    cache.put(tkey, String(tries + 1), PW_WINDOW_S);
+    return { success: false, message: 'Email or password is incorrect. If this is your first time, ask for a code instead.' };
+  }
+  if (!stored || !emp) return refuse();
+
+  var parts = stored.split('$');
+  if (parts.length !== 2 || pwHash_(parts[0], password) !== parts[1]) return refuse();
+
+  cache.remove(tkey);
+  return sessionFor_(emp);
+}
+
+// The session half of verifyOTP, so a password sign-in and a code sign-in hand
+// the browser exactly the same thing and nothing downstream can tell them apart.
+function sessionFor_(emp) {
+  var token = Utilities.getUuid();
+  CacheService.getScriptCache().put('SESSION_' + token, JSON.stringify({
+    email:       emp.email,
+    name:        emp.name,
+    district:    emp.district,
+    districts:   emp.districts || [emp.district],
+    block:       emp.block,
+    designation: emp.designation,
+    role:        emp.role,
+    zone:        emp.zone || '',
+    loginTime:   new Date().toISOString()
+  }), 3600);
+  return {
+    success:     true,
+    token:       token,
+    role:        emp.role,
+    name:        emp.name,
+    district:    emp.district,
+    districts:   emp.districts || [emp.district],
+    block:       emp.block,
+    designation: emp.designation,
+    zone:        emp.zone || '',
+    email:       emp.email
+  };
+}
+
+// Editor helper: who has set one, and clearing one for someone who is stuck.
+function PW_status() {
+  var all = PropertiesService.getScriptProperties().getProperties(), n = 0, who = [];
+  for (var k in all) { if (k.indexOf('PW_') === 0) { n++; who.push(k.slice(3)); } }
+  Logger.log(n + ' people have a password set' + String.fromCharCode(10) + who.sort().join(String.fromCharCode(10)));
+  return n;
+}
+function PW_clear(email) {
+  if (!email) { Logger.log('Pass an email.'); return 0; }
+  PropertiesService.getScriptProperties().deleteProperty(pwKey_(email));
+  Logger.log('Password cleared for ' + email + '. They can set a new one after a code.');
+  return 1;
 }
 
 function sendOTP(email) {
