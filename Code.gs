@@ -961,6 +961,15 @@ function verifyOTP(email, otp) {
   var cache     = CacheService.getScriptCache();
   var storedOTP = cache.get('OTP_' + email);
 
+  // The same code, offered again within a few minutes, gets the same answer.
+  // The front door is slow enough that a verify can reach the script, spend the
+  // code and hand back a session that never arrives, leaving someone holding a
+  // code the server has already used and being told it is invalid. This is not
+  // a second login, it is the same one answered again.
+  var againKey = 'OTPOK_' + email + '_' + otp;
+  var again    = cache.get(againKey);
+  if (again) { try { return JSON.parse(again); } catch (ae) {} }
+
   if (!storedOTP) {
     return { success: false, message: 'OTP has expired. Please request a new OTP.' };
   }
@@ -990,7 +999,7 @@ function verifyOTP(email, otp) {
   });
   cache.put('SESSION_' + token, session, 3600); // 1 hour
 
-  return {
+  var out = {
     success:     true,
     token:       token,
     role:        emp.role,
@@ -1002,6 +1011,9 @@ function verifyOTP(email, otp) {
     zone:        emp.zone || '',
     email:       emp.email
   };
+  // Held briefly, so a reply lost on the way back can be asked for again.
+  try { cache.put(againKey, JSON.stringify(out), 300); } catch (pe) {}
+  return out;
 }
 
 // ------------------------------------------------------------

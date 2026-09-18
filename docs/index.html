@@ -323,7 +323,7 @@
   // longer works, which is the "Invalid OTP" people hit before. An error page,
   // on the other hand, comes back at once and means the script never ran, so
   // that one is retried.
-  var GAS_TIMEOUT_MS = 30000;
+  var GAS_TIMEOUT_MS = 45000;   // the front door has been answering in almost thirty
   function gasGet(url, onJson, onFail) {
     function attempt(retries) {
       var ctrl  = (typeof AbortController !== 'undefined') ? new AbortController() : null;
