@@ -784,13 +784,13 @@
           </div>
           <div id="conduct-alert" class="alert alert-error"></div>
           <label class="fu-label" style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer;">
-            <input type="checkbox" id="c-make-mom" checked onchange="onMomToggle()" style="width:16px;height:16px;">
-            <span style="font-size:13px;font-weight:600;color:#374151;">Create the MoM document</span>
+            <input type="checkbox" id="c-make-mom" onchange="onMomToggle()" style="width:16px;height:16px;">
+            <span style="font-size:13px;font-weight:600;color:#374151;">Also create the MoM document</span>
           </label>
-          <div style="font-size:11px;color:#6B7280;margin-left:24px;">Writing it is the slowest part of saving. Leave it off for a meeting that does not need one.</div>
+          <div style="font-size:11px;color:#6B7280;margin-left:24px;">Tick this for a meeting that needs a written record to share. It adds a few seconds to saving.</div>
           <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
             <button class="btn-reset" onclick="closeActionModal()">Cancel</button>
-            <button class="btn-submit" id="conduct-submit-btn" onclick="submitConduct()" style="padding:10px 24px;background:#166534;font-size:13px;">💾 Save &amp; Generate MoM</button>
+            <button class="btn-submit" id="conduct-submit-btn" onclick="submitConduct()" style="padding:10px 24px;background:#166534;font-size:13px;">💾 Save Meeting</button>
           </div>
         </div>
 
@@ -1591,9 +1591,11 @@
     document.getElementById('c-kp-said').value = '';
     document.getElementById('c-kp-next').value = '';
     var _oc = document.getElementById('c-outcome'); if (_oc) _oc.value = '';
+    var _mm = document.getElementById('c-make-mom'); if (_mm) _mm.checked = false;
     var _kph = document.getElementById('c-kp-hint');
     if (_kph) { _kph.style.display = 'none'; _kph.dataset.warned = ''; }
     restoreConductDraft(m.meetingId);
+    onMomToggle();
     paintAllCharNotes();
     initPhotoBoxes();
     document.getElementById('c-fu-toggle').checked        = false;
