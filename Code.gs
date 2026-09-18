@@ -61,24 +61,43 @@ function cDel() {
 // the document: one reads Script Properties, the other a published file.
 var SHEET_TRIP_KEY  = 'SHEET_TRIPPED';
 var SHEET_TRIP_SECS = 300;
+var SHEET_MISS_KEY  = 'SHEET_MISSES';
+var SHEET_MISS_BEFORE_TRIP = 2;
+var SHEET_MISS_WINDOW      = 120;
 var SHEET_BUSY_MSG  = 'The meetings sheet is not responding at the moment. Nothing was lost. Please try again in a few minutes.';
 
 function sheetBreakerTripped_() {
   try { return CacheService.getScriptCache().get(SHEET_TRIP_KEY) === '1'; }
   catch (e) { return false; }
 }
+// Two failures, not one. Sheets throws the occasional one-off that clears
+// itself, and tripping on that would stop everybody's meetings for five minutes
+// over nothing: a cure worse than the illness. Two in a row inside two minutes
+// is a pattern rather than a blip. It costs one more slow request before the
+// protection starts, which against six hours of lost runtime is nothing.
 function sheetBreakerTrip_() {
-  try { CacheService.getScriptCache().put(SHEET_TRIP_KEY, '1', SHEET_TRIP_SECS); } catch (e) {}
+  try {
+    var cache = CacheService.getScriptCache();
+    var misses = parseInt(cache.get(SHEET_MISS_KEY) || '0', 10) + 1;
+    if (misses >= SHEET_MISS_BEFORE_TRIP) {
+      cache.put(SHEET_TRIP_KEY, '1', SHEET_TRIP_SECS);
+      cache.remove(SHEET_MISS_KEY);
+    } else {
+      cache.put(SHEET_MISS_KEY, String(misses), SHEET_MISS_WINDOW);
+    }
+  } catch (e) {}
 }
 function sheetBreakerClear_() {
-  try { CacheService.getScriptCache().remove(SHEET_TRIP_KEY); } catch (e) {}
+  // A good read clears the count as well, so two failures an hour apart never
+  // add up to a trip.
+  try { CacheService.getScriptCache().removeAll([SHEET_TRIP_KEY, SHEET_MISS_KEY]); } catch (e) {}
 }
 
 // A request that has already spent a long time must not start another read that
 // could cost six more minutes. getReportData opens five sheets; if the first one
 // hangs there is no sense attempting the other four.
 var REQ_START_MS  = new Date().getTime();
-var REQ_BUDGET_MS = 60000;
+var REQ_BUDGET_MS = 90000;
 var IS_WEB_REQUEST = false;   // set by apiResponse; the timed jobs leave it false
 function requestBudgetSpent_() {
   return IS_WEB_REQUEST && (new Date().getTime() - REQ_START_MS) > REQ_BUDGET_MS;
@@ -91,8 +110,11 @@ function sheetBusy_() { throw new Error(SHEET_BUSY_MSG); }
 // Editor helpers, for when someone wants to look or to let people back in early.
 function BREAKER_status() {
   var on = sheetBreakerTripped_();
-  Logger.log(on ? 'Tripped. The sheet is being left alone; it clears itself within five minutes.'
-                : 'Clear. The sheet is being read normally.');
+  var misses = 0;
+  try { misses = parseInt(CacheService.getScriptCache().get(SHEET_MISS_KEY) || '0', 10); } catch (e) {}
+  Logger.log((on ? 'Tripped. The sheet is being left alone; it clears itself within five minutes.'
+                 : 'Clear. The sheet is being read normally.') +
+             String.fromCharCode(10) + 'Recent failures counted: ' + misses + ' of ' + SHEET_MISS_BEFORE_TRIP);
   return on ? 'tripped' : 'clear';
 }
 function BREAKER_reset() { sheetBreakerClear_(); Logger.log('Breaker cleared. The next request will try the sheet.'); return 'clear'; }
