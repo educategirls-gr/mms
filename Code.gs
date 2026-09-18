@@ -44,6 +44,96 @@ function cDel() {
   var keys = Array.prototype.slice.call(arguments);
   try { CacheService.getScriptCache().removeAll(keys); } catch(e) {}
 }
+// ── One read per sheet, shared by everyone ──────────────────────────────
+// The caches held each person's finished answer, so fifty people opening My
+// Meetings meant the same three sheets were read fifty times over inside ten
+// minutes, with the hourly jobs and the half hourly snapshot on top of that.
+// The document went under exactly that weight on the night of 17 Sep 2026.
+// These hold the sheet itself instead, so fifty people cost one read.
+//
+// A cache value is capped near 100KB, so a sheet is split across numbered keys
+// and fetched back in a single getAll. Chunks are deliberately small in
+// characters, because a Devanagari note is three bytes per character and the
+// cap is on bytes.
+//
+// Dates survive the trip: getValues hands back real Date objects, JSON turns
+// them into ISO text, and the reviver turns that text back. The pattern is
+// strict enough that a note, a name or a meeting id can never be caught by it.
+var SHEET_ROWS_TTL   = 600;
+var SHEET_ROWS_CHUNK = 30000;
+var ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+function sheetRowsKey_(name) { return 'rows_' + name.replace(/[^A-Za-z0-9]/g, ''); }
+
+function sheetRowsCached_(name) {
+  try {
+    var base = sheetRowsKey_(name), cache = CacheService.getScriptCache();
+    var n = parseInt(cache.get(base + '_n') || '0', 10);
+    if (!n) return null;
+    var keys = [];
+    for (var i = 0; i < n; i++) keys.push(base + '_' + i);
+    var got = cache.getAll(keys), s = '';
+    for (var j = 0; j < n; j++) {
+      var part = got[base + '_' + j];
+      if (part == null) return null;          // one piece gone, treat the lot as gone
+      s += part;
+    }
+    return JSON.parse(s, function(k, v) {
+      return (typeof v === 'string' && ISO_DATE_RE.test(v)) ? new Date(v) : v;
+    });
+  } catch (e) { return null; }
+}
+
+function sheetRowsStore_(name, rows) {
+  try {
+    var base = sheetRowsKey_(name), cache = CacheService.getScriptCache();
+    var s = JSON.stringify(rows), parts = {}, n = 0;
+    for (var i = 0; i < s.length; i += SHEET_ROWS_CHUNK) {
+      parts[base + '_' + n] = s.slice(i, i + SHEET_ROWS_CHUNK);
+      n++;
+    }
+    parts[base + '_n'] = String(n);
+    cache.putAll(parts, SHEET_ROWS_TTL);
+  } catch (e) { /* too big, or no cache: the sheet is simply read again next time */ }
+}
+
+// Everything that used sheet.getDataRange().getValues() on a read path calls
+// this instead. Same array of arrays, same order, same types.
+function sheetRows_(name) {
+  var hit = sheetRowsCached_(name);
+  if (hit) return hit;
+  var sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(name);
+  if (!sh) return null;
+  var rows = sh.getDataRange().getValues();
+  sheetRowsStore_(name, rows);
+  return rows;
+}
+
+// Called after every write, so nobody is served a copy that predates it.
+function sheetRowsDropAll_() {
+  try {
+    var cache = CacheService.getScriptCache(), keys = [];
+    [MEETINGS_SHEET, CONDUCTED_SHEET, POSTPONED_SHEET, CANCELLED_SHEET, EMPLOYEE_SHEET].forEach(function(name) {
+      var base = sheetRowsKey_(name);
+      var n = parseInt(cache.get(base + '_n') || '0', 10);
+      keys.push(base + '_n');
+      for (var i = 0; i < n; i++) keys.push(base + '_' + i);
+    });
+    if (keys.length) cache.removeAll(keys);
+  } catch (e) {}
+}
+
+// Editor helper: is the shared copy doing its job?
+function ROWS_status() {
+  var cache = CacheService.getScriptCache(), out = [];
+  [MEETINGS_SHEET, CONDUCTED_SHEET, POSTPONED_SHEET, CANCELLED_SHEET, EMPLOYEE_SHEET].forEach(function(name) {
+    var n = parseInt(cache.get(sheetRowsKey_(name) + '_n') || '0', 10);
+    out.push(name + ': ' + (n ? ('cached in ' + n + ' piece(s)') : 'not cached, next read will fill it'));
+  });
+  Logger.log(out.join(String.fromCharCode(10)));
+  return out.join(' | ');
+}
+
 function invalidateUser(email, district) {
   var keys = ['emp_' + email,
        'stats_' + email + '_0', 'stats_' + email + '_1',
@@ -75,6 +165,7 @@ function invalidateUser(email, district) {
     });
   } catch (e) { /* the user's own keys are cleared either way */ }
   cDel.apply(null, keys);
+  sheetRowsDropAll_();   // the shared sheet copies too, or a write would stay invisible
 }
 
 // ------------------------------------------------------------
@@ -1493,7 +1584,7 @@ function getMyMeetings(email) {
     var sheet = ss.getSheetByName(MEETINGS_SHEET);
     if (!sheet) return [];
 
-    var sheetData = sheet.getDataRange().getValues();
+    var sheetData = (sheetRows_(MEETINGS_SHEET) || []);
     var meetings  = [];
     var tz        = Session.getScriptTimeZone();
     for (var i = 1; i < sheetData.length; i++) {
@@ -2376,7 +2467,7 @@ function getAllMyMeetings(email) {
     // 1. Postponed Meetings sheet - history of all reschedules
     var pSheet = ss.getSheetByName(POSTPONED_SHEET);
     if (pSheet && pSheet.getLastRow() > 1) {
-      var phd = pSheet.getDataRange().getValues();
+      var phd = (sheetRows_(POSTPONED_SHEET) || []);
       // Columns: MeetingID(0) District(1) EmployeeName(2) Email(3)
       //          StakeholderName(4) StakeholderPost(5) Purpose(6)
       //          OriginalDate(7) NewDate(8) Reason(9) PostponedAt(10)
@@ -2407,7 +2498,7 @@ function getAllMyMeetings(email) {
     // 2. Conducted Meetings
     var cSheet = ss.getSheetByName(CONDUCTED_SHEET);
     if (cSheet && cSheet.getLastRow() > 1) {
-      var cd = cSheet.getDataRange().getValues();
+      var cd = (sheetRows_(CONDUCTED_SHEET) || []);
       for (var j = 1; j < cd.length; j++) {
         if ((cd[j][4] || '').toString().trim().toLowerCase() !== emailKey) continue;
         meetings.push({
@@ -2445,7 +2536,7 @@ function getAllMyMeetings(email) {
     // 3. Cancelled Meetings
     var xSheet = ss.getSheetByName(CANCELLED_SHEET);
     if (xSheet && xSheet.getLastRow() > 1) {
-      var xd = xSheet.getDataRange().getValues();
+      var xd = (sheetRows_(CANCELLED_SHEET) || []);
       for (var k = 1; k < xd.length; k++) {
         if ((xd[k][4] || '').toString().trim().toLowerCase() !== emailKey) continue;
         meetings.push({
@@ -2519,7 +2610,7 @@ function getDistrictAllMeetings(district) {
     // 1. Plan Meetings - Planned / Follow-up only (Cancelled/Postponed go to their own sheets)
     var planSheet = ss.getSheetByName(MEETINGS_SHEET);
     if (planSheet) {
-      var pd = planSheet.getDataRange().getValues();
+      var pd = (sheetRows_(MEETINGS_SHEET) || []);
       for (var i = 1; i < pd.length; i++) {
         if ((pd[i][1] || '').toString().trim().toLowerCase() !== distL) continue;
         var st = (pd[i][13] || 'Planned').toString();
@@ -2543,7 +2634,7 @@ function getDistrictAllMeetings(district) {
     // 2. Conducted
     var condSheet = ss.getSheetByName(CONDUCTED_SHEET);
     if (condSheet) {
-      var cd = condSheet.getDataRange().getValues();
+      var cd = (sheetRows_(CONDUCTED_SHEET) || []);
       for (var i = 1; i < cd.length; i++) {
         if ((cd[i][1] || '').toString().trim().toLowerCase() !== distL) continue;
         meetings.push({
@@ -2569,7 +2660,7 @@ function getDistrictAllMeetings(district) {
     // 3. Postponed
     var postSheet = ss.getSheetByName(POSTPONED_SHEET);
     if (postSheet) {
-      var xd = postSheet.getDataRange().getValues();
+      var xd = (sheetRows_(POSTPONED_SHEET) || []);
       for (var i = 1; i < xd.length; i++) {
         if ((xd[i][1] || '').toString().trim().toLowerCase() !== distL) continue;
         meetings.push({
@@ -2592,7 +2683,7 @@ function getDistrictAllMeetings(district) {
     // 4. Cancelled
     var cancelSheet = ss.getSheetByName(CANCELLED_SHEET);
     if (cancelSheet) {
-      var xc = cancelSheet.getDataRange().getValues();
+      var xc = (sheetRows_(CANCELLED_SHEET) || []);
       for (var i = 1; i < xc.length; i++) {
         if ((xc[i][1] || '').toString().trim().toLowerCase() !== distL) continue;
         meetings.push({
@@ -2637,7 +2728,7 @@ function getStateAllMeetings() {
     // 1. Plan Meetings - Planned / Follow-up only
     var planSheet = ss.getSheetByName(MEETINGS_SHEET);
     if (planSheet) {
-      var pd = planSheet.getDataRange().getValues();
+      var pd = (sheetRows_(MEETINGS_SHEET) || []);
       for (var i = 1; i < pd.length; i++) {
         if (!pd[i][0]) continue;
         var st = (pd[i][13] || 'Planned').toString();
@@ -2662,7 +2753,7 @@ function getStateAllMeetings() {
     // 2. Conducted
     var condSheet = ss.getSheetByName(CONDUCTED_SHEET);
     if (condSheet) {
-      var cd = condSheet.getDataRange().getValues();
+      var cd = (sheetRows_(CONDUCTED_SHEET) || []);
       for (var i = 1; i < cd.length; i++) {
         if (!cd[i][0]) continue;
         meetings.push({
@@ -2689,7 +2780,7 @@ function getStateAllMeetings() {
     // 3. Postponed
     var postSheet = ss.getSheetByName(POSTPONED_SHEET);
     if (postSheet) {
-      var xd = postSheet.getDataRange().getValues();
+      var xd = (sheetRows_(POSTPONED_SHEET) || []);
       for (var i = 1; i < xd.length; i++) {
         if (!xd[i][0]) continue;
         meetings.push({
@@ -2713,7 +2804,7 @@ function getStateAllMeetings() {
     // 4. Cancelled
     var cancelSheet = ss.getSheetByName(CANCELLED_SHEET);
     if (cancelSheet) {
-      var xc = cancelSheet.getDataRange().getValues();
+      var xc = (sheetRows_(CANCELLED_SHEET) || []);
       for (var i = 1; i < xc.length; i++) {
         if (!xc[i][0]) continue;
         meetings.push({
@@ -4882,7 +4973,7 @@ function getReportData() {
     var emp = ss.getSheetByName(EMPLOYEE_SHEET);
     var blockMap = {};
     if (emp) {
-      var ed = emp.getDataRange().getValues();
+      var ed = (sheetRows_(EMPLOYEE_SHEET) || []);
       for (var i = 1; i < ed.length; i++) {
         var em = (ed[i][4] || '').toString().trim().toLowerCase();
         if (em) blockMap[em] = (ed[i][1] || '').toString().trim(); // B = Block
@@ -4895,7 +4986,7 @@ function getReportData() {
     // 1. Plan Meetings - Planned / Follow-up only
     var plan = ss.getSheetByName(MEETINGS_SHEET);
     if (plan) {
-      var pd = plan.getDataRange().getValues();
+      var pd = (sheetRows_(MEETINGS_SHEET) || []);
       for (var a = 1; a < pd.length; a++) {
         if (!pd[a][0]) continue;
         var st = (pd[a][13] || 'Planned').toString();
@@ -4914,7 +5005,7 @@ function getReportData() {
     // 2. Conducted
     var cS = ss.getSheetByName(CONDUCTED_SHEET);
     if (cS) {
-      var cd = cS.getDataRange().getValues();
+      var cd = (sheetRows_(CONDUCTED_SHEET) || []);
       for (var b = 1; b < cd.length; b++) {
         if (!cd[b][0]) continue;
         meetings.push({
@@ -4935,7 +5026,7 @@ function getReportData() {
     // 3. Postponed
     var xS = ss.getSheetByName(POSTPONED_SHEET);
     if (xS) {
-      var xd = xS.getDataRange().getValues();
+      var xd = (sheetRows_(POSTPONED_SHEET) || []);
       for (var c = 1; c < xd.length; c++) {
         if (!xd[c][0]) continue;
         meetings.push({
@@ -4952,7 +5043,7 @@ function getReportData() {
     // 4. Cancelled
     var zS = ss.getSheetByName(CANCELLED_SHEET);
     if (zS) {
-      var zd = zS.getDataRange().getValues();
+      var zd = (sheetRows_(CANCELLED_SHEET) || []);
       for (var d = 1; d < zd.length; d++) {
         if (!zd[d][0]) continue;
         meetings.push({
@@ -5144,7 +5235,7 @@ function getDashboardStats(email, allDistricts, activeDistrict) {
 
     // ── Plan Meetings ──────────────────────────────────────────
     var planSheet = ss.getSheetByName(MEETINGS_SHEET);
-    var planData  = (planSheet && planSheet.getLastRow() > 1) ? planSheet.getDataRange().getValues() : [];
+    var planData  = (planSheet && planSheet.getLastRow() > 1) ? (sheetRows_(MEETINGS_SHEET) || []) : [];
 
     var distMap = {};   // district → {total,conducted,planned,cancelled,postponed}
     var typeMap = {};
@@ -5221,7 +5312,7 @@ function getDashboardStats(email, allDistricts, activeDistrict) {
     var momReady    = 0;      // meetings with MoM doc link
 
     if (cSheet && cSheet.getLastRow() > 1) {
-      var cd = cSheet.getDataRange().getValues();
+      var cd = (sheetRows_(CONDUCTED_SHEET) || []);
       // Forward pass - collect stats
       for (var ci = 1; ci < cd.length; ci++) {
         var cr      = cd[ci];
