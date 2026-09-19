@@ -1596,9 +1596,13 @@ function sendMeetingFeedback(session, meetingId, text) {
   if (!m) return { success:false, message:'That meeting was not found.' };
   if (!m.email) return { success:false, message:'No email is recorded against that meeting, so nobody can be written to.' };
 
-  // A zone lead may only ask about their own zone. State may ask about any.
+  // A zone lead may only write about their own zone. State may write about any.
+  // Both sides go through the canonical key first. The Zone column is typed by
+  // hand, so "UP Zone 1" and "up zone-1" are the same zone as far as every
+  // other screen is concerned, and comparing the raw string would lock out a
+  // lead whose Zone Meetings tab works perfectly well.
   if (role === 'Zone') {
-    var mine = (session.zone || '').toString();
+    var mine = findZoneKey_((session.zone || '').toString());
     if (!mine || districtToZone_(m.district) !== mine) return { success:false, message:'FORBIDDEN' };
   }
 
