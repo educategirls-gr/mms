@@ -4146,6 +4146,103 @@ function NOTE_quality() {
   return res;
 }
 
+// Would a keyword rule ("urgent", "immediately", "denied" -> Priority High) do
+// the job the model is doing? Read only, writes nothing. It scores the keyword
+// rule against the tags already on the sheet and, more usefully, prints the
+// notes where the keyword fires but the model disagreed, because a false
+// positive is something you have to read to judge. Counts alone cannot settle
+// it. See tagOneMeeting_, whose prompt says in as many words: never react to a
+// single keyword.
+function NOTE_keywordCheck() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID), sh = ss.getSheetByName(CONDUCTED_SHEET);
+  if (!sh) return { success:false, message:'no conducted sheet' };
+  var data = sh.getDataRange().getValues();
+
+  // Latin terms are matched on word boundaries so "blocked" cannot be found
+  // inside "block", which in these notes is a place, not a problem.
+  var WORD = ['urgent','urgently','immediately','immediate','denied','deny',
+              'refused','refuse','rejected','reject','delayed','pending',
+              'blocked','objection','complaint','turant','jaldi','inkar',
+              'mana','lambit','dikkat','samasya'];
+  // Devanagari has no useful word boundary in this regex engine, so substring.
+  var SUB  = ['तत्काल','शीघ्र','अविलम्ब','मना','इनकार','अस्वीकार',
+              'लंबित','विलंब','समस्या','आपत्ति','शिकायत'];
+
+  // Whole words only, by splitting on anything that is not a letter or a
+  // digit: "blocked" must not be found inside "block", which in these notes
+  // is a place and not a problem. Devanagari is matched as a substring
+  // because it does not sit inside that Latin word split.
+  function hits(note) {
+    var low = ' ' + note.toLowerCase().replace(/[^a-z0-9]+/g, ' ') + ' ';
+    var found = [];
+    for (var w = 0; w < WORD.length; w++) {
+      if (low.indexOf(' ' + WORD[w] + ' ') !== -1) found.push(WORD[w]);
+    }
+    for (var d = 0; d < SUB.length; d++) {
+      if (note.indexOf(SUB[d]) !== -1) found.push(SUB[d]);
+    }
+    return found;
+  }
+  function around(note, term) {
+    var i = note.toLowerCase().indexOf(term.toLowerCase());
+    if (i < 0) i = note.indexOf(term);
+    if (i < 0) return note.substring(0, 110);
+    return (i > 40 ? '...' : '') + note.substring(Math.max(0, i - 40), i + 70) + '...';
+  }
+
+  var perWord = {}, tagged = 0, kwAny = 0, aiHigh = 0;
+  var kwAndHigh = 0, kwNotHigh = 0, highNoKw = 0;
+  var wouldPromote = [], wouldMiss = [];
+
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    var note = (data[i][15] || '').toString().trim();
+    if (!note) continue;
+    var prio = (data[i][COL_TAG_PRIORITY-1] || '').toString().trim();
+    if (!prio) continue;                      // untagged, nothing to compare against
+    tagged++;
+    var found = hits(note), isHigh = (prio === 'High');
+    if (isHigh) aiHigh++;
+
+    for (var f = 0; f < found.length; f++) {
+      var w = perWord[found[f]] || (perWord[found[f]] = { notes:0, High:0, Medium:0, Low:0 });
+      w.notes++; w[prio] = (w[prio] || 0) + 1;
+    }
+    if (found.length) {
+      kwAny++;
+      if (isHigh) kwAndHigh++;
+      else {
+        kwNotHigh++;
+        // The keyword rule would raise this to High. Read it and decide.
+        if (wouldPromote.length < 25) {
+          wouldPromote.push({ id:data[i][0], aiSaid:prio, word:found[0], text:around(note, found[0]) });
+        }
+      }
+    } else if (isHigh) {
+      highNoKw++;
+      if (wouldMiss.length < 12) {
+        wouldMiss.push({ id:data[i][0], text:note.substring(0, 110) + (note.length > 110 ? '...' : '') });
+      }
+    }
+  }
+
+  var res = {
+    taggedNotes: tagged,
+    aiSaysHigh: aiHigh,
+    keywordWouldFire: kwAny,
+    agreeBothHigh: kwAndHigh,
+    keywordFiresButAiSaysMediumOrLow: kwNotHigh,
+    aiSaysHighButNoKeyword: highNoKw,
+    ofKeywordHitsPercentActuallyHigh: kwAny ? Math.round(100 * kwAndHigh / kwAny) : 0,
+    ofHighPercentTheKeywordWouldCatch: aiHigh ? Math.round(100 * kwAndHigh / aiHigh) : 0,
+    perWord: perWord,
+    readThese_keywordFiredAnywayLowOrMedium: wouldPromote,
+    readThese_highWithNoKeywordAtAll: wouldMiss
+  };
+  Logger.log(JSON.stringify(res, null, 2));
+  return res;
+}
+
 function TAG_showBlocked() {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID), sh = ss.getSheetByName(CONDUCTED_SHEET);
   if (!sh) return { success:false, message:'No conducted sheet' };
