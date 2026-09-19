@@ -374,8 +374,10 @@ The deployment id must stay the same or the frontend's `GAS_URL` breaks. Editor 
 
 **The version number**
 
-Every page shows `Version <n>` in its footer, matching the Apps Script
-deployment. It is written into the HTML rather than fetched, which is the whole
+Every page shows `Version 1.nn` in its footer, where `nn` is the Apps Script
+deployment number: deployment 126 is written `1.26`, 130 will be `1.30`, 200
+will be `2.00`. The dot is cosmetic, so it reads like a version rather than a
+serial number; there is only one number underneath. It is written into the HTML rather than fetched, which is the whole
 point: a page served from a stale cache shows the stale number, and that is the
 only way anyone can tell that is what happened.
 
