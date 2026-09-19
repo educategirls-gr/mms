@@ -494,7 +494,7 @@
   </div>
   <div class="sidebar-bottom">
     <button class="btn-logout" onclick="logout()">🚪 Logout</button>
-    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.29 &middot; 19 Sep 2026</div>
+    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.30 &middot; 19 Sep 2026</div>
   </div>
 </div>
 
@@ -525,19 +525,19 @@
         <div class="card-title">📋 Plan Your Meeting</div>
         <div class="form-section-label">Meeting Type <span class="req">*</span></div>
         <div class="mtg-type-grid">
-          <div class="mtg-type-card" onclick="setMeetingType('One-on-One', this)">
+          <div class="mtg-type-card" data-val="One-on-One" onclick="setMeetingType('One-on-One', this)">
             <div class="mtc-icon">👤</div><div class="mtc-name">One-on-One</div>
           </div>
-          <div class="mtg-type-card" onclick="setMeetingType('Group Meeting', this)">
+          <div class="mtg-type-card" data-val="Group Meeting" onclick="setMeetingType('Group Meeting', this)">
             <div class="mtc-icon">👥</div><div class="mtc-name">Group Meeting</div>
           </div>
-          <div class="mtg-type-card" onclick="setMeetingType('Joint Visit', this)">
+          <div class="mtg-type-card" data-val="Joint Visit" onclick="setMeetingType('Joint Visit', this)">
             <div class="mtc-icon">🤝</div><div class="mtc-name">Joint Visit</div>
           </div>
-          <div class="mtg-type-card" onclick="setMeetingType('Dept. Review', this)">
+          <div class="mtg-type-card" data-val="Dept. Review" onclick="setMeetingType('Dept. Review', this)">
             <div class="mtc-icon">📋</div><div class="mtc-name">Dept. Review</div>
           </div>
-          <div class="mtg-type-card" onclick="setMeetingType('Field Visit', this)">
+          <div class="mtg-type-card" data-val="Field Visit" onclick="setMeetingType('Field Visit', this)">
             <div class="mtc-icon">🌾</div><div class="mtc-name">Field Visit</div>
           </div>
         </div>
@@ -573,11 +573,11 @@
           <div class="field full">
             <label>Duration</label>
             <div class="duration-group">
-              <button type="button" class="dur-btn" onclick="setDuration('30 min', this)">30 min</button>
-              <button type="button" class="dur-btn" onclick="setDuration('1 hr', this)">1 hr</button>
-              <button type="button" class="dur-btn" onclick="setDuration('2 hr', this)">2 hr</button>
-              <button type="button" class="dur-btn" onclick="setDuration('Half Day', this)">Half Day</button>
-              <button type="button" class="dur-btn" onclick="setDuration('Full Day', this)">Full Day</button>
+              <button type="button" class="dur-btn" data-val="30 min" onclick="setDuration('30 min', this)">30 min</button>
+              <button type="button" class="dur-btn" data-val="1 hr" onclick="setDuration('1 hr', this)">1 hr</button>
+              <button type="button" class="dur-btn" data-val="2 hr" onclick="setDuration('2 hr', this)">2 hr</button>
+              <button type="button" class="dur-btn" data-val="Half Day" onclick="setDuration('Half Day', this)">Half Day</button>
+              <button type="button" class="dur-btn" data-val="Full Day" onclick="setDuration('Full Day', this)">Full Day</button>
             </div>
           </div>
         </div>
@@ -670,6 +670,7 @@
           <button class="btn-reset" onclick="resetForm()">Reset</button>
           <button class="btn-submit" id="btn-submit" onclick="submitMeeting()">Save Meeting Plan</button>
           <div id="save-slow-note" style="display:none;margin-top:10px;font-size:13px;line-height:1.5;color:#92400E;background:#FEF3C7;border:1px solid #FDE68A;border-radius:8px;padding:10px 12px;"></div>
+          <div id="plan-draft-note" style="display:none;"></div>
         </div>
       </div>
     </div>
@@ -1210,11 +1211,13 @@
     selectedMeetingType = type;
     document.querySelectorAll('.mtg-type-card').forEach(function(c) { c.classList.remove('selected'); });
     el.classList.add('selected');
+    if (typeof savePlanDraft === 'function') savePlanDraft();
   }
   function setDuration(dur, el) {
     selectedDuration = dur;
     document.querySelectorAll('.dur-btn').forEach(function(b) { b.classList.remove('selected'); });
     el.classList.add('selected');
+    if (typeof savePlanDraft === 'function') savePlanDraft();
   }
 
   function fillHours(id) {
@@ -3006,6 +3009,10 @@
     });
     var other = document.createElement('option'); other.value = 'Other'; other.textContent = 'Other (Specify)';
     purpSel.appendChild(other);
+    // Only now, with the posts and purposes in place, can a saved choice be
+    // put back: setting a select before its options exist does nothing.
+    bindPlanDraft();
+    restorePlanDraft();
   }
   function onPostChange() {
     var val = document.getElementById('adhikariPost').value;
@@ -3357,6 +3364,113 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindCharNotes);
   else bindCharNotes();
+
+  // ── Plan draft ────────────────────────────────────────────
+  // The conduct form has kept what you typed since the day the front door
+  // started dropping requests. The plan form never did, so an interruption
+  // halfway through, a phone locking, or a tab closing lost the lot, and the
+  // second attempt is always shorter than the first. Same approach as
+  // saveConductDraft, one form so one key.
+  //
+  // Attached files are deliberately not kept, for the same reason photos are
+  // not: they do not fit in browser storage. The restore line says so.
+  var _PLAN_FIELDS = ['plan-district','meetingDate','mt-h','mt-m','mt-ap',
+                      'adhikariPost','otherPost','adhikariName','adhikariBlock',
+                      'meetingPurpose','otherPurpose','meetingAgenda',
+                      'colleagueName','colleaguePost'];
+
+  function planDraftKey() {
+    return 'eg_plan_draft_' + ((SESSION && SESSION.email) || '');
+  }
+  function planDraftNote(html) {
+    var el = document.getElementById('plan-draft-note');
+    if (!el) return;
+    el.innerHTML = html || '';
+    el.style.display = html ? 'block' : 'none';
+  }
+  function savePlanDraft() {
+    var d = {};
+    _PLAN_FIELDS.forEach(function(id){ var el = document.getElementById(id); if (el) d[id] = el.value; });
+    d._type = selectedMeetingType;
+    d._dur  = selectedDuration;
+    // The date defaults to today on its own, so it does not count as something
+    // worth keeping. Without this every visit to the form would leave a draft.
+    var any = _PLAN_FIELDS.some(function(id){
+      return id !== 'meetingDate' && (d[id] || '').toString().trim();
+    }) || d._type || d._dur;
+    try {
+      if (any) {
+        localStorage.setItem(planDraftKey(), JSON.stringify(d));
+        planDraftNote('<div style="margin-top:10px;font-size:11.5px;color:#6B7280;text-align:right;">' +
+          'Kept on this phone, so you can come back to it. ' +
+          '<a href="#" onclick="discardPlanDraft();return false;" style="color:#7B1010;font-weight:600;">Discard</a></div>');
+      } else {
+        localStorage.removeItem(planDraftKey());
+        planDraftNote('');
+      }
+    } catch (e) {}
+  }
+  function clearPlanDraft() {
+    try { localStorage.removeItem(planDraftKey()); } catch (e) {}
+    planDraftNote('');
+  }
+  function discardPlanDraft() {
+    clearPlanDraft();
+    resetForm();
+    showToast('Draft discarded.');
+  }
+  // Called once the dropdowns hold their options: setting a select before its
+  // options exist does nothing at all, silently.
+  function restorePlanDraft() {
+    var d = null;
+    try { d = JSON.parse(localStorage.getItem(planDraftKey()) || 'null'); } catch (e) { d = null; }
+    if (!d) return;
+
+    function put(id) { var el = document.getElementById(id); if (el && d[id]) el.value = d[id]; }
+
+    put('plan-district');
+    if (typeof refreshBlockOptions === 'function') refreshBlockOptions();
+    put('adhikariBlock');
+    put('meetingDate'); put('mt-h'); put('mt-m'); put('mt-ap');
+    // onPostChange clears the Other box whenever the post is not Other, so the
+    // post has to be settled before the Other box is filled. Same for purpose.
+    put('adhikariPost');    onPostChange();    put('otherPost');
+    put('meetingPurpose');  onPurposeChange(); put('otherPurpose');
+    put('adhikariName'); put('meetingAgenda');
+    put('colleagueName'); put('colleaguePost');
+
+    if (d._type) {
+      selectedMeetingType = d._type;
+      var tc = document.querySelector('.mtg-type-card[data-val="' + d._type + '"]');
+      if (tc) tc.classList.add('selected');
+    }
+    if (d._dur) {
+      selectedDuration = d._dur;
+      var db = document.querySelector('.dur-btn[data-val="' + d._dur + '"]');
+      if (db) db.classList.add('selected');
+    }
+
+    // Nothing above fires an input event, so anything that listens for one has
+    // to be nudged by hand.
+    if (typeof paintAllCharNotes === 'function') paintAllCharNotes();
+    if (typeof paintMetLine === 'function') paintMetLine();
+
+    planDraftNote('<div style="margin-top:10px;font-size:12px;line-height:1.5;color:#1E40AF;' +
+      'background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:9px 11px;">' +
+      'Picked up where you left off. Any files you had attached need choosing again. ' +
+      '<a href="#" onclick="discardPlanDraft();return false;" style="color:#7B1010;font-weight:600;">Start fresh</a></div>');
+  }
+  function bindPlanDraft() {
+    _PLAN_FIELDS.forEach(function(id) {
+      var el = document.getElementById(id);
+      if (!el || el.dataset.pdBound) return;
+      el.dataset.pdBound = '1';
+      el.addEventListener('input',  savePlanDraft);
+      el.addEventListener('change', savePlanDraft);
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindPlanDraft);
+  else bindPlanDraft();
 
   // ── Last met ───────────────────────────────────────────────
   // One line under the stakeholder fields saying when this office, or this
@@ -3809,6 +3923,8 @@
     say(25000, 'Still saving. Nothing is lost, and pressing Save again would only file the meeting twice.');
   }
   function resetForm() {
+    // Covers Reset and a successful save, which both land here.
+    clearPlanDraft();
     ['mt-h','mt-m','mt-ap','adhikariName','adhikariPost','otherPost',
      'meetingPurpose','otherPurpose','meetingAgenda','colleagueName','colleaguePost'].forEach(function(id) {
       var el = document.getElementById(id); if (el) el.value = '';
