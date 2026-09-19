@@ -135,6 +135,13 @@
     /* The length rule, said out loud under the box instead of only on Submit */
     .char-note { font-size: 11px; margin-top: 4px; color: #9CA3AF; }
 
+    .btn-ask {
+      border: 1px solid #7B1010; background: #fff; color: #7B1010;
+      border-radius: 6px; padding: 3px 9px; font-size: 11px; font-weight: 600;
+      font-family: inherit; cursor: pointer; white-space: nowrap;
+    }
+    .btn-ask:active { background: #FEF2F2; }
+
     /* The one line of history under the stakeholder fields. */
     .met-line {
       display: none; margin-top: -4px; margin-bottom: 2px;
@@ -494,7 +501,7 @@
   </div>
   <div class="sidebar-bottom">
     <button class="btn-logout" onclick="logout()">🚪 Logout</button>
-    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.30 &middot; 19 Sep 2026</div>
+    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.31 &middot; 19 Sep 2026</div>
   </div>
 </div>
 
@@ -976,14 +983,10 @@
         <!-- District Filter + Status Filter + Search + Download -->
         <div class="rep-search-bar">
           <div id="sm-district" class="ds-box"></div>
-          <select id="sm-status" onchange="smRender()" style="flex-shrink:0;padding:8px 10px;font-size:13px;border:1.5px solid #E5E7EB;border-radius:8px;background:#fff;">
-            <option value="">All Status</option>
-            <option value="Planned">Planned</option>
-            <option value="Follow-up">Follow-up</option>
-            <option value="Conducted">Conducted</option>
-            <option value="Postponed">Postponed</option>
-            <option value="Cancelled">Cancelled</option>
-          </select>
+          <!-- This screen shows conducted meetings only, so a status filter has
+               nothing left to choose between. It stays in the page, hidden,
+               because smRender and smCSV both read its value. -->
+          <select id="sm-status" style="display:none;"><option value=""></option></select>
           <input type="text" id="sm-search" placeholder="Search district, employee, stakeholder..." oninput="smRender()" style="flex:1;">
           <button class="btn-dl" onclick="smCSV()">&#8595; Download CSV</button>
         </div>
@@ -2634,6 +2637,10 @@
     var monthEnd   = new Date(_smYear, _smMonth + 1, 0, 23, 59, 59).getTime();
 
     var filtered = _smAll.filter(function(r) {
+      // Conducted only. This screen is for reading what happened and putting a
+      // question to the officer, and neither applies to a meeting that has not
+      // been held yet. What is coming up is on the Analytics portal.
+      if (r.status !== 'Conducted') return false;
       var ts = smGetDate(r);
       if (ts < monthStart || ts > monthEnd) return false;
       if (distMiss(dst, r.district)) return false;
@@ -2655,7 +2662,7 @@
     if (!filtered.length) {
       document.getElementById('sm-content').innerHTML =
         '<div class="empty-state"><div class="empty-icon">🗺️</div>' +
-        '<p>No meetings in ' + _MONTHS[_smMonth] + ' ' + _smYear + '</p></div>';
+        '<p>No conducted meetings in ' + _MONTHS[_smMonth] + ' ' + _smYear + '</p></div>';
       return;
     }
 
@@ -2695,6 +2702,9 @@
         if (r.photoLink) links += '<a href="' + esc(r.photoLink) + '" target="_blank" class="rep-link rep-link-photo">Photos</a>';
         if (links) details += '<div style="margin-top:3px;">' + links + '</div>';
         if (r.colleagueName) details += '<div style="color:#9CA3AF;font-size:11px;margin-top:2px;">Sathi: ' + esc(r.colleagueName) + (r.colleaguePost ? ' (' + esc(r.colleaguePost) + ')' : '') + '</div>';
+        details += '<div style="margin-top:5px;"><button class="btn-ask" data-mid="' + esc(r.meetingId) +
+                   '" data-who="' + esc(r.employeeName) + '" data-with="' + esc(r.adhikariName) +
+                   '">✉ Ask the officer</button></div>';
       } else if (r.reason) {
         details = '<span style="color:#92400E;font-size:11px;">' + esc(r.reason) + '</span>';
       }
@@ -2728,6 +2738,7 @@
 
     html += '</tbody></table></div>';
     document.getElementById('sm-content').innerHTML = html;
+    bindAskButtons('sm-content');
   }
 
   function smCSV() {
@@ -2899,6 +2910,9 @@
         if (r.photoLink) links += '<a href="' + esc(r.photoLink) + '" target="_blank" class="rep-link rep-link-photo">Photos</a>';
         if (links) details += '<div style="margin-top:3px;">' + links + '</div>';
         if (r.colleagueName) details += '<div style="color:#9CA3AF;font-size:11px;margin-top:2px;">Sathi: ' + esc(r.colleagueName) + (r.colleaguePost ? ' (' + esc(r.colleaguePost) + ')' : '') + '</div>';
+        details += '<div style="margin-top:5px;"><button class="btn-ask" data-mid="' + esc(r.meetingId) +
+                   '" data-who="' + esc(r.employeeName) + '" data-with="' + esc(r.adhikariName) +
+                   '">✉ Ask the officer</button></div>';
       } else if (r.reason) {
         details = '<span style="color:#92400E;font-size:11px;">' + esc(r.reason) + '</span>';
       }
@@ -2932,6 +2946,7 @@
 
     html += '</tbody></table></div>';
     document.getElementById('zm-content').innerHTML = html;
+    bindAskButtons('zm-content');
   }
 
   function zmCSV() {
@@ -3364,6 +3379,107 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindCharNotes);
   else bindCharNotes();
+
+  // ── Ask the officer ───────────────────────────────────────
+  // A State or Zone lead reading a conducted meeting can put a question to the
+  // officer who filed it. It goes out as one email, and the answer comes back
+  // as a reply, so the whole exchange lives in the two mailboxes.
+  //
+  // Nothing is kept here, and that is the decision rather than a gap. The email
+  // is already in both inboxes and searchable, so a copy in the sheet would be
+  // a second, worse record to keep in step with the first. It also means there
+  // is no Comments screen, no unread count, and nothing to maintain.
+  //
+  // The officer's address is never sent to this page. The server finds it from
+  // the meeting id.
+  var _askMid = '';
+
+  function askModalEl() {
+    var el = document.getElementById('ask-modal');
+    if (el) return el;
+    el = document.createElement('div');
+    el.id = 'ask-modal';
+    el.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);' +
+                       'z-index:9999;align-items:center;justify-content:center;padding:16px;';
+    el.addEventListener('click', function(ev){ if (ev.target === el) closeAskModal(); });
+    document.body.appendChild(el);
+    return el;
+  }
+  function closeAskModal() {
+    var el = document.getElementById('ask-modal');
+    if (el) el.style.display = 'none';
+    _askMid = '';
+  }
+  function openAskModal(mid, who, withWhom) {
+    _askMid = mid;
+    var el = askModalEl();
+    el.innerHTML =
+      '<div style="background:#fff;border-radius:12px;max-width:480px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.25);">' +
+        '<div style="padding:14px 18px;background:#7B1010;color:#fff;border-radius:12px 12px 0 0;">' +
+          '<div style="font-size:15px;font-weight:700;">Ask ' + esc(who || 'the officer') + '</div>' +
+          '<div style="font-size:12px;opacity:.85;margin-top:2px;">About the meeting with ' +
+            esc(withWhom || 'this official') + '</div>' +
+        '</div>' +
+        '<div style="padding:16px 18px;">' +
+          '<textarea id="ask-text" rows="5" placeholder="What would you like to ask, or ask for?" ' +
+            'style="width:100%;box-sizing:border-box;border:1.5px solid #E5E7EB;border-radius:7px;' +
+            'padding:10px 11px;font-size:13px;font-family:inherit;resize:vertical;"></textarea>' +
+          '<div style="font-size:11.5px;color:#6B7280;margin-top:8px;line-height:1.5;">' +
+            'This goes to them by email, with you copied in. They reply to the email and it ' +
+            'comes straight back to you. Nothing is stored in the portal.' +
+          '</div>' +
+          '<div id="ask-alert" style="display:none;margin-top:10px;font-size:12.5px;color:#991B1B;' +
+            'background:#FEF2F2;border:1px solid #FECACA;border-radius:7px;padding:8px 10px;"></div>' +
+          '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">' +
+            '<button class="btn-reset" onclick="closeAskModal()">Cancel</button>' +
+            '<button class="btn-submit" id="ask-send" onclick="sendAsk()" ' +
+              'style="padding:10px 22px;background:#7B1010;font-size:13px;">Send</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    el.style.display = 'flex';
+    var ta = document.getElementById('ask-text');
+    if (ta) ta.focus();
+  }
+  function askErr(msg) {
+    var a = document.getElementById('ask-alert');
+    if (!a) return;
+    a.textContent = msg;
+    a.style.display = msg ? 'block' : 'none';
+  }
+  function sendAsk() {
+    var ta  = document.getElementById('ask-text');
+    var btn = document.getElementById('ask-send');
+    var txt = ((ta && ta.value) || '').trim();
+    askErr('');
+    if (txt.length < 5) { askErr('Please write your question first.'); return; }
+    if (!_askMid)       { askErr('Something went wrong, please close this and try again.'); return; }
+
+    // A POST through the Apps Script front door runs to a minute and more, so
+    // it is not worth making anyone watch it. The modal closes at once and the
+    // result arrives as a toast.
+    var mid = _askMid;
+    closeAskModal();
+    showToast('Sending your question...');
+    gasPost('askOnMeeting', { meetingId: mid, text: txt }, function(res) {
+      if (res && res.success) showToast('Sent to ' + (res.sentTo || 'the officer') + '. Their reply will come to your inbox.');
+      else showToast('Not sent: ' + ((res && res.message) || 'unknown error'));
+    }, function(e) {
+      showToast('Not sent: ' + e.message);
+    });
+  }
+  // The rows are redrawn on every filter change, so the handler goes on the
+  // container once rather than on each button.
+  function bindAskButtons(containerId) {
+    var box = document.getElementById(containerId);
+    if (!box || box.dataset.askBound) return;
+    box.dataset.askBound = '1';
+    box.addEventListener('click', function(ev) {
+      var b = ev.target.closest('.btn-ask');
+      if (!b) return;
+      openAskModal(b.dataset.mid, b.dataset.who, b.dataset.with);
+    });
+  }
 
   // ── Plan draft ────────────────────────────────────────────
   // The conduct form has kept what you typed since the day the front door
