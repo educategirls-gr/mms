@@ -1515,7 +1515,45 @@ function getDropdownData(email) {
     Object.keys(blocksByDistrict).forEach(function(d){ blocksByDistrict[d].sort(); });
   } catch (be) { blocksByDistrict = {}; }
 
-  return { stakeholders: stakeholders, purposes: purposes, blocksByDistrict: blocksByDistrict };
+  // When this office, and this person, were last met and about what. It rides
+  // along with the form rather than being fetched when a post is picked: the
+  // front door costs 3 to 17 seconds even for a request that runs no code, and
+  // this has to appear while someone is still filling the form in.
+  // One record per district + post + person, holding only the most recent
+  // meeting, which keeps the whole state to a few hundred lines. Wrapped,
+  // because a plan form that cannot be filled is far worse than one with no
+  // history line, which is the lesson of 17 Sep.
+  var metBefore = [];
+  try {
+    var _cd = sheetRows_(CONDUCTED_SHEET) || [];
+    var _seen = {};
+    for (var _i = 1; _i < _cd.length; _i++) {
+      if (!_cd[_i][0]) continue;
+      var _nm = (_cd[_i][9]  || '').toString().trim();
+      var _pt = (_cd[_i][10] || '').toString().trim();
+      if (!_nm && !_pt) continue;
+      var _dt = _cd[_i][13];
+      var _ts = (_dt instanceof Date) ? _dt.getTime() : Date.parse(_dt);
+      // The whole line is "last met on <date>", so a row without one has
+      // nothing to contribute and would render an empty date.
+      if (!_ts || isNaN(_ts)) continue;
+      var _key = normDist_((_cd[_i][1] || '').toString()) + '|' +
+                 _prepNorm_(_pt) + '|' + _prepNorm_(_nm);
+      var _prev = _seen[_key];
+      if (_prev && _prev.ts >= _ts) continue;
+      var _rec = { dist: (_cd[_i][1] || '').toString(), post: _pt, name: _nm,
+                   block: (_cd[_i][COL_CON_SKBLOCK - 1] || '').toString(),
+                   purpose: (_cd[_i][11] || '').toString(),
+                   date: fmtDateVal(_dt), ts: _ts };
+      if (_prev) { for (var _f in _rec) _prev[_f] = _rec[_f]; }
+      else { _seen[_key] = _rec; metBefore.push(_rec); }
+    }
+    metBefore.sort(function(a, b){ return b.ts - a.ts; });
+    if (metBefore.length > 600) metBefore.length = 600;
+  } catch (mbe) { metBefore = []; }
+
+  return { stakeholders: stakeholders, purposes: purposes,
+           blocksByDistrict: blocksByDistrict, metBefore: metBefore };
 }
 
 // ------------------------------------------------------------

@@ -134,6 +134,19 @@
               cursor: pointer; text-decoration: underline; padding: 2px 0; font-family: inherit; }
     /* The length rule, said out loud under the box instead of only on Submit */
     .char-note { font-size: 11px; margin-top: 4px; color: #9CA3AF; }
+
+    /* The one line of history under the stakeholder fields. */
+    .met-line {
+      display: none; margin-top: -4px; margin-bottom: 2px;
+      padding: 8px 11px; border-radius: 7px; font-size: 12px; line-height: 1.5;
+      border: 1px solid #E5E7EB; background: #F8FAFC; color: #374151;
+    }
+    .met-line.on   { display: block; }
+    .met-line b    { color: #111827; }
+    .met-line.new  { border-color: #BBF7D0; background: #F0FDF4; color: #14532D; }
+    .met-line.new b  { color: #14532D; }
+    .met-line.warn { border-color: #FDE68A; background: #FFFBEB; color: #78350F; }
+    .met-line.warn b { color: #78350F; }
     /* Type-ahead. A textarea cannot hold two colours of text, so the grey
        continuation is drawn by a mirror laid exactly over the box. The mirror
        repeats what was typed in transparent ink to push the suggestion to the
@@ -481,7 +494,7 @@
   </div>
   <div class="sidebar-bottom">
     <button class="btn-logout" onclick="logout()">🚪 Logout</button>
-    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.27 &middot; 19 Sep 2026</div>
+    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.28 &middot; 19 Sep 2026</div>
   </div>
 </div>
 
@@ -582,6 +595,11 @@
           <div class="field">
             <label>Stakeholder Name <span class="req">*</span></label>
             <input type="text" id="adhikariName" placeholder="Enter stakeholder's name">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field full">
+            <div class="met-line" id="met-line"></div>
           </div>
         </div>
         <div class="form-row">
@@ -2969,7 +2987,9 @@
       return;
     }
     _blocksByDistrict = (data && data.blocksByDistrict) || {};
+    _metBefore = (data && data.metBefore) || [];
     refreshBlockOptions();
+    paintMetLine();
     var pdSel = document.getElementById('plan-district');
     if (pdSel) pdSel.addEventListener('change', refreshBlockOptions);
     var postSel = document.getElementById('adhikariPost');
@@ -3337,6 +3357,158 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindCharNotes);
   else bindCharNotes();
+
+  // ── Last met ───────────────────────────────────────────────
+  // One line under the stakeholder fields saying when this office, or this
+  // person, was last met and about what. The history arrives with the form, so
+  // the line appears the instant a post is picked, with nothing to wait for.
+  //
+  // The name box is free text and officers write the same officer several
+  // ways. These are the rules the Stakeholders page already proved on this
+  // data, copied rather than reinvented, each needing the surname to match
+  // exactly. An edit-distance rule was tried there and REMOVED, because it
+  // cannot tell Dileep from Dilip (one officer) apart from Amit and Ajit (two).
+  // Do not add one here either. When the name is not a confident match the
+  // line falls back to the post, which does not depend on spelling at all.
+  var _metBefore = [];
+
+  function mbStrip(s) {
+    return String(s == null ? '' : s).replace(/\(.*?\)/g, ' ')
+      .replace(/\b(ias|ips|pcs|sir|mam|madam|maam)\b/gi, ' ').trim();
+  }
+  function mbWords(s) {
+    return mbStrip(s).toLowerCase()
+      .replace(/\b(shri|smt|mr|mrs|ms|dr|sir|madam|maam|ji)\b/g, ' ')
+      .replace(/[^a-z\u0900-\u097F\s.]/g, ' ')
+      .split(/[\s.]+/).filter(Boolean);
+  }
+  function mbNorm(s) {
+    return mbStrip(s).toLowerCase()
+      .replace(/\b(shri|smt|mr|mrs|ms|dr|sir|madam|maam|ji)\b/g, '')
+      .replace(/[^a-z0-9\u0900-\u097F]/g, '').trim();
+  }
+  // "BEO Sir" is a post, not a person, and a pasted attendee list is nobody.
+  function mbJunk(s) {
+    var t = String(s == null ? '' : s).trim();
+    if (!t || t.length > 45 || (t.match(/,/g) || []).length >= 2) return true;
+    var bare = mbWords(t).join('');
+    if (bare.length < 3) return true;
+    if (/^(test|testing|demo|sample|dummy|abc|xyz|na|none|nil)[0-9]*$/.test(bare)) return true;
+    return /^(beo|bsa|absa|arp|brc|crc|dm|cdo|dc|dios|dfo|principal|officer|teacher)$/.test(bare);
+  }
+  // "K.K Singh" and "Shri Krishna Kant Singh", but only when one side really is
+  // abbreviated, or Ram Kumar Singh and Rajesh Kamal Singh would merge.
+  function mbSameInitials(a, b) {
+    var wa = mbWords(a), wb = mbWords(b);
+    if (wa.length < 2 || wb.length < 2) return false;
+    if (!wa.some(function(w){ return w.length === 1; }) &&
+        !wb.some(function(w){ return w.length === 1; })) return false;
+    if (wa[wa.length - 1] !== wb[wb.length - 1]) return false;
+    return wa.map(function(w){ return w.charAt(0); }).join('') ===
+           wb.map(function(w){ return w.charAt(0); }).join('');
+  }
+  // "Ashok Kumar Tripathi" and "ASHOK TRIPATHI": a middle name dropped.
+  function mbSameDropped(a, b) {
+    var wa = mbWords(a), wb = mbWords(b);
+    if (wa.length < 2 || wb.length < 2 || wa.length === wb.length) return false;
+    if (wa[0] !== wb[0] || wa[wa.length-1] !== wb[wb.length-1]) return false;
+    var sh = wa.length < wb.length ? wa : wb, lg = wa.length < wb.length ? wb : wa;
+    return sh.every(function(w){ return lg.indexOf(w) >= 0; });
+  }
+  // Fixed spelling habits when a Hindi name is written in English.
+  function mbTranslit(s) {
+    return mbWords(s).map(function(w){ return w.replace(/(a|e)y$/, 'e'); }).join('')
+      .replace(/ee/g, 'i').replace(/oo/g, 'u').replace(/(.)\1+/g, '$1');
+  }
+  function mbSamePerson(a, b) {
+    if (mbJunk(a) || mbJunk(b)) return false;
+    var na = mbNorm(a), nb = mbNorm(b);
+    if (!na || !nb) return false;
+    if (na === nb) return true;
+    if (na.indexOf(nb) === 0 || nb.indexOf(na) === 0) return true;
+    if (mbSameInitials(a, b) || mbSameDropped(a, b)) return true;
+    var ta = mbTranslit(a);
+    return ta.length >= 5 && ta === mbTranslit(b);
+  }
+
+  function mbDistrict() {
+    var sel = document.getElementById('plan-district');
+    if (sel && sel.value) return sel.value;
+    return ACTIVE_DISTRICT || '';
+  }
+  function mbPost() {
+    var p = (document.getElementById('adhikariPost') || {}).value || '';
+    if (p === 'Other') p = (document.getElementById('otherPost') || {}).value || '';
+    return p.trim();
+  }
+  function mbAbout(r) { return r.purpose ? ', about ' + esc(r.purpose) : ''; }
+
+  function paintMetLine() {
+    var box = document.getElementById('met-line');
+    if (!box) return;
+    var post = mbPost();
+    var name = ((document.getElementById('adhikariName') || {}).value || '').trim();
+    box.className = 'met-line';
+    if (!post) { box.innerHTML = ''; return; }
+    // With no history at all there is nothing to say, and saying "first
+    // meeting" would be a claim rather than a fact: an older server build that
+    // does not send the list, or a read that failed, looks exactly the same
+    // from here as a district nobody has visited.
+    if (!_metBefore.length) { box.innerHTML = ''; return; }
+
+    var dist = mbNorm(mbDistrict());
+    var here = _metBefore.filter(function(r){ return mbNorm(r.dist) === dist; });
+
+    // The person first, because that is the more useful answer when it is true.
+    if (name && !mbJunk(name)) {
+      for (var i = 0; i < here.length; i++) {
+        if (mbSamePerson(here[i].name, name)) {
+          box.innerHTML = 'You last met <b>' + esc(here[i].name) + '</b> on <b>' +
+                          esc(here[i].date) + '</b>' + mbAbout(here[i]) + '.';
+          box.className = 'met-line on';
+          return;
+        }
+      }
+    }
+
+    // Otherwise the office, which does not depend on how a name was spelt.
+    var pn = mbNorm(post), best = null;
+    for (var j = 0; j < here.length; j++) {
+      if (mbNorm(here[j].post) !== pn) continue;
+      if (!best || here[j].ts > best.ts) best = here[j];
+    }
+    if (!best) {
+      box.innerHTML = '<b>' + esc(post) + '</b>: no meeting recorded in ' +
+                      esc(mbDistrict() || 'this district') + ' yet. This is the first.';
+      box.className = 'met-line on new';
+      return;
+    }
+    // Same office, a different person. Either a transfer, or a name spelt in a
+    // way the rules could not join up. Both are worth a second look, so it says
+    // what it found rather than claiming which one it is.
+    if (name && !mbJunk(name) && !mbSamePerson(best.name, name)) {
+      box.innerHTML = '<b>' + esc(post) + '</b> was last met on <b>' + esc(best.date) +
+                      '</b> with <b>' + esc(best.name) + '</b>' + mbAbout(best) +
+                      '. A different name here, so either a transfer or the same officer written another way.';
+      box.className = 'met-line on warn';
+      return;
+    }
+    box.innerHTML = '<b>' + esc(post) + '</b> was last met on <b>' + esc(best.date) +
+                    '</b>, with ' + esc(best.name) + mbAbout(best) + '.';
+    box.className = 'met-line on';
+  }
+
+  function bindMetLine() {
+    ['adhikariPost','adhikariName','otherPost','plan-district'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (!el || el.dataset.mbBound) return;
+      el.dataset.mbBound = '1';
+      el.addEventListener('change', paintMetLine);
+      el.addEventListener('input',  paintMetLine);
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindMetLine);
+  else bindMetLine();
 
   // ── Type-ahead ──────────────────────────────────────────────
   // Shows the rest of the phrase in grey while you type. Tab takes it, or tap
