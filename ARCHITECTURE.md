@@ -372,6 +372,18 @@ npx clasp redeploy AKfycbw2JJ5xmZ-zLUolbZJb7eApczsZjsXwzVY6uXpAYO-7h8j9CyNF9y5Up
 
 The deployment id must stay the same or the frontend's `GAS_URL` breaks. Editor functions run at HEAD, so `clasp push` alone is enough to try a helper; the web app only changes on redeploy.
 
+**The version number**
+
+Every page shows `Version <n>` in its footer, matching the Apps Script
+deployment. It is written into the HTML rather than fetched, which is the whole
+point: a page served from a stale cache shows the stale number, and that is the
+only way anyone can tell that is what happened.
+
+**Bump it in all three files on every deploy**, `docs/index.html`,
+`docs/dashboard.html` and `docs/report.html`, then run `node build-pages.js`. A
+version number that stops moving is worse than none, because people start
+trusting it.
+
 **Traps that have cost time**
 
 - **Never run `clasp pull`.** `.clasp.json` has an absolute `rootDir`, so it writes `Code.js` and `Setup.js` next to the real `.gs` files and those get pushed as duplicate definitions.
