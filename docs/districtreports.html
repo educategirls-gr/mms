@@ -258,11 +258,13 @@
       border: none; background: none; transition: color .15s;
     }
     .mob-nav-btn.active { color: var(--eg-orange); }
+    .mob-version { display: none; text-align: center; font-size: 10.5px; color: #9CA3AF; padding: 16px 0 2px; line-height: 1.5; }
     .mob-nav-btn .mob-icon { font-size: 20px; }
 
     @media (max-width: 960px) {
       .sidebar { display: none; }
       .mob-nav { display: block; }
+      .mob-version { display: block; }
       .content-area { padding: 14px 14px 92px; }
       .kpi-grid, .insight-grid { grid-template-columns: repeat(2,1fr) !important; }
       .two-col, .three-col { grid-template-columns: 1fr !important; }
@@ -556,6 +558,8 @@
       </div>
 
     </div>
+
+    <div class="mob-version">EG GR Meeting Management System<br>Version 1.26 &middot; 19 Sep 2026</div>
 
   </div><!-- /content-area -->
 </div><!-- /main-content -->
