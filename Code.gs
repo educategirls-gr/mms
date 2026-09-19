@@ -655,7 +655,7 @@ function apiResponse(e, method) {
                      ? getZoneAllMeetings(zn)
                      : { success: false, message: 'FORBIDDEN' };
         }
-        else if (action === 'askOnMeeting')         result = askOnMeeting(session, body.meetingId || '', body.text || '');
+        else if (action === 'sendMeetingFeedback')         result = sendMeetingFeedback(session, body.meetingId || '', body.text || '');
         else if (action === 'getDashboardStats')    result = getDashboardStats(session.email, e.parameter.all === '1', resolveActiveDistrict_(session, e.parameter.district));
         else if (action === 'getDistrictReport') {
           result = getDistrictReport(resolveActiveDistrict_(session, e.parameter.district));
@@ -1558,11 +1558,12 @@ function getDropdownData(email) {
 }
 
 // ------------------------------------------------------------
-//  ASK ABOUT A CONDUCTED MEETING
+//  FEEDBACK ON A CONDUCTED MEETING
 // ------------------------------------------------------------
-// A State or Zone lead reading a conducted meeting can put a question to the
-// officer who filed it. The question goes out as one email and the answer comes
-// back as a reply, so the thread lives in both mailboxes.
+// A State or Zone lead reading a conducted meeting can send the officer who
+// filed it whatever they have to say about it: a question, a correction, a
+// request, or that it was good work. It goes out as one email and the reply
+// comes back to them, so the exchange lives in both mailboxes.
 //
 // NOTHING IS STORED. That is the decision, not an omission: the email already
 // sits in both people's inboxes, searchable, so a copy in a sheet would be a
@@ -1571,11 +1572,11 @@ function getDropdownData(email) {
 //
 // The officer's address is looked up here from the meeting id rather than sent
 // up by the browser, so the page never has to hold anyone's email.
-function askOnMeeting(session, meetingId, text) {
+function sendMeetingFeedback(session, meetingId, text) {
   meetingId = (meetingId || '').toString().trim();
   text      = (text || '').toString().trim();
   if (!meetingId) return { success:false, message:'No meeting id' };
-  if (text.length < 5) return { success:false, message:'Please write your question first.' };
+  if (text.length < 5) return { success:false, message:'Please write your feedback first.' };
   if (text.length > 4000) text = text.substring(0, 4000);
 
   var role = (session.role || '').toString();
@@ -1602,12 +1603,12 @@ function askOnMeeting(session, meetingId, text) {
   }
 
   var from = (session.name || session.email || 'A colleague').toString();
-  var subj = 'Question on your meeting with ' + (m.name || m.post || 'an official') +
+  var subj = 'Feedback on your meeting with ' + (m.name || m.post || 'an official') +
              ' (' + m.date + ')';
 
   var body =
     '<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#111827;line-height:1.6;">' +
-    '<p>' + _emailEsc(from) + ' has a question about a meeting you recorded.</p>' +
+    '<p>' + _emailEsc(from) + ' has sent you feedback on a meeting you recorded.</p>' +
     '<div style="border-left:3px solid #7B1010;background:#FAFAFA;padding:10px 14px;margin:14px 0;white-space:pre-wrap;">' +
       _emailEsc(text) +
     '</div>' +
@@ -1624,7 +1625,7 @@ function askOnMeeting(session, meetingId, text) {
                '<div style="font-size:13px;color:#374151;white-space:pre-wrap;background:#F9FAFB;padding:10px 14px;border-radius:6px;">' +
                _emailEsc(m.notes) + '</div>' : '') +
     (m.mom ? '<p style="margin:14px 0 0;"><a href="' + _emailEsc(m.mom) + '">Open the MoM</a></p>' : '') +
-    '<p style="margin-top:18px;color:#6B7280;font-size:13px;">Just reply to this email to answer. ' +
+    '<p style="margin-top:18px;color:#6B7280;font-size:13px;">Just reply to this email to respond. ' +
       _emailEsc(from) + ' is on it and will get your reply.</p>' +
     '</div>';
 
