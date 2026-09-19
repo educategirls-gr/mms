@@ -134,6 +134,30 @@
               cursor: pointer; text-decoration: underline; padding: 2px 0; font-family: inherit; }
     /* The length rule, said out loud under the box instead of only on Submit */
     .char-note { font-size: 11px; margin-top: 4px; color: #9CA3AF; }
+    /* Type-ahead. A textarea cannot hold two colours of text, so the grey
+       continuation is drawn by a mirror laid exactly over the box. The mirror
+       repeats what was typed in transparent ink to push the suggestion to the
+       right spot, and takes no clicks, so the real box underneath keeps all of
+       its own styling and behaviour. */
+    .ta-wrap  { position: relative; }
+    .ta-ghost {
+      position: absolute; left: 0; top: 0; z-index: 2;
+      pointer-events: none; overflow: hidden; box-sizing: border-box;
+      white-space: pre-wrap; overflow-wrap: break-word; word-break: break-word;
+      color: transparent; background: transparent;
+    }
+    .ta-ghost i { color: #A8AEBB; font-style: normal; }
+    .ta-bar { display: none; align-items: center; gap: 7px; margin-top: 5px; }
+    .ta-bar.on { display: flex; }
+    .ta-take {
+      border: 1px solid #D7DBE2; background: #fff; color: #374151;
+      border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600;
+      font-family: inherit; cursor: pointer; max-width: 100%;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .ta-take:active { background: #F3F4F6; }
+    .ta-key { font-size: 10.5px; color: #9CA3AF; flex-shrink: 0; }
+    @media (max-width: 900px) { .ta-key { display: none; } }
 
     /* Status buttons */
     .status-group { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -3314,6 +3338,208 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindCharNotes);
   else bindCharNotes();
 
+  // ── Type-ahead ──────────────────────────────────────────────
+  // Shows the rest of the phrase in grey while you type. Tab takes it, or tap
+  // the pill on a phone, where there is no Tab key. Carry on typing and it
+  // just changes.
+  //
+  // The phrases live here in the page and not on the server. The Apps Script
+  // front door takes 3 to 17 seconds even for a request that runs no code, and
+  // a suggestion has to be on screen while the finger is still moving. Nothing
+  // fetched could ever arrive in time, so there is no point pretending.
+  //
+  // They are deliberately short joining phrases, not finished sentences. 26
+  // notes in the sheet are already word-for-word copies of each other, and a
+  // list that could write a whole note in four Tab presses would make that
+  // worse, not better. These give the shape of the sentence; the officer still
+  // has to say what actually happened.
+  var SUGGEST_PHRASES = [
+    // Hinglish, which is how most of these notes are actually written
+    'ne kaha ki ', 'ne bataya ki ', 'ne aashwasan diya ', 'ne sahmati di ',
+    'ne nirdesh diye ', 'ne anurodh kiya ', 'ne mana kar diya', 'ne swikar kiya',
+    'charcha ki gayi ', 'baithak me ', 'agli baithak ', 'block wise ',
+    'data share karne ', 'suchi uplabdh karane ', 'sahyog ka aashwasan ',
+    'samasya ke bare me ', 'samadhan ke liye ', 'karyawahi ki jayegi',
+    'nirikshan kiya ', 'samiksha ki gayi ', 'prastut kiya gaya ',
+    'jankari di gayi ', 'abhi tak nahi ', 'pending hai', 'purn ho gaya',
+    'adhikari ne ', 'vidyalaya me ', 'naamankan ', 'upasthiti ',
+    'shiksha ki gunvatta ', 'anumati mil gayi', 'anumati pending hai',
+    'tak de denge', 'tak bhej denge', 'ke liye samay manga ',
+    // Devanagari
+    'ने कहा कि ', 'ने बताया कि ', 'ने आश्वासन दिया ', 'ने सहमति दी ',
+    'ने निर्देश दिए ', 'ने अनुरोध किया ', 'चर्चा की गई ', 'बैठक में ',
+    'अगली बैठक ', 'ब्लॉक वार ', 'डेटा साझा करने ', 'सूची उपलब्ध कराने ',
+    'सहयोग का आश्वासन ', 'समस्या के बारे में ', 'समाधान के लिए ',
+    'कार्यवाही की जाएगी', 'निरीक्षण किया ', 'समीक्षा की गई ', 'जानकारी दी गई ',
+    'प्रगति की समीक्षा ', 'नामांकन ', 'उपस्थिति ', 'विद्यालय में ',
+    'अनुमति मिल गई', 'अभी तक नहीं ', 'खंड शिक्षा अधिकारी', 'जिला बेसिक शिक्षा अधिकारी',
+    // English
+    'was discussed with ', 'agreed to share ', 'agreed to provide ',
+    'requested us to ', 'asked us to ', 'assured that ', 'confirmed that ',
+    'will be shared by ', 'block wise data', 'district level ',
+    'a follow up meeting ', 'permission was granted for ', 'permission is pending',
+    'no commitment was made', 'no decision was taken', 'instructions were issued to ',
+    'the matter was referred to ', 'enrollment progress ', 'out of school girls ',
+    'attendance of girls ', 'the list will be verified', 'we presented the ',
+    'support was sought for ', 'the data was handed over', 'is still pending',
+    'Basic Shiksha Adhikari', 'Block Education Officer', 'District Magistrate',
+    'Chief Development Officer', 'Samagra Shiksha ', 'Shiksha Rath '
+  ];
+
+  // Single words are finished too, built from the same phrases so there is only
+  // one list to keep in step. Typing "aashw" gets "asan" even though no phrase
+  // starts with it, because the word sits in the middle of several.
+  var SUGGEST_WORDS = (function() {
+    var seen = {}, out = [];
+    for (var i = 0; i < SUGGEST_PHRASES.length; i++) {
+      var parts = SUGGEST_PHRASES[i].split(' ');
+      for (var j = 0; j < parts.length; j++) {
+        var w = parts[j], k = w.toLowerCase();
+        if (w.length >= 5 && !seen[k]) { seen[k] = 1; out.push(w); }
+      }
+    }
+    return out;
+  })();
+
+  // The longest run of what was just typed that starts one of the phrases wins,
+  // so more context beats less. It has to begin at a word boundary, otherwise
+  // "kaashwasan" would get completed from inside the word.
+  var SUGGEST_MIN = 3;
+  function suggestFor(text) {
+    var tail = text.slice(-60);
+    if (!tail) return '';
+    var starts = [0];
+    for (var c = 0; c < tail.length - 1; c++) {
+      if (tail.charAt(c) === ' ' || tail.charAt(c) === '\n') starts.push(c + 1);
+    }
+    for (var k = 0; k < starts.length; k++) {      // earliest start = longest run
+      var run = tail.slice(starts[k]);
+      if (run.length < SUGGEST_MIN) break;
+      var low = run.toLowerCase();
+      for (var i = 0; i < SUGGEST_PHRASES.length; i++) {
+        var ph = SUGGEST_PHRASES[i];
+        if (ph.length > run.length && ph.toLowerCase().indexOf(low) === 0) {
+          return ph.slice(run.length);
+        }
+      }
+    }
+    // No phrase fits, so try to finish just the word being typed.
+    var cut  = Math.max(tail.lastIndexOf(' '), tail.lastIndexOf('\n'));
+    var word = tail.slice(cut + 1);
+    if (word.length >= SUGGEST_MIN) {
+      var lw = word.toLowerCase();
+      for (var m = 0; m < SUGGEST_WORDS.length; m++) {
+        var cand = SUGGEST_WORDS[m];
+        if (cand.length > word.length && cand.toLowerCase().indexOf(lw) === 0) {
+          return cand.slice(word.length);
+        }
+      }
+    }
+    return '';
+  }
+
+  // Copy the metrics that decide where a character lands, so the grey text sits
+  // exactly where the typed text would have carried on.
+  var GHOST_COPY = ['fontFamily','fontSize','fontWeight','fontStyle','letterSpacing',
+                    'lineHeight','textIndent','paddingTop','paddingRight',
+                    'paddingBottom','paddingLeft','borderTopWidth','borderRightWidth',
+                    'borderBottomWidth','borderLeftWidth'];
+
+  function taSetup(ta) {
+    if (ta.dataset.taBound) return;
+    ta.dataset.taBound = '1';
+
+    var wrap = document.createElement('div');
+    wrap.className = 'ta-wrap';
+    ta.parentNode.insertBefore(wrap, ta);
+    wrap.appendChild(ta);
+
+    var ghost = document.createElement('div');
+    ghost.className = 'ta-ghost';
+    wrap.appendChild(ghost);
+
+    var bar  = document.createElement('div');
+    bar.className = 'ta-bar';
+    var take = document.createElement('button');
+    take.type = 'button'; take.className = 'ta-take';
+    var key  = document.createElement('span');
+    key.className = 'ta-key'; key.textContent = 'or press Tab';
+    bar.appendChild(take); bar.appendChild(key);
+    wrap.appendChild(bar);
+
+    var live = '', off = false;
+
+    function paint() {
+      if (off || document.activeElement !== ta) return hide();
+      var v = ta.value;
+      // Only while the cursor is at the very end. Anywhere else the grey text
+      // would appear somewhere the typing is not going.
+      if (ta.selectionStart !== v.length || ta.selectionEnd !== v.length) return hide();
+      var sug = suggestFor(v);
+      if (!sug) return hide();
+
+      live = sug;
+      var cs = getComputedStyle(ta);
+      for (var i = 0; i < GHOST_COPY.length; i++) ghost.style[GHOST_COPY[i]] = cs[GHOST_COPY[i]];
+      ghost.style.borderStyle = 'solid';
+      ghost.style.borderColor = 'transparent';
+      ghost.style.width  = ta.offsetWidth + 'px';
+      ghost.style.height = ta.offsetHeight + 'px';
+      ghost.textContent = v;
+      var tail = document.createElement('i');
+      tail.textContent = sug;
+      ghost.appendChild(tail);
+      ghost.scrollTop = ta.scrollTop;
+
+      take.textContent = sug.length > 28 ? sug.slice(0, 27) + '…' : sug;
+      bar.classList.add('on');
+    }
+    function hide() {
+      live = ''; ghost.textContent = ''; bar.classList.remove('on');
+    }
+    function accept() {
+      if (!live) return;
+      ta.value += live;
+      hide();
+      ta.focus();
+      ta.selectionStart = ta.selectionEnd = ta.value.length;
+      // Let the character counter and the draft saver see it as ordinary typing.
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+      paint();
+    }
+
+    ta.addEventListener('input',  function(){ off = false; paint(); });
+    ta.addEventListener('click',  paint);
+    ta.addEventListener('scroll', function(){ ghost.scrollTop = ta.scrollTop; });
+    // The delay lets a tap on the pill land before the box is emptied. It has
+    // to re-check focus when it fires: tapping the pill puts the cursor back,
+    // and without this the hide that the blur queued lands afterwards and
+    // wipes the next suggestion.
+    ta.addEventListener('blur', function(){
+      setTimeout(function(){ if (document.activeElement !== ta) hide(); }, 150);
+    });
+    ta.addEventListener('keydown', function(e) {
+      if (e.key === 'Tab' && live && !e.shiftKey) { e.preventDefault(); accept(); }
+      // Escape drops it until the next keystroke, rather than for good.
+      else if (e.key === 'Escape' && live) { e.stopPropagation(); off = true; hide(); }
+    });
+    // Keep the cursor in the box when the pill is pressed. Touch fires
+    // pointerdown, not mousedown, so both are stopped.
+    function holdFocus(e){ e.preventDefault(); }
+    take.addEventListener('mousedown',   holdFocus);
+    take.addEventListener('pointerdown', holdFocus);
+    take.addEventListener('click', accept);
+  }
+
+  var SUGGEST_FIELDS = ['c-kp-what','c-kp-said','c-kp-next','meetingAgenda'];
+  function bindTypeAhead() {
+    for (var i = 0; i < SUGGEST_FIELDS.length; i++) {
+      var ta = document.getElementById(SUGGEST_FIELDS[i]);
+      if (ta) taSetup(ta);
+    }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindTypeAhead);
+  else bindTypeAhead();
   // ── Helpers ──────────────────────────────────────────────────
   // Today as YYYY-MM-DD in the phone's own calendar. toISOString() works in UTC,
   // which between midnight and 5.30am IST still reads as yesterday, and would
