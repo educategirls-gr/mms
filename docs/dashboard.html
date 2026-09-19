@@ -494,7 +494,7 @@
   </div>
   <div class="sidebar-bottom">
     <button class="btn-logout" onclick="logout()">🚪 Logout</button>
-    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.28 &middot; 19 Sep 2026</div>
+    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.29 &middot; 19 Sep 2026</div>
   </div>
 </div>
 
@@ -1524,7 +1524,7 @@
       html += '<tr' + (isOverdue ? ' style="background:#FFFBFB;"' : '') + '>' +
         '<td><strong' + (isOverdue ? ' style="color:#991B1B;"' : '') + '>' + esc(relDate(m.date)) + '</strong><br><small style="color:#9CA3AF;font-size:10px">' + esc(m.date) + '</small></td>' +
         '<td style="white-space:nowrap;font-size:12px">' + esc(m.meetingTime) + '</td>' +
-        '<td><strong style="font-size:13px">' + esc(m.adhikariName) + '</strong><br><small style="color:#6B7280">' + esc(m.adhikariPost) + '</small></td>' +
+        '<td><strong style="font-size:13px">' + esc(m.adhikariName) + '</strong><br><small style="color:#6B7280">' + esc(m.adhikariPost) + '</small>' + mbCell(m) + '</td>' +
         '<td style="max-width:140px;font-size:12px">' + esc(m.purpose) +
           (m.docUrl ? '<br><a href="' + esc(m.docUrl) + '" target="_blank" style="font-size:11px;color:#0F766E;font-weight:600;text-decoration:none;">📎 Documents</a>' : '') +
         '</td>' +
@@ -3443,6 +3443,52 @@
   }
   function mbAbout(r) { return r.purpose ? ', about ' + esc(r.purpose) : ''; }
 
+  // The one place that answers "when was this last met". Shared by the line on
+  // the plan form and the column in Manage Meetings, so the two can never
+  // disagree. Returns null when the history is unknown, which is not the same
+  // as knowing there is none: an older server build that does not send the
+  // list looks identical from here to a district nobody has visited, and
+  // "first meeting" would then be a claim rather than a fact.
+  function mbLookup(district, post, name) {
+    if (!_metBefore.length || !post) return null;
+    var dist = mbNorm(district);
+    var here = _metBefore.filter(function(r){ return mbNorm(r.dist) === dist; });
+
+    // The person first, because that is the more useful answer when it is true.
+    if (name && !mbJunk(name)) {
+      for (var i = 0; i < here.length; i++) {
+        if (mbSamePerson(here[i].name, name)) return { rec: here[i], byPerson: true };
+      }
+    }
+    // Otherwise the office, which does not depend on how a name was spelt.
+    var pn = mbNorm(post), best = null;
+    for (var j = 0; j < here.length; j++) {
+      if (mbNorm(here[j].post) !== pn) continue;
+      if (!best || here[j].ts > best.ts) best = here[j];
+    }
+    if (!best) return { rec: null, byPerson: false, first: true };
+    var moved = !!(name && !mbJunk(name) && !mbSamePerson(best.name, name));
+    return { rec: best, byPerson: false, moved: moved };
+  }
+
+  // When this office was last met, on the row itself. Prep gives the full
+  // picture but costs a tap and a model call; this is the glance.
+  function mbCell(m) {
+    var got = mbLookup(m.district, m.adhikariPost, m.adhikariName);
+    if (!got) return '';
+    if (got.byPerson) {
+      return '<br><small style="color:#6B7280;font-size:10px;">Last met ' + esc(got.rec.date) + '</small>';
+    }
+    if (got.first) {
+      return '<br><small style="color:#166534;font-size:10px;">First meeting with this office</small>';
+    }
+    if (got.moved) {
+      return '<br><small style="color:#92400E;font-size:10px;">Office last met ' + esc(got.rec.date) +
+             ', with ' + esc(got.rec.name) + '</small>';
+    }
+    return '<br><small style="color:#6B7280;font-size:10px;">Office last met ' + esc(got.rec.date) + '</small>';
+  }
+
   function paintMetLine() {
     var box = document.getElementById('met-line');
     if (!box) return;
@@ -3450,33 +3496,17 @@
     var name = ((document.getElementById('adhikariName') || {}).value || '').trim();
     box.className = 'met-line';
     if (!post) { box.innerHTML = ''; return; }
-    // With no history at all there is nothing to say, and saying "first
-    // meeting" would be a claim rather than a fact: an older server build that
-    // does not send the list, or a read that failed, looks exactly the same
-    // from here as a district nobody has visited.
-    if (!_metBefore.length) { box.innerHTML = ''; return; }
 
-    var dist = mbNorm(mbDistrict());
-    var here = _metBefore.filter(function(r){ return mbNorm(r.dist) === dist; });
+    var got = mbLookup(mbDistrict(), post, name);
+    if (!got) { box.innerHTML = ''; return; }
 
-    // The person first, because that is the more useful answer when it is true.
-    if (name && !mbJunk(name)) {
-      for (var i = 0; i < here.length; i++) {
-        if (mbSamePerson(here[i].name, name)) {
-          box.innerHTML = 'You last met <b>' + esc(here[i].name) + '</b> on <b>' +
-                          esc(here[i].date) + '</b>' + mbAbout(here[i]) + '.';
-          box.className = 'met-line on';
-          return;
-        }
-      }
+    if (got.byPerson) {
+      box.innerHTML = 'You last met <b>' + esc(got.rec.name) + '</b> on <b>' +
+                      esc(got.rec.date) + '</b>' + mbAbout(got.rec) + '.';
+      box.className = 'met-line on';
+      return;
     }
-
-    // Otherwise the office, which does not depend on how a name was spelt.
-    var pn = mbNorm(post), best = null;
-    for (var j = 0; j < here.length; j++) {
-      if (mbNorm(here[j].post) !== pn) continue;
-      if (!best || here[j].ts > best.ts) best = here[j];
-    }
+    var best = got.rec;
     if (!best) {
       box.innerHTML = '<b>' + esc(post) + '</b>: no meeting recorded in ' +
                       esc(mbDistrict() || 'this district') + ' yet. This is the first.';
@@ -3486,7 +3516,7 @@
     // Same office, a different person. Either a transfer, or a name spelt in a
     // way the rules could not join up. Both are worth a second look, so it says
     // what it found rather than claiming which one it is.
-    if (name && !mbJunk(name) && !mbSamePerson(best.name, name)) {
+    if (got.moved) {
       box.innerHTML = '<b>' + esc(post) + '</b> was last met on <b>' + esc(best.date) +
                       '</b> with <b>' + esc(best.name) + '</b>' + mbAbout(best) +
                       '. A different name here, so either a transfer or the same officer written another way.';
