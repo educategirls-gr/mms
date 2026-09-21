@@ -4441,6 +4441,12 @@ function TAG_installAuto() { ensureTagHeaders(); return installTaggingTrigger();
 // ============================================================
 var COL_ESC_SENT = 30;   // AD = Escalation Sent At
 
+// Copied on every escalation, whoever filed the meeting, so the state sees
+// what is being asked for across all districts. One named person rather than
+// everyone holding the State role: there are several, and most of them do not
+// need ten of these a month. Blank this out to switch it off.
+var ESC_CC_STATE = 'nitinkumar.jha@educategirls.ngo';
+
 // Senior email(s) one level up, from the officer's role + geography.
 function findSenior_(emp, recips) {
   var role = (emp && emp.role) || '', me = ((emp && emp.email)||'').toLowerCase(), out = [];
@@ -4681,15 +4687,25 @@ function sendEscalations(mode, limit) {
     var emp = getEmployeeByEmail(email.toLowerCase());
     if (!emp) continue;
     var seniors = findSenior_(emp, recips);
+    // findSenior_ answers who sits above someone, and above a zone lead is the
+    // whole state team. That is the right answer to that question and the
+    // wrong list to copy: only one of them wants ten of these a month. So any
+    // state address it returns is dropped here, and the named one added back
+    // below. Doing it this way keeps findSenior_ honest about the hierarchy
+    // and puts the mailing policy in one place.
+    var stateSet = {};
+    recips.forEach(function(r){ if (r.role === 'State' && r.email) stateSet[r.email.toLowerCase()] = 1; });
+    seniors = seniors.filter(function(e){ return !stateSet[e.toLowerCase()]; });
+
     // findSenior_ goes exactly one level up, which means the state lead only
     // ever saw a zone lead's escalations. Almost all of these come from field
     // officers and stopped at the district lead, so the state had no sight of
-    // what was being asked for across the state. State is added to every one.
-    recips.forEach(function(r) {
-      if (r.role !== 'State' || !r.email) return;
-      if (r.email.toLowerCase() === email.toLowerCase()) return;   // their own meeting
-      if (seniors.indexOf(r.email) === -1) seniors.push(r.email);
-    });
+    // what was being asked for across the state.
+    if (ESC_CC_STATE &&
+        ESC_CC_STATE.toLowerCase() !== email.toLowerCase() &&      // their own meeting
+        seniors.map(function(x){ return x.toLowerCase(); }).indexOf(ESC_CC_STATE.toLowerCase()) === -1) {
+      seniors.push(ESC_CC_STATE);
+    }
     var html = buildEscalationEmail_({
       officerName:(data[i][2]||'').toString(), district:(data[i][1]||'').toString(),
       stakeholder:(data[i][9]||'').toString(), purpose:(data[i][11]||'').toString(),
