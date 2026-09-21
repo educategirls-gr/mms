@@ -4681,6 +4681,15 @@ function sendEscalations(mode, limit) {
     var emp = getEmployeeByEmail(email.toLowerCase());
     if (!emp) continue;
     var seniors = findSenior_(emp, recips);
+    // findSenior_ goes exactly one level up, which means the state lead only
+    // ever saw a zone lead's escalations. Almost all of these come from field
+    // officers and stopped at the district lead, so the state had no sight of
+    // what was being asked for across the state. State is added to every one.
+    recips.forEach(function(r) {
+      if (r.role !== 'State' || !r.email) return;
+      if (r.email.toLowerCase() === email.toLowerCase()) return;   // their own meeting
+      if (seniors.indexOf(r.email) === -1) seniors.push(r.email);
+    });
     var html = buildEscalationEmail_({
       officerName:(data[i][2]||'').toString(), district:(data[i][1]||'').toString(),
       stakeholder:(data[i][9]||'').toString(), purpose:(data[i][11]||'').toString(),
