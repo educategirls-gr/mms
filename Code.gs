@@ -3950,14 +3950,15 @@ function MOM_tryOne() {
 // ============================================================
 // Before any mic button goes on the conduct form, find out whether Gemini can
 // actually hear a UP field officer: local accent, Hinglish, traffic behind
-// them. Put a few phone recordings in one Drive folder, run
-//     VOICE_test('<folder link>')
-// and read the log. Each file is sent with the same instruction the real
+// them. Put a few phone recordings in a Drive folder called
+// VOICE TEST, pick VOICE_test in the editor and press Run, then read the log.
+// (A folder link can be passed too, but the Run button cannot pass one.) Each file is sent with the same instruction the real
 // feature would use. The log shows the word-for-word transcript, the three
 // answers it would put in the boxes, how long it took, and how much of each
 // answer can be found in the transcript. A low figure there means the model
 // wrote something that was never said, which is the thing to watch for.
 // Nothing is saved, no sheet is touched, and the live app does not change.
+var VOICE_TEST_FOLDER = 'VOICE TEST';
 var VOICE_MIMES = {
   m4a:['audio/mp4','audio/aac','audio/x-m4a'], mp4:['audio/mp4','audio/aac'],
   aac:['audio/aac'], mp3:['audio/mp3','audio/mpeg'], wav:['audio/wav'],
@@ -4016,11 +4017,20 @@ function voiceAsk_(gk, b64, mime) {
 function VOICE_test(folder) {
   var gk = PropertiesService.getScriptProperties().getProperty('GEMINI_KEY');
   if (!gk) { Logger.log('GEMINI_KEY is not set in Script Properties.'); return; }
-  var id = ((folder || '').toString().match(/[-\w]{25,}/) || [])[0];
-  if (!id) { Logger.log("Pass the Drive folder link, like VOICE_test('https://drive.google.com/drive/folders/...')"); return; }
-  var dir;
-  try { dir = DriveApp.getFolderById(id); }
-  catch (e) { Logger.log('Cannot open that folder from the account running this script. Share the folder with it and run again. (' + e.message + ')'); return; }
+  // With no link, look for the folder by name in the Drive of whoever pressed
+  // Run, because the editor's Run button cannot pass an argument.
+  var dir = null, id = ((folder || '').toString().match(/[-\w]{25,}/) || [])[0];
+  if (id) {
+    try { dir = DriveApp.getFolderById(id); }
+    catch (e) { Logger.log('Cannot open that folder from the account running this script. Share the folder with it and run again. (' + e.message + ')'); return; }
+  } else {
+    var found = DriveApp.getFoldersByName(VOICE_TEST_FOLDER);
+    if (!found.hasNext()) {
+      Logger.log('No folder called "' + VOICE_TEST_FOLDER + '" in the Drive of the account running this script. Make one there, put the recordings in it, and run VOICE_test again.');
+      return;
+    }
+    dir = found.next();
+  }
 
   var files = dir.getFiles(), done = 0, NL = String.fromCharCode(10);
   while (files.hasNext() && done < 8) {
