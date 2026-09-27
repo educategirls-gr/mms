@@ -6,3 +6,4 @@ build-pages.js
 *.sh
 scripts/**
 .github/**
+.claude/**
