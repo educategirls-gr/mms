@@ -602,12 +602,23 @@ function apiResponse(e, method) {
     // State Analytics Portal (report.html), which needs no login.
     var PUBLIC = { sendOTP: 1, verifyOTP: 1, loginPassword: 1, getDashboardStats: 1, getDistrictReport: 1, getReportData: 1, getEmployeeMaster: 1 };
     var ADMIN  = { bulkUpdateEmployeeDB: 1, importFromSource: 1, peekSourceSheet: 1 };
+    // Writes and heavy requests that the pages send only as a POST. Sign-in is
+    // deliberately not in this list: it is left exactly as it is.
+    var POST_ONLY = { saveMeeting:1, conductMeeting:1, postponeMeeting:1, cancelMeeting:1, uploadGovtMom:1,
+                      askMeetings:1, transcribeVoice:1, sendMeetingFeedback:1 };
 
     // Turned away at the door while the document is unreachable, so the queue
     // can empty. Signing in is on the allowed list and keeps working.
     if (maintOn_() && !MAINT_ALLOWED[action]) {
       result = { success:false, message:'The system is being repaired right now. Please try again in a little while. Nothing you have saved is affected.' };
     } else if (bodyBroken) {
+      result = { success:false, message:'BODY_MISSING' };
+    } else if (method !== 'POST' && POST_ONLY[action]) {
+      // The pages only ever send these as a POST. Google's front door
+      // sometimes answers a POST with a redirect the browser follows as a GET:
+      // the action and token survive in the URL, the body does not. Run as-is
+      // it wrote half rows (a conduct with no meeting id) or answered as if
+      // nothing had been asked. BODY_MISSING makes the page send it again.
       result = { success:false, message:'BODY_MISSING' };
     } else if (PUBLIC[action]) {
       // ── No auth required ──────────────────────────────────────
@@ -1680,7 +1691,12 @@ function saveMeeting(data) {
     if (!(data.adhikariPost || '').toString().trim()) req.push('stakeholder post');
     if (!(data.purpose      || '').toString().trim()) req.push('purpose');
     if (req.length) {
-      return { success: false, message: 'Nothing was saved, the meeting details did not arrive (' + req.join(', ') + '). Please try again.' };
+      // The page will not send a plan without these, so their absence means the
+      // body was lost on the way. BODY_MISSING has the page send it again on
+      // its own instead of asking the officer to press Save a second time.
+      // Safe to repeat: nothing was written, and findRecentPlan_ below stops a
+      // plan that did land from being filed twice.
+      return { success: false, message: 'BODY_MISSING', missing: req };
     }
 
     if (sheetBreakerTripped_()) return { success: false, message: SHEET_BUSY_MSG };
@@ -5509,109 +5525,129 @@ function CAL_live()        { return syncCalendarEvents('live', 30); }   // invit
 function CAL_installAuto() { return installCalendarTrigger(); }         // hourly auto
 
 // ============================================================
-//  TIER 2 - WEEKLY NUDGES (Monday)
-//  Each officer gets their open follow-ups (last 30 days, Follow-up needed /
-//  Blocked). Each lead gets a team summary (open follow-ups + inactive staff).
-//  Free (email). Test mode sends everything to the admin.
+//  WEEKLY REMINDER (Monday, about 8am)
+//  One email to each officer listing the meetings they have in the coming
+//  seven days: when, with whom, where, about what. Nothing else. Defined by
+//  Alok on 27 Sep 2026 as "is week me kab koun si meeting hai", in English.
+//  The earlier version also carried pending follow-ups, last week's meetings
+//  and a team summary for leads; it was never switched on and is gone.
+//
+//  Officers with no meeting that week get nothing.
+//  Rescheduled meetings are included. Postponing moves the plan row to its new
+//  date with status Postponed, and the old version, which looked only at
+//  Planned and Follow-up, would have left every rescheduled meeting out.
 // ============================================================
-function buildOfficerDigest_(o) {
-  function sec(title, rows){ return rows ? '<tr><td style="padding:16px 28px 0;"><div style="font-family:Georgia,serif;font-size:15px;font-weight:700;color:#1f2937;margin-bottom:6px;">'+title+'</div><table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-collapse:collapse;font-size:13px;">'+rows+'</table></td></tr>' : ''; }
-  var up = o.upcoming.map(function(it){ return '<tr style="border-top:1px solid #f0ebe5;"><td style="padding:8px 12px;"><b>'+_emailEsc(it.stakeholder)+'</b>'+(it.purpose?' <span style="color:#6b7280;">- '+_emailEsc(it.purpose)+'</span>':'')+'</td><td align="right" style="padding:8px 12px;color:#1D4ED8;font-weight:600;white-space:nowrap;">'+_emailEsc(it.date)+(it.time?' '+_emailEsc(it.time):'')+'</td></tr>'; }).join('');
-  var pend = o.pending.map(function(it){ var fc=it.flag==='Blocked'?'#B91C1C':'#9a5b0e'; return '<tr style="border-top:1px solid #f0ebe5;"><td style="padding:8px 12px;"><b>'+_emailEsc(it.stakeholder)+'</b><br><span style="font-size:12px;color:#4338CA;">Next: '+_emailEsc(it.nextAction||'-')+'</span></td><td align="right" style="padding:8px 12px;color:'+fc+';font-weight:700;font-size:12px;white-space:nowrap;">'+_emailEsc(it.flag)+'</td></tr>'; }).join('');
-  var last = o.last.map(function(it){ return '<tr style="border-top:1px solid #f0ebe5;"><td style="padding:8px 12px;"><b>'+_emailEsc(it.stakeholder)+'</b>'+(it.purpose?' <span style="color:#6b7280;">- '+_emailEsc(it.purpose)+'</span>':'')+'</td><td align="right" style="padding:8px 12px;color:#166534;white-space:nowrap;">'+_emailEsc(it.date)+'</td></tr>'; }).join('');
-  return '<div style="margin:0;padding:20px 12px;background:#f4f2ef;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">'+
-    '<table width="100%" cellpadding="0" cellspacing="0" style="max-width:620px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:12px;">'+
-    '<tr><td style="padding:22px 28px 12px;border-bottom:2px solid #7B1010;"><div style="font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#7B1010;">Weekly update</div>'+
-    '<h1 style="font-family:Georgia,serif;font-size:20px;margin:8px 0 3px;">Your GR week</h1><div style="font-size:13px;color:#6b7280;">'+_emailEsc(o.name)+'</div></td></tr>'+
-    '<tr><td style="padding:14px 28px 0;font-size:14px;color:#374151;">Dear '+_emailEsc(o.name)+', here is your weekly GR meetings update.</td></tr>'+
-    sec('Upcoming this week ('+o.upcoming.length+')', up)+
-    sec('Pending follow-ups ('+o.pending.length+')', pend)+
-    sec('Conducted last week ('+o.last.length+')', last)+
-    '<tr><td style="padding:18px 28px 24px;"><div style="border-top:1px solid #e5e7eb;padding-top:12px;font-size:11px;color:#9ca3af;">EG-MMS weekly update &middot; https://dataimpact.in/report.html</div></td></tr>'+
-    '</table></div>';
+var NUDGE_STATUSES = { 'Planned':1, 'Follow-up':1, 'Postponed':1 };
+
+function weeklyMeetingsByOfficer_(now) {
+  var pd = sheetRows_(MEETINGS_SHEET) || [];
+  var until = now + 7 * 86400000, tz = Session.getScriptTimeZone(), by = {};
+  for (var j = 1; j < pd.length; j++) {
+    if (!pd[j][0]) continue;
+    var st = (pd[j][13] || 'Planned').toString().trim();
+    if (!NUDGE_STATUSES[st]) continue;
+    var email = (pd[j][4] || '').toString().trim().toLowerCase();
+    if (!email) continue;
+    var time = fmtTimeVal(pd[j][6]);
+    var start = parseStart_(fmtDateVal(pd[j][5]), time);
+    if (!start) continue;
+    var t = start.getTime();
+    if (t < now - 3600000 || t > until) continue;
+    var o = by[email] || (by[email] = { email:email, name:(pd[j][2] || '').toString().trim(), meetings:[] });
+    o.meetings.push({
+      t: t,
+      when: Utilities.formatDate(start, tz, 'EEE d MMM'),
+      time: /\d/.test(time || '') ? time : '',
+      official: (pd[j][9] || '').toString().trim(),
+      post: (pd[j][10] || '').toString().trim(),
+      district: (pd[j][1] || '').toString().trim(),
+      block: (pd[j][COL_PLAN_SKBLOCK - 1] || '').toString().trim(),
+      purpose: (pd[j][11] || '').toString().trim(),
+      colleague: (pd[j][17] || '').toString().trim(),
+      moved: st === 'Postponed'
+    });
+  }
+  Object.keys(by).forEach(function(k){ by[k].meetings.sort(function(a, b){ return a.t - b.t; }); });
+  return by;
 }
-function buildLeadNudge_(r, scopeLabel, openCount, byOff, conductedLW) {
-  var top = Object.keys(byOff).map(function(n){ return {n:n,c:byOff[n]}; }).sort(function(a,b){ return b.c-a.c; }).slice(0,8);
-  var rows = top.map(function(x){ return '<tr style="border-top:1px solid #f0ebe5;"><td style="padding:8px 12px;">'+_emailEsc(x.n)+'</td><td align="right" style="padding:8px 12px;font-weight:700;">'+x.c+'</td></tr>'; }).join('') || '<tr><td style="padding:8px 12px;color:#9ca3af;">No open follow-ups</td></tr>';
-  return '<div style="margin:0;padding:20px 12px;background:#f4f2ef;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">'+
-    '<table width="100%" cellpadding="0" cellspacing="0" style="max-width:620px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:12px;">'+
-    '<tr><td style="padding:22px 28px 12px;border-bottom:2px solid #7B1010;"><div style="font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#7B1010;">Weekly team summary</div>'+
-    '<h1 style="font-family:Georgia,serif;font-size:20px;margin:8px 0 3px;">Follow-up status</h1><div style="font-size:13px;color:#6b7280;">'+_emailEsc(scopeLabel)+'</div></td></tr>'+
-    '<tr><td style="padding:16px 28px 0;"><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:8px;"><tr>'+
-      '<td width="50%" style="background:#fafafa;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#6b7280;">Open follow-ups</div><div style="font-family:Georgia,serif;font-size:24px;font-weight:700;color:#9a5b0e;">'+openCount+'</div></td>'+
-      '<td width="50%" style="background:#fafafa;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#6b7280;">Conducted last week</div><div style="font-family:Georgia,serif;font-size:24px;font-weight:700;color:#166534;">'+conductedLW+'</div></td>'+
-    '</tr></table></td></tr>'+
-    '<tr><td style="padding:16px 28px 0;"><div style="font-family:Georgia,serif;font-size:15px;font-weight:700;margin-bottom:6px;">Officers with pending follow-ups</div>'+
-      '<table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-collapse:collapse;font-size:13px;">'+rows+'</table></td></tr>'+
-    '<tr><td style="padding:18px 28px 24px;"><div style="border-top:1px solid #e5e7eb;padding-top:12px;font-size:11px;color:#9ca3af;">EG-MMS weekly summary &middot; https://dataimpact.in/report.html</div></td></tr>'+
+
+function buildWeeklyReminder_(o, range) {
+  var first = ((o.name || '').split(' ')[0]) || 'there';
+  var n = o.meetings.length;
+  var rows = o.meetings.map(function(m){
+    return '<tr style="border-top:1px solid #f0ebe5;">' +
+      '<td style="padding:10px 12px;white-space:nowrap;vertical-align:top;"><b>' + _emailEsc(m.when) + '</b>' +
+        (m.time ? '<br><span style="color:#6b7280;">' + _emailEsc(m.time) + '</span>' : '') + '</td>' +
+      '<td style="padding:10px 12px;vertical-align:top;"><b>' + _emailEsc(m.official || m.post || 'Official') + '</b>' +
+        (m.official && m.post ? ', ' + _emailEsc(m.post) : '') +
+        '<br><span style="color:#6b7280;">' + _emailEsc(m.district || 'State level') + (m.block ? ' / ' + _emailEsc(m.block) : '') +
+        (m.purpose ? ' &middot; ' + _emailEsc(m.purpose) : '') + '</span>' +
+        (m.colleague ? '<br><span style="color:#6b7280;">With ' + _emailEsc(m.colleague) + '</span>' : '') +
+        (m.moved ? '<br><span style="color:#92400E;font-size:12px;font-weight:600;">Rescheduled</span>' : '') +
+      '</td></tr>';
+  }).join('');
+  return '<div style="margin:0;padding:20px 12px;background:#f4f2ef;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">' +
+    '<table width="100%" cellpadding="0" cellspacing="0" style="max-width:620px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:12px;">' +
+    '<tr><td style="padding:22px 28px 12px;border-bottom:2px solid #7B1010;">' +
+      '<div style="font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#7B1010;">Your meetings this week</div>' +
+      '<h1 style="font-family:Georgia,serif;font-size:20px;margin:8px 0 3px;">' + n + ' meeting' + (n === 1 ? '' : 's') + ', ' + _emailEsc(range) + '</h1></td></tr>' +
+    '<tr><td style="padding:14px 28px 4px;font-size:14px;color:#374151;">Good morning ' + _emailEsc(first) +
+      '. Here is what you have planned for the week ahead.</td></tr>' +
+    '<tr><td style="padding:8px 28px 0;"><table width="100%" cellpadding="0" cellspacing="0" ' +
+      'style="border:1px solid #e5e7eb;border-collapse:collapse;font-size:13px;">' + rows + '</table></td></tr>' +
+    '<tr><td style="padding:16px 28px 0;font-size:13px;color:#6b7280;">If a meeting has moved or will not happen, ' +
+      'update it in Manage Meetings so the record stays right.</td></tr>' +
+    '<tr><td style="padding:16px 28px 24px;"><div style="border-top:1px solid #e5e7eb;padding-top:12px;font-size:11px;color:#9ca3af;">' +
+      'EG-MMS &middot; https://dataimpact.in</div></td></tr>' +
     '</table></div>';
 }
 
+// mode 'preview': sends nothing, logs who would get one.
+// mode 'test':    up to three sample emails, all to REPORT_TEST_EMAIL.
+// mode 'live':    every officer with a meeting in the next seven days.
 function sendWeeklyNudges(mode) {
   mode = mode || 'test';
-  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var cS = ss.getSheetByName(CONDUCTED_SHEET), pS = ss.getSheetByName(MEETINGS_SHEET);
-  var now = Date.now(), weekAgo = now - 7*86400000, weekAhead = now + 7*86400000, cutoff30 = now - 30*86400000;
-  var byOfficer = {};
-  function ofc(email, name){ email = email.toLowerCase(); if (!byOfficer[email]) byOfficer[email] = { name:name, email:email, upcoming:[], pending:[], last:[] }; return byOfficer[email]; }
-  // Conducted: last-week recap + pending follow-ups (last 30 days)
-  var cd = cS ? cS.getDataRange().getValues() : [];
-  for (var i = 1; i < cd.length; i++) {
-    if (!cd[i][0]) continue;
-    var email = (cd[i][4]||'').toString().trim(); if (!email) continue;
-    var dt = parseStart_(fmtDateVal(cd[i][13]), ''); if (!dt) continue; var t = dt.getTime();
-    var o = ofc(email, (cd[i][2]||'').toString().trim());
-    var rowInfo = { district:(cd[i][1]||'').toString(), stakeholder:(cd[i][9]||'').toString(), purpose:(cd[i][11]||'').toString(), date:fmtDateVal(cd[i][13]) };
-    if (t >= weekAgo && t <= now) o.last.push(rowInfo);
-    var flag = (cd[i][23]||'').toString();
-    if (t >= cutoff30 && (flag==='Follow-up needed' || flag==='Blocked')) o.pending.push({ district:rowInfo.district, stakeholder:rowInfo.stakeholder, purpose:rowInfo.purpose, flag:flag, nextAction:(cd[i][24]||'').toString(), date:rowInfo.date });
-  }
-  // Planned: upcoming week
-  var pd = pS ? pS.getDataRange().getValues() : [];
-  for (var j = 1; j < pd.length; j++) {
-    if (!pd[j][0]) continue;
-    var stt = (pd[j][13]||'Planned').toString(); if (stt!=='Planned' && stt!=='Follow-up') continue;
-    var em3 = (pd[j][4]||'').toString().trim(); if (!em3) continue;
-    var dt2 = parseStart_(fmtDateVal(pd[j][5]), (pd[j][6]||'').toString()); if (!dt2) continue; var t2 = dt2.getTime();
-    if (t2 >= now && t2 <= weekAhead) ofc(em3, (pd[j][2]||'').toString().trim()).upcoming.push({ district:(pd[j][1]||'').toString(), stakeholder:(pd[j][9]||'').toString(), purpose:(pd[j][11]||'').toString(), date:fmtDateVal(pd[j][5]), time:(pd[j][6]||'').toString() });
-  }
-  var sent = [], done = 0;
-  // Officer digests - only to those with upcoming, pending or last-week activity (skip the 0/0/0)
-  Object.keys(byOfficer).forEach(function(em){
-    var o = byOfficer[em];
-    if (!o.upcoming.length && !o.pending.length && !o.last.length) return;
-    var to = (mode==='live') ? o.email : REPORT_TEST_EMAIL;
-    try { MailApp.sendEmail({ to:to, subject:(mode!=='live'?'[TEST -> '+o.email+'] ':'')+'Your GR week: '+o.upcoming.length+' upcoming, '+o.pending.length+' pending', htmlBody:buildOfficerDigest_(o), name:'EG-MMS' }); sent.push('officer '+to+' (up '+o.upcoming.length+', pend '+o.pending.length+', last '+o.last.length+')'); done++; } catch(e){}
+  var now = Date.now(), tz = Session.getScriptTimeZone();
+  var range = Utilities.formatDate(new Date(now), tz, 'd MMM') + ' to ' +
+              Utilities.formatDate(new Date(now + 6 * 86400000), tz, 'd MMM');
+  var by = weeklyMeetingsByOfficer_(now), out = [], done = 0, officers = 0, total = 0;
+  Object.keys(by).sort().forEach(function(em){
+    var o = by[em];
+    if (!o.meetings.length) return;
+    officers++; total += o.meetings.length;
+    if (mode === 'preview') { out.push(o.name + ' <' + o.email + '>: ' + o.meetings.length); return; }
+    if (mode === 'test' && done >= 3) return;
+    var to = (mode === 'live') ? o.email : REPORT_TEST_EMAIL;
+    try {
+      MailApp.sendEmail({
+        to: to, name: 'EG-MMS', htmlBody: buildWeeklyReminder_(o, range),
+        subject: (mode !== 'live' ? '[TEST -> ' + o.email + '] ' : '') +
+                 'Your meetings this week: ' + o.meetings.length + ' (' + range + ')'
+      });
+      out.push(to + ' (' + o.meetings.length + ')'); done++;
+    } catch (e) { out.push('FAIL ' + o.email + ': ' + e.message); }
   });
-  // Lead summaries
-  var recips = getReportRecipients();
-  recips.forEach(function(r){
-    var scopeDists = r.role==='State' ? null : r.role==='Zone' ? (ZONE_DISTRICTS[findZoneKey_(r.zone)]||[]) : (r.districts||[r.district]);
-    function inScope(d){ if(!scopeDists) return true; for(var k=0;k<scopeDists.length;k++) if(normDist_(scopeDists[k])===normDist_(d)) return true; return false; }
-    var openCount = 0, conductedLW = 0, byOff = {};
-    Object.keys(byOfficer).forEach(function(em){
-      var o = byOfficer[em];
-      o.pending.forEach(function(it){ if (inScope(it.district)) { openCount++; byOff[o.name] = (byOff[o.name]||0)+1; } });
-      o.last.forEach(function(it){ if (inScope(it.district)) conductedLW++; });
-    });
-    if (openCount === 0 && conductedLW === 0) return;
-    var scopeLabel = r.role==='State' ? 'Uttar Pradesh' : r.role==='Zone' ? r.zone : (r.districts||[r.district]).join(', ');
-    var to = (mode==='live') ? r.email : REPORT_TEST_EMAIL;
-    try { MailApp.sendEmail({ to:to, subject:(mode!=='live'?'[TEST -> '+r.email+'] ':'')+'Team GR summary - '+scopeLabel, htmlBody:buildLeadNudge_(r, scopeLabel, openCount, byOff, conductedLW), name:'EG-MMS' }); sent.push('lead '+to); done++; } catch(e){}
-  });
-  Logger.log('Nudges sent: ' + done); Logger.log(sent.join('\n'));
-  return { success:true, mode:mode, sent:done, details:sent };
+  Logger.log(officers + ' officer(s) have ' + total + ' meeting(s) between ' + range + '. ' +
+             (mode === 'preview' ? 'Nothing sent.' : done + ' email(s) sent (' + mode + ').'));
+  Logger.log(out.join('\n'));
+  return { success:true, mode:mode, officers:officers, meetings:total, sent:done, details:out };
 }
 function nudgeJob() { return sendWeeklyNudges('live'); }
 function installNudgeTrigger() {
   ScriptApp.getProjectTriggers().forEach(function(t){ if (t.getHandlerFunction()==='nudgeJob') ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('nudgeJob').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(8).create();
-  return 'Nudge trigger installed: nudgeJob runs every Monday ~8am.';
+  return 'Weekly reminder switched on: nudgeJob runs every Monday around 8am.';
 }
 // ---- Run from the editor ----
-function NUDGE_test()        { return sendWeeklyNudges('test'); }   // all to admin (review)
-function NUDGE_live()        { return sendWeeklyNudges('live'); }   // officers + leads
-function NUDGE_installAuto() { return installNudgeTrigger(); }      // every Monday
+function NUDGE_preview()     { return sendWeeklyNudges('preview'); } // who would get one, sends nothing
+function NUDGE_test()        { return sendWeeklyNudges('test'); }    // up to 3 samples, all to REPORT_TEST_EMAIL
+function NUDGE_live()        { return sendWeeklyNudges('live'); }    // every officer with a meeting, right now
+function NUDGE_installAuto() { return installNudgeTrigger(); }       // every Monday around 8am
+function NUDGE_stopAuto() {
+  var n = 0;
+  ScriptApp.getProjectTriggers().forEach(function(t){ if (t.getHandlerFunction()==='nudgeJob') { ScriptApp.deleteTrigger(t); n++; } });
+  return 'Weekly reminder switched off: removed ' + n + ' trigger(s).';
+}
 
 // ============================================================
 //  MONTHLY REPORT EMAIL DELIVERY
