@@ -3871,6 +3871,121 @@ function readGovtMomPdf_(url) {
   return '';
 }
 
+// ============================================================
+//  VOICE NOTE TEST - editor only, writes nothing
+// ============================================================
+// Before any mic button goes on the conduct form, find out whether Gemini can
+// actually hear a UP field officer: local accent, Hinglish, traffic behind
+// them. Put a few phone recordings in one Drive folder, run
+//     VOICE_test('<folder link>')
+// and read the log. Each file is sent with the same instruction the real
+// feature would use. The log shows the word-for-word transcript, the three
+// answers it would put in the boxes, how long it took, and how much of each
+// answer can be found in the transcript. A low figure there means the model
+// wrote something that was never said, which is the thing to watch for.
+// Nothing is saved, no sheet is touched, and the live app does not change.
+var VOICE_MIMES = {
+  m4a:['audio/mp4','audio/aac','audio/x-m4a'], mp4:['audio/mp4','audio/aac'],
+  aac:['audio/aac'], mp3:['audio/mp3','audio/mpeg'], wav:['audio/wav'],
+  ogg:['audio/ogg'], oga:['audio/ogg'], opus:['audio/ogg','audio/opus'],
+  webm:['audio/webm','audio/ogg'], flac:['audio/flac'], aiff:['audio/aiff'],
+  amr:['audio/amr'], '3gp':['audio/3gpp']
+};
+var VOICE_PROMPT = [
+  'You will hear a field officer from Uttar Pradesh describing a meeting they just had with a government official.',
+  'They may speak Hindi, English or a mix of both, with a local accent, and there may be traffic or other noise.',
+  'Return STRICT JSON only, no markdown:',
+  '{"transcript":"...","what":"...","said":"...","next":"...","unclear":"..."}',
+  'transcript: exactly what was said, word for word, in the language and script it was spoken. Hindi words in Devanagari, English words in English. Do not translate and do not tidy it into better sentences.',
+  'what: what was discussed in the meeting.',
+  'said: what the official said, agreed to or refused.',
+  'next: what the officer or the team will do next.',
+  'unclear: any words you could not make out, or an empty string.',
+  'Rules: use only what was actually said. If something was not mentioned, leave that field as an empty string.',
+  'Never add a detail, date, number or name that was not spoken. Write what, said and next in the language the officer used.',
+  'Do not use em dashes.'
+].join(String.fromCharCode(10));
+
+function voiceWords_(s) {
+  return (s || '').toString().toLowerCase()
+    .split(/[^a-z0-9ऀ-ॿ]+/).filter(function(w){ return w.length >= 3; });
+}
+// Share of an answer's words that also occur in the transcript.
+function voiceFound_(part, transcript) {
+  var w = voiceWords_(part);
+  if (!w.length) return '-';
+  var have = {};
+  voiceWords_(transcript).forEach(function(x){ have[x] = 1; });
+  var n = w.filter(function(x){ return have[x]; }).length;
+  return Math.round(100 * n / w.length) + '%';
+}
+
+// Same shape as callLLM's Gemini call after the September fix: thinking off,
+// room to answer, and a second try without thinkingConfig if it is refused.
+function voiceAsk_(gk, b64, mime) {
+  var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=' + encodeURIComponent(gk);
+  var last = '';
+  for (var t = 0; t < 2; t++) {
+    var cfg = { maxOutputTokens:8000, temperature:0.2, responseMimeType:'application/json' };
+    if (t === 0) cfg.thinkingConfig = { thinkingBudget:0 };
+    var r = UrlFetchApp.fetch(url, {
+      method:'post', contentType:'application/json', muteHttpExceptions:true,
+      payload: JSON.stringify({ contents:[{ parts:[{ text:VOICE_PROMPT }, { inline_data:{ mime_type:mime, data:b64 } }] }],
+                                generationConfig:cfg })
+    });
+    if (r.getResponseCode() === 200) return { ok:true, text:_geminiText_(JSON.parse(r.getContentText())) };
+    last = r.getResponseCode() + ' ' + r.getContentText().substring(0, 200);
+  }
+  return { ok:false, error:last };
+}
+
+function VOICE_test(folder) {
+  var gk = PropertiesService.getScriptProperties().getProperty('GEMINI_KEY');
+  if (!gk) { Logger.log('GEMINI_KEY is not set in Script Properties.'); return; }
+  var id = ((folder || '').toString().match(/[-\w]{25,}/) || [])[0];
+  if (!id) { Logger.log("Pass the Drive folder link, like VOICE_test('https://drive.google.com/drive/folders/...')"); return; }
+  var dir;
+  try { dir = DriveApp.getFolderById(id); }
+  catch (e) { Logger.log('Cannot open that folder from the account running this script. Share the folder with it and run again. (' + e.message + ')'); return; }
+
+  var files = dir.getFiles(), done = 0, NL = String.fromCharCode(10);
+  while (files.hasNext() && done < 8) {
+    var f = files.next(), name = f.getName();
+    var ext = (name.split('.').pop() || '').toLowerCase();
+    var own = (f.getMimeType() || '').toLowerCase();
+    var tries = (VOICE_MIMES[ext] || []).slice();
+    if (own.indexOf('audio/') === 0 && tries.indexOf(own) === -1) tries.unshift(own);
+    if (!tries.length) { Logger.log('SKIP ' + name + ' (not an audio file: ' + own + ')'); continue; }
+    if (f.getSize() > 15 * 1024 * 1024) { Logger.log('SKIP ' + name + ' (over 15MB)'); continue; }
+    done++;
+
+    var b64 = Utilities.base64Encode(f.getBlob().getBytes());
+    var res = null, used = '', t0 = Date.now(), errors = [];
+    for (var i = 0; i < tries.length; i++) {
+      res = voiceAsk_(gk, b64, tries[i]);
+      if (res.ok) { used = tries[i]; break; }
+      errors.push(tries[i] + ': ' + res.error);
+    }
+    var secs = Math.round((Date.now() - t0) / 100) / 10;
+    var head = '===== ' + name + '  (' + Math.round(f.getSize() / 1024) + ' KB, ' + secs + ' s)';
+    if (!res || !res.ok) { Logger.log(head + NL + 'FORMAT NOT ACCEPTED' + NL + errors.join(NL)); continue; }
+
+    var o = null;
+    try { o = JSON.parse((res.text || '').replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch (pe) {}
+    if (!o) { Logger.log(head + '  sent as ' + used + NL + 'The answer was not JSON:' + NL + (res.text || '(empty)')); continue; }
+    Logger.log([
+      head + '  sent as ' + used,
+      'TRANSCRIPT: ' + (o.transcript || '(empty)'),
+      '',
+      'WHAT  [' + voiceFound_(o.what, o.transcript) + ' found in transcript]  ' + (o.what || '-'),
+      'SAID  [' + voiceFound_(o.said, o.transcript) + ' found in transcript]  ' + (o.said || '-'),
+      'NEXT  [' + voiceFound_(o.next, o.transcript) + ' found in transcript]  ' + (o.next || '-'),
+      'UNCLEAR: ' + (o.unclear || '-')
+    ].join(NL));
+  }
+  if (!done) Logger.log('No audio files found in that folder.');
+}
+
 function tagOneMeeting_(d) {
   var note = (d.keyPoints||'').toString().trim();
   var out = { priority:'', flag:'', nextAction:'', escalate:false, category:'None', momSummary:'' };
