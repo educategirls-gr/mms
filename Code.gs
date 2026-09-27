@@ -3852,23 +3852,97 @@ var COL_TAG_PRIORITY=23, COL_TAG_FLAG=24, COL_TAG_NEXT=25, COL_TAG_ESC=26, COL_T
 function _parseJson_(raw){ if(!raw) return null; raw=raw.replace(/```json/gi,'').replace(/```/g,'').trim(); var s=raw.indexOf('{'),e=raw.lastIndexOf('}'); if(s<0||e<0)return null; try{return JSON.parse(raw.slice(s,e+1));}catch(err){return null;} }
 
 // Read a Govt MoM PDF from Drive with Gemini (multimodal). Returns a short summary or ''.
+// Same Gemini call as callLLM after the September fix. gemini-3.6-flash charges
+// its reasoning to maxOutputTokens, so a small budget with thinking left on can
+// come back HTTP 200 with an empty content block (finishReason MAX_TOKENS), and
+// parts[0] is not always the answer. Thinking off, room to answer, a second try
+// without thinkingConfig if it is refused, and _geminiText_ to pick the text.
 function readGovtMomPdf_(url) {
   try {
     var m = (url||'').toString().match(/[-\w]{25,}/); if (!m) return '';
     var gk = PropertiesService.getScriptProperties().getProperty('GEMINI_KEY'); if (!gk) return '';
     var b64 = Utilities.base64Encode(DriveApp.getFileById(m[0]).getBlob().getBytes());
     var prompt = 'This is an official Government Minutes of Meeting, possibly Hindi, English, scanned or handwritten. In 2 short lines plus up to 3 action items with any deadlines, summarize the key government commitments. Plain text, do not use em dashes.';
-    var res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key='+encodeURIComponent(gk), {
-      method:'post', contentType:'application/json', muteHttpExceptions:true,
-      payload: JSON.stringify({ contents:[{parts:[{text:prompt},{inline_data:{mime_type:'application/pdf',data:b64}}]}], generationConfig:{maxOutputTokens:2000,temperature:0.2} })
-    });
-    if (res.getResponseCode()===200) {
-      var j=JSON.parse(res.getContentText());
-      var t=j&&j.candidates&&j.candidates[0]&&j.candidates[0].content&&j.candidates[0].content.parts&&j.candidates[0].content.parts[0]&&j.candidates[0].content.parts[0].text;
-      return (t||'').trim();
+    var api = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=' + encodeURIComponent(gk);
+    function ask(useThinkingConfig) {
+      var cfg = { maxOutputTokens:8000, temperature:0.2 };
+      if (useThinkingConfig) cfg.thinkingConfig = { thinkingBudget: 0 };
+      try {
+        var res = UrlFetchApp.fetch(api, {
+          method:'post', contentType:'application/json', muteHttpExceptions:true,
+          payload: JSON.stringify({ contents:[{parts:[{text:prompt},{inline_data:{mime_type:'application/pdf',data:b64}}]}], generationConfig:cfg })
+        });
+        if (res.getResponseCode() !== 200) return null;   // null = try the other shape
+        return _geminiText_(JSON.parse(res.getContentText()));
+      } catch(e) { return null; }
     }
+    var t = ask(true);
+    if (t === null) t = ask(false);   // older API shape rejects thinkingConfig
+    return (t||'').trim();
   } catch(e){}
   return '';
+}
+
+// How many conducted meetings carry a Govt MoM link, and how many were tagged
+// but still have an empty MoM summary. Editor only: writes nothing, calls no
+// model, logs counts only. The empty ones are split by cause, because only one
+// cause is the Gemini bug above. A MoM uploaded AFTER its row was tagged was
+// never read at all, since tagUntaggedMeetings skips rows already tagged, and
+// fixing readGovtMomPdf_ does nothing for those.
+function MOM_measure() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID), sh = ss.getSheetByName(CONDUCTED_SHEET);
+  if (!sh) return { success:false, message:'no conducted sheet' };
+  var data = sh.getDataRange().getValues();
+  var res = { conductedMeetings:0, withGovtMomLink:0, notTaggedYet:0, tagged:0,
+              taggedWithSummary:0, taggedEmptySummary:0,
+              emptyBecause:{ noFileIdInLink:0, fileCannotBeOpened:0, uploadedAfterTagging:0, presentWhenTagged:0 },
+              presentWhenTaggedOver15MB:0 };
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    res.conductedMeetings++;
+    var link = (data[i][21]||'').toString().trim();              // V = Govt MoM
+    if (!link) continue;
+    res.withGovtMomLink++;
+    var at = data[i][COL_TAG_AT-1];
+    if (!(at||'').toString().trim()) { res.notTaggedYet++; continue; }
+    res.tagged++;
+    if ((data[i][COL_TAG_MOMSUM-1]||'').toString().trim()) { res.taggedWithSummary++; continue; }
+    res.taggedEmptySummary++;
+    // the same first link and the same id pattern readGovtMomPdf_ uses
+    var m = link.split(/\s*,\s*/)[0].match(/[-\w]{25,}/);
+    if (!m) { res.emptyBecause.noFileIdInLink++; continue; }
+    var f;
+    try { f = DriveApp.getFileById(m[0]); f.getDateCreated(); }
+    catch(e) { res.emptyBecause.fileCannotBeOpened++; continue; }
+    var taggedAt = (at instanceof Date) ? at : new Date(at);
+    if (!isNaN(taggedAt.getTime()) && f.getDateCreated() > taggedAt) { res.emptyBecause.uploadedAfterTagging++; continue; }
+    res.emptyBecause.presentWhenTagged++;
+    if (f.getSize() > 15 * 1024 * 1024) res.presentWhenTaggedOver15MB++;
+  }
+  Logger.log(JSON.stringify(res, null, 2));
+  return res;
+}
+
+// One live check of readGovtMomPdf_ after the fix: the newest meeting with a
+// Govt MoM link and an empty summary (or, if none, the newest with a link).
+// One Gemini call, writes nothing, logs only the length of what came back.
+function MOM_tryOne() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID), sh = ss.getSheetByName(CONDUCTED_SHEET);
+  if (!sh) return { success:false, message:'no conducted sheet' };
+  var data = sh.getDataRange().getValues(), pick = -1, fallback = -1;
+  for (var i = data.length - 1; i >= 1; i--) {
+    if (!data[i][0] || !(data[i][21]||'').toString().trim()) continue;
+    if (fallback < 0) fallback = i;
+    if (!(data[i][COL_TAG_MOMSUM-1]||'').toString().trim()) { pick = i; break; }
+  }
+  if (pick < 0) pick = fallback;
+  if (pick < 0) { Logger.log('No conducted meeting has a Govt MoM link.'); return { success:false }; }
+  var t0 = Date.now();
+  var s = readGovtMomPdf_((data[pick][21]||'').toString().split(/\s*,\s*/)[0]);
+  var res = { row:pick + 1, hadEmptySummary:!(data[pick][COL_TAG_MOMSUM-1]||'').toString().trim(),
+              summaryChars:s.length, seconds:Math.round((Date.now() - t0) / 100) / 10 };
+  Logger.log(JSON.stringify(res, null, 2) + (s ? '' : '\nNothing came back. Run LLM_probe to see what Gemini is answering.'));
+  return res;
 }
 
 // ============================================================
