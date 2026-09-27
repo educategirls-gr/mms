@@ -539,7 +539,7 @@
   </div>
   <div class="sidebar-bottom">
     <button class="btn-logout" onclick="logout()">🚪 Logout</button>
-    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.37 &middot; 27 Sep 2026</div>
+    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.38 &middot; 27 Sep 2026</div>
   </div>
 </div>
 
@@ -1540,6 +1540,9 @@
     _manageMeetings = allForUser.filter(function(m) {
       var ok = !m.status || m.status === 'Planned' || m.status === 'Postponed' || m.status === 'Follow-up';
       if (!ok) console.log('Filtered out:', m.meetingId, 'status:', m.status);
+      // Being saved in the background right now: out of the list, so it
+      // cannot be opened and sent a second time. See saveInBackground.
+      if (ok && typeof _savingMids === 'object' && _savingMids[m.meetingId]) return false;
       return ok;
     });
     _manageMeetings.reverse();
@@ -1597,14 +1600,20 @@
         '</td></tr>';
     });
     html += '</tbody></table></div>';
-    document.getElementById('manage-content').innerHTML = html;
+    var mc = document.getElementById('manage-content');
+    mc.innerHTML = html;
     ensureMyMonth();
-    document.getElementById('manage-content').addEventListener('click', function(e) {
-      var prep = e.target.closest('.btn-prep');
-      if (prep) { openPrepModal(parseInt(prep.dataset.idx)); return; }
-      var btn = e.target.closest('.btn-action');
-      if (btn) openActionModal(parseInt(btn.dataset.idx));
-    });
+    // Once only. It used to be added on every redraw, so one tap opened the
+    // same form once per redraw.
+    if (!mc.dataset.clickBound) {
+      mc.dataset.clickBound = '1';
+      mc.addEventListener('click', function(e) {
+        var prep = e.target.closest('.btn-prep');
+        if (prep) { openPrepModal(parseInt(prep.dataset.idx)); return; }
+        var btn = e.target.closest('.btn-action');
+        if (btn) openActionModal(parseInt(btn.dataset.idx));
+      });
+    }
   }
 
   // ── Meeting Prep Brief ───────────────────────────────────────
@@ -1746,6 +1755,13 @@
   function showModalAlert(phase, msg) {
     var el = document.getElementById(phase + '-alert');
     el.textContent = msg; el.className = 'alert alert-error show';
+  }
+  // A message from an earlier try must not sit beside a save that is now going
+  // through: "please enter a reason" next to a spinning Save, with the reason
+  // right there in the box, read as if something were wrong.
+  function clearModalAlert(phase) {
+    var el = document.getElementById(phase + '-alert');
+    if (el) el.className = 'alert alert-error';
   }
 
   // Photo boxes
@@ -1962,6 +1978,7 @@
     // Photos are optional now - proceed even with 0 photos
     var m   = _manageMeetings[MODAL_IDX];
     var btn = document.getElementById('conduct-submit-btn');
+    clearModalAlert('conduct');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span>' + (allFiles.length ? 'Preparing photos...' : 'Generating MoM...');
     if (allFiles.length === 0) { doSendConduct(m, date, btn, kp, [], followUp, outcome); return; }
@@ -2104,21 +2121,13 @@
     if (origTs && new Date(newDate).getTime() <= origTs) {
       showModalAlert('postpone', 'New date must be after the original meeting date (' + m.date + ').'); return;
     }
-    var btn = document.getElementById('postpone-submit-btn');
-    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Saving...';
-    gasPost('postponeMeeting', {
+    clearModalAlert('postpone');
+    saveInBackground('postponeMeeting', {
       meetingId: m.meetingId, district: m.district || ACTIVE_DISTRICT,
       employeeName: SESSION.name, email: SESSION.email,
       adhikariName: m.adhikariName, adhikariPost: m.adhikariPost, purpose: m.purpose,
       originalDate: m.date, newDate: newDate, reason: document.getElementById('p-reason').value.trim()
-    }, function(res) {
-      btn.disabled = false; btn.innerHTML = '📅 Postpone';
-      if (res.success) { invalidateFrontCache(); closeActionModal(); showToast('Meeting postponed. New date: ' + newDate); loadManageMeetings(true); }
-      else showModalAlert('postpone', res.message || 'An error occurred.');
-    }, function(e) {
-      btn.disabled = false; btn.innerHTML = '📅 Postpone';
-      showModalAlert('postpone', 'Error: ' + e.message);
-    });
+    }, m, 'Meeting postponed. New date: ' + newDate);
   }
 
   // ── Cancel / No Conduct ──────────────────────────────────────
@@ -2126,17 +2135,53 @@
     var reason = document.getElementById('x-reason').value.trim();
     if (!reason) { showModalAlert('cancel', 'Please enter a reason.'); return; }
     var m = _manageMeetings[MODAL_IDX];
-    var btn = document.getElementById('cancel-submit-btn');
-    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Saving...';
-    gasPost('cancelMeeting', { meetingId: m.meetingId, reason: reason }, function(res) {
-      btn.disabled = false; btn.innerHTML = '❌ Mark as No Conduct';
-      if (res.success) { invalidateFrontCache(); closeActionModal(); showToast('Meeting marked as no-conduct.'); loadManageMeetings(true); }
-      else showModalAlert('cancel', res.message || 'An error occurred.');
-    }, function(e) {
-      btn.disabled = false; btn.innerHTML = '❌ Mark as No Conduct';
-      showModalAlert('cancel', 'Error: ' + e.message);
+    clearModalAlert('cancel');
+    saveInBackground('cancelMeeting', { meetingId: m.meetingId, reason: reason }, m, 'Meeting marked as no-conduct.');
+  }
+
+  // ── Saving in the background ─────────────────────────────────
+  // Postpone and No Conduct are one line each for the script, but Google's
+  // front door holds the request anywhere from a few seconds to a minute
+  // (measured 27 Sep 2026: 7, 12, 14, 27 and 63 s for the same request). The
+  // form used to sit open with a spinner all that while, its Back button still
+  // live, and closing it and sending again recorded the same meeting as not
+  // held twice (MTG-20260927-142753). So the form closes at once, the meeting
+  // leaves the list while it saves, and a message says when it is done. If
+  // the server says no, the meeting comes back to the list. The server also
+  // writes each of these once now, so a second copy that does get through
+  // changes nothing.
+  var _savingMids = {};
+  function saveInBackground(action, data, m, doneMsg) {
+    var mid = m.meetingId, who = m.adhikariName || mid;
+    _savingMids[mid] = 1;
+    closeActionModal();
+    if (_manageCache.data) renderManageMeetings(_manageCache.data);
+    showToast('Saving in the background. You can carry on.');
+    gasPost(action, data, function(res) {
+      delete _savingMids[mid];
+      if (res && res.success) {
+        invalidateFrontCache();
+        showToast(doneMsg, 6000);
+        loadManageMeetings(true);
+      } else if (res && res.message === 'ACCESS_REVOKED') {
+        forceLogout('Your access has been revoked. Please contact Admin.');
+      } else {
+        if (_manageCache.data) renderManageMeetings(_manageCache.data);
+        showToast('Not saved for ' + who + ': ' + ((res && res.message) || 'An error occurred.'), 9000);
+      }
+    }, function() {
+      // The network gave out, so it may or may not have landed. Show what the
+      // sheet says; doing it again is safe either way.
+      delete _savingMids[mid];
+      invalidateFrontCache();
+      loadManageMeetings(true);
+      showToast('Could not confirm the save for ' + who + '. If it is still in the list, please do it again.', 9000);
     });
   }
+  // Leaving the page could cut a save off halfway, so the browser asks first.
+  window.addEventListener('beforeunload', function(e) {
+    for (var k in _savingMids) { e.preventDefault(); e.returnValue = ''; return ''; }
+  });
 
   // ── Delete ───────────────────────────────────────────────────
   function deleteMeetingRow() {
@@ -4387,10 +4432,14 @@
   function goToManageFromSuccess()  { closeSuccessModal(); showView('manage'); }
 
   // ── Toast ────────────────────────────────────────────────────
+  // One timer at a time: the timer of an earlier message used to hide a newer
+  // one early, and a save's result can arrive a second after "Saving...".
+  var _toastTimer = null;
   function showToast(msg, duration) {
     var t = document.getElementById('toast');
     t.textContent = msg; t.style.display = '';
-    setTimeout(function() { t.style.display = 'none'; }, duration || 3500);
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(function() { t.style.display = 'none'; }, duration || 3500);
   }
 
   // ── Sidebar toggle ───────────────────────────────────────────
@@ -4699,6 +4748,8 @@
     'Mark as No Conduct': 'बैठक नहीं हुई, चिह्नित करें',
     'Please enter a reason.': 'कृपया कारण लिखें।',
     'Meeting marked as no-conduct.': 'बैठक "नहीं हुई" के रूप में चिह्नित की गई।',
+    'Saving in the background. You can carry on.': 'पृष्ठभूमि में सहेजा जा रहा है। आप अपना काम जारी रख सकते हैं।',
+    'Meeting not found.': 'बैठक नहीं मिली।',
     'Meeting deleted successfully.': 'बैठक सफलतापूर्वक हटा दी गई।',
 
     // Meeting lists
@@ -4827,6 +4878,9 @@
     [/^Sent to (.+)\. Their reply will come to your inbox\.$/, function(m){
       return hiSub(m[1]) + ' को भेज दिया गया। उनका उत्तर आपके इनबॉक्स में आएगा।'; }],
     [/^Not sent: (.+)$/, function(m){ return 'नहीं भेजा गया: ' + hiSub(m[1]); }],
+    [/^Not saved for (.+?): (.+)$/, function(m){ return m[1] + ' के लिए सहेजा नहीं जा सका: ' + hiSub(m[2]); }],
+    [/^Could not confirm the save for (.+)\. If it is still in the list, please do it again\.$/, function(m){
+      return m[1] + ' के लिए सहेजने की पुष्टि नहीं हो सकी। यदि यह अभी भी सूची में है, तो कृपया फिर से करें।'; }],
     [/^Error: (.+)$/, function(m){ return 'त्रुटि: ' + hiSub(m[1]); }],
     [/^Server error: (.+)$/, function(m){ return 'सर्वर त्रुटि: ' + hiSub(m[1]); }],
     [/^Delete failed: (.+)$/, function(m){ return 'हटाया नहीं जा सका: ' + hiSub(m[1]); }],

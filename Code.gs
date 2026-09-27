@@ -2481,7 +2481,40 @@ function createMoMDoc(d, photoFolderUrl) {
 // ------------------------------------------------------------
 //  POSTPONE MEETING - same ID, new date, history in sheet
 // ------------------------------------------------------------
+// ------------------------------------------------------------
+//  WRITE ONCE
+//  Google's front door can hold a request for a minute (measured 27 Sep 2026:
+//  7 to 63 seconds for the same request). In that time an officer can close
+//  the form, open the meeting again and send it a second time, and both
+//  copies used to be written: MTG-20260927-142753 was recorded as not held
+//  twice. postponeMeeting and cancelMeeting now check under a lock whether
+//  the thing is already done, so a second copy finds it and writes nothing.
+//  conductMeeting has had its own check (ALREADY_CONDUCTED) for a while.
+// ------------------------------------------------------------
+function withScriptLock_(fn) {
+  var lock = LockService.getScriptLock(), got = false;
+  // Never block a genuine save because the lock was busy: after 15 s it goes
+  // ahead without one, which is no worse than before the lock existed.
+  try { got = lock.tryLock(15000); } catch (le) {}
+  try {
+    var out = fn();
+    // Written before the lock is let go, or the next copy could read the old status.
+    if (got) { try { SpreadsheetApp.flush(); } catch (fe) {} }
+    return out;
+  } finally {
+    if (got) { try { lock.releaseLock(); } catch (re) {} }
+  }
+}
+// A date cell and the "2026-10-03" the page sends compare equal through this.
+function dayKey_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  return (v == null ? '' : v).toString().trim();
+}
+
 function postponeMeeting(payload) {
+  return withScriptLock_(function() { return postponeMeeting_(payload); });
+}
+function postponeMeeting_(payload) {
   try {
     if (payload.email && !getEmployeeByEmail(payload.email.trim().toLowerCase())) {
       return { success: false, message: 'ACCESS_REVOKED' };
@@ -2496,6 +2529,11 @@ function postponeMeeting(payload) {
       var pd = planSheet.getDataRange().getValues();
       for (var i = 1; i < pd.length; i++) {
         if ((pd[i][0] || '').toString() === payload.meetingId) {
+          // Already moved to this very date: this is the same request again.
+          if ((pd[i][13] || '').toString().trim() === 'Postponed' &&
+              dayKey_(pd[i][5]) === dayKey_(payload.newDate)) {
+            return { success: true, already: true };
+          }
           planSheet.getRange(i+1, 6).setValue(payload.newDate);    // F new date
           planSheet.getRange(i+1, 14).setValue('Postponed');       // N keep as Postponed so user sees it was rescheduled
           planSheet.getRange(i+1, 17).setValue('Postponed from ' + payload.originalDate + (payload.reason ? ': ' + payload.reason : '')); // Q reason
@@ -2533,6 +2571,9 @@ function postponeMeeting(payload) {
 //  CANCEL / NO-CONDUCT MEETING
 // ------------------------------------------------------------
 function cancelMeeting(payload) {
+  return withScriptLock_(function() { return cancelMeeting_(payload); });
+}
+function cancelMeeting_(payload) {
   try {
     var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
     var tz    = Session.getScriptTimeZone();
@@ -2552,6 +2593,8 @@ function cancelMeeting(payload) {
     if (!getEmployeeByEmail((rowData[4] || '').toString().trim().toLowerCase())) {
       return { success: false, message: 'ACCESS_REVOKED' };
     }
+    // Already recorded as not held: the same request again. Nothing to write.
+    if ((rowData[13] || '').toString().trim() === 'Cancelled') return { success: true, already: true };
 
     // Save to Cancelled Meetings sheet
     var cSheet = ss.getSheetByName(CANCELLED_SHEET);
@@ -2728,8 +2771,11 @@ function getAllMyMeetings(email) {
       // Columns: MeetingID(0) District(1) EmployeeName(2) Email(3)
       //          StakeholderName(4) StakeholderPost(5) Purpose(6)
       //          OriginalDate(7) NewDate(8) Reason(9) PostponedAt(10)
+      var seenP = {};   // a reschedule sent twice shows once
       for (var i = 1; i < phd.length; i++) {
         if ((phd[i][3] || '').toString().trim().toLowerCase() !== emailKey) continue;
+        var pKey = (phd[i][0] || '') + '|' + dayKey_(phd[i][7]) + '|' + dayKey_(phd[i][8]);
+        if (seenP[pKey]) continue; seenP[pKey] = 1;
         meetings.push({
           meetingId:       (phd[i][0] || '').toString(),
           district:        (phd[i][1] || '').toString(),
@@ -2793,9 +2839,11 @@ function getAllMyMeetings(email) {
     // 3. Cancelled Meetings
     var xSheet = ss.getSheetByName(CANCELLED_SHEET);
     if (xSheet && xSheet.getLastRow() > 1) {
-      var xd = (sheetRows_(CANCELLED_SHEET) || []);
+      var xd = (sheetRows_(CANCELLED_SHEET) || []), seenX = {};   // one meeting, one row
       for (var k = 1; k < xd.length; k++) {
         if ((xd[k][4] || '').toString().trim().toLowerCase() !== emailKey) continue;
+        var xId = (xd[k][0] || '').toString().trim();
+        if (seenX[xId]) continue; seenX[xId] = 1;
         meetings.push({
           meetingId:    (xd[k][0]  || '').toString(),
           district:     (xd[k][1]  || '').toString(),
@@ -2917,9 +2965,11 @@ function getDistrictAllMeetings(district) {
     // 3. Postponed
     var postSheet = ss.getSheetByName(POSTPONED_SHEET);
     if (postSheet) {
-      var xd = (sheetRows_(POSTPONED_SHEET) || []);
+      var xd = (sheetRows_(POSTPONED_SHEET) || []), seenP = {};   // a reschedule sent twice shows once
       for (var i = 1; i < xd.length; i++) {
         if ((xd[i][1] || '').toString().trim().toLowerCase() !== distL) continue;
+        var pKey = (xd[i][0] || '') + '|' + dayKey_(xd[i][7]) + '|' + dayKey_(xd[i][8]);
+        if (seenP[pKey]) continue; seenP[pKey] = 1;
         meetings.push({
           meetingId:    (xd[i][0] || '').toString(),
           employeeName: (xd[i][2] || '').toString(),
@@ -2940,9 +2990,11 @@ function getDistrictAllMeetings(district) {
     // 4. Cancelled
     var cancelSheet = ss.getSheetByName(CANCELLED_SHEET);
     if (cancelSheet) {
-      var xc = (sheetRows_(CANCELLED_SHEET) || []);
+      var xc = (sheetRows_(CANCELLED_SHEET) || []), seenX = {};   // one meeting, one row
       for (var i = 1; i < xc.length; i++) {
         if ((xc[i][1] || '').toString().trim().toLowerCase() !== distL) continue;
+        var xId = (xc[i][0] || '').toString().trim();
+        if (seenX[xId]) continue; seenX[xId] = 1;
         meetings.push({
           meetingId:    (xc[i][0]  || '').toString(),
           employeeName: (xc[i][2]  || '').toString(),
@@ -3037,9 +3089,11 @@ function getStateAllMeetings() {
     // 3. Postponed
     var postSheet = ss.getSheetByName(POSTPONED_SHEET);
     if (postSheet) {
-      var xd = (sheetRows_(POSTPONED_SHEET) || []);
+      var xd = (sheetRows_(POSTPONED_SHEET) || []), seenP = {};   // a reschedule sent twice shows once
       for (var i = 1; i < xd.length; i++) {
         if (!xd[i][0]) continue;
+        var pKey = xd[i][0] + '|' + dayKey_(xd[i][7]) + '|' + dayKey_(xd[i][8]);
+        if (seenP[pKey]) continue; seenP[pKey] = 1;
         meetings.push({
           meetingId:    (xd[i][0] || '').toString(),
           district:     (xd[i][1] || '').toString(),
@@ -3061,9 +3115,11 @@ function getStateAllMeetings() {
     // 4. Cancelled
     var cancelSheet = ss.getSheetByName(CANCELLED_SHEET);
     if (cancelSheet) {
-      var xc = (sheetRows_(CANCELLED_SHEET) || []);
+      var xc = (sheetRows_(CANCELLED_SHEET) || []), seenX = {};   // one meeting, one row
       for (var i = 1; i < xc.length; i++) {
         if (!xc[i][0]) continue;
+        var xId = xc[i][0].toString().trim();
+        if (seenX[xId]) continue; seenX[xId] = 1;
         meetings.push({
           meetingId:    (xc[i][0]  || '').toString(),
           district:     (xc[i][1]  || '').toString(),
