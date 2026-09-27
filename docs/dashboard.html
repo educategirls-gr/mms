@@ -460,6 +460,18 @@
       .rep-search-bar input { min-width:100%; }
       .btn-dl { width:100%; text-align:center; padding:11px; }
     }
+
+    /* Language switch, under the name in the sidebar */
+    .lang-switch { position:relative; display:grid; grid-template-columns:1fr 1fr; width:138px; margin-top:9px;
+                   background:rgba(0,0,0,0.28); border:1px solid rgba(255,255,255,0.18); border-radius:20px; padding:2px; }
+    .ls-thumb { position:absolute; top:2px; bottom:2px; left:2px; width:calc(50% - 2px); background:#fff;
+                border-radius:18px; box-shadow:0 1px 4px rgba(0,0,0,0.25); transition:transform 0.22s ease; }
+    .lang-switch.hi .ls-thumb { transform:translateX(100%); }
+    .ls-opt { position:relative; z-index:1; border:0; background:none; cursor:pointer; font-family:inherit;
+              font-size:11.5px; font-weight:700; padding:5px 0; color:rgba(255,255,255,0.75); transition:color 0.22s; }
+    .ls-opt.on { color:#7B1010; }
+    /* Spacing between letters breaks Devanagari apart, and capitals mean nothing to it. */
+    html[lang="hi"] body * { letter-spacing:normal !important; }
   </style>
 </head>
 <body>
@@ -480,6 +492,11 @@
         <div class="profile-role" id="p-post"></div>
         <div style="margin-top:5px;">
           <span id="p-role-badge" style="font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;display:inline-block;"></span>
+        </div>
+        <div class="lang-switch" id="lang-switch" data-notr role="radiogroup" aria-label="Language / भाषा">
+          <span class="ls-thumb"></span>
+          <button type="button" class="ls-opt on" data-lang="en" role="radio" onclick="setLang('en')">English</button>
+          <button type="button" class="ls-opt" data-lang="hi" role="radio" onclick="setLang('hi')">हिंदी</button>
         </div>
       </div>
     </div>
@@ -522,7 +539,7 @@
   </div>
   <div class="sidebar-bottom">
     <button class="btn-logout" onclick="logout()">🚪 Logout</button>
-    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.36 &middot; 27 Sep 2026</div>
+    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.37 &middot; 27 Sep 2026</div>
   </div>
 </div>
 
@@ -2124,11 +2141,11 @@
   // ── Delete ───────────────────────────────────────────────────
   function deleteMeetingRow() {
     var m = _manageMeetings[MODAL_IDX];
-    if (!confirm('Permanently delete meeting "' + m.meetingId + '"?')) return;
+    if (!confirm(hiT('Permanently delete meeting "' + m.meetingId + '"?'))) return;
     gasFetch('deleteMeeting', { meetingId: m.meetingId, email: SESSION.email }, function(res) {
       if (res.success) { invalidateFrontCache(); closeActionModal(); showToast('Meeting deleted successfully.'); loadManageMeetings(true); }
-      else alert('Delete failed: ' + res.message);
-    }, function(e) { alert('Error: ' + e.message); });
+      else alert(hiT('Delete failed: ' + res.message));
+    }, function(e) { alert(hiT('Error: ' + e.message)); });
   }
 
   // ── My Meetings (conducted / postponed / cancelled - by month) ──
@@ -3624,6 +3641,19 @@
     if (h && ht) { ht.textContent = res.transcript || ''; h.style.display = res.transcript ? 'block' : 'none'; h.open = !!doubtful.length; }
 
     if (!filled && !added) { vnNote('warn', 'Nothing that fits the three questions was heard. Please type it, or try again.'); return; }
+    if (typeof hiOn === 'function' && hiOn()) {
+      var hMsg = 'आपकी बोली से भरा गया। <b>सहेजने से पहले पढ़ें और आवश्यक सुधार करें।</b>' +
+                 (added ? ' जहाँ आपने पहले से कुछ लिखा था, वहाँ यह नीचे जोड़ा गया है।' : '') +
+                 ' प्रश्न 4, बैठक का परिणाम, आपको स्वयं चुनना है।';
+      if (doubtful.length) {
+        var hNames = { what: 'क्या चर्चा हुई', said: 'अधिकारी ने क्या कहा', next: 'आगे क्या होगा' };
+        vnNote('warn', hMsg + '<br><b>' + doubtful.map(function(k){ return hNames[k]; }).join(', ') +
+               '</b> को ध्यान से जाँचें: इसका कुछ भाग सुने गए शब्दों से मेल नहीं खाता। नीचे "AI ने क्या सुना" से मिलान करें।');
+      } else {
+        vnNote('ok', hMsg);
+      }
+      return;
+    }
     var msg = 'Filled from what you said. <b>Read it and correct anything before saving.</b>' +
               (added ? ' Where you had already written something, this was added underneath.' : '') +
               ' Question 4, what came out of the meeting, is still yours to choose.';
@@ -3985,6 +4015,30 @@
 
     var got = mbLookup(mbDistrict(), post, name);
     if (!got) { box.innerHTML = ''; return; }
+
+    // Hindi word order differs, so the Hindi line is written whole rather than
+    // translated a piece at a time. setLang repaints this line on a switch.
+    if (typeof hiOn === 'function' && hiOn()) {
+      var hAbout = function(r){ return r.purpose ? ', विषय: ' + esc(r.purpose) : ''; };
+      if (got.byPerson) {
+        box.innerHTML = '<b>' + esc(got.rec.name) + '</b> से अंतिम बैठक: <b>' + esc(got.rec.date) + '</b>' + hAbout(got.rec) + '।';
+        box.className = 'met-line on';
+      } else if (!got.rec) {
+        box.innerHTML = '<b>' + esc(post) + '</b>: ' + esc(mbDistrict() || 'इस जनपद') +
+                        ' में अभी तक कोई बैठक दर्ज नहीं है। यह पहली बैठक है।';
+        box.className = 'met-line on new';
+      } else if (got.moved) {
+        box.innerHTML = '<b>' + esc(post) + '</b> से अंतिम बैठक: <b>' + esc(got.rec.date) + '</b>, <b>' +
+                        esc(got.rec.name) + '</b> के साथ' + hAbout(got.rec) +
+                        '। यहाँ नाम भिन्न है, अतः या तो स्थानांतरण हुआ है या उसी अधिकारी का नाम दूसरे ढंग से लिखा गया है।';
+        box.className = 'met-line on warn';
+      } else {
+        box.innerHTML = '<b>' + esc(post) + '</b> से अंतिम बैठक: <b>' + esc(got.rec.date) + '</b>, ' +
+                        esc(got.rec.name) + ' के साथ' + hAbout(got.rec) + '।';
+        box.className = 'met-line on';
+      }
+      return;
+    }
 
     if (got.byPerson) {
       box.innerHTML = 'You last met <b>' + esc(got.rec.name) + '</b> on <b>' +
@@ -4356,7 +4410,566 @@
     } catch(e) {}
     window.location.href = 'index.html';
   }
-  function forceLogout(msg) { alert(msg); logout(); }
+  function forceLogout(msg) { alert(hiT(msg)); logout(); }
+</script>
+
+<script>
+  // ── Hindi interface ─────────────────────────────────────────────
+  // Official Hindi (shuddh, as in government letters) for everything the app
+  // itself says. Only the display changes. What goes to the sheet, dropdown
+  // values, meeting notes, names, districts and posts all stay exactly as they
+  // are, so a meeting filed in Hindi mode is identical to one filed in English.
+  //
+  // How: the page is written in English as before. With Hindi on, every piece
+  // of text the page shows is looked up here by its exact English wording and
+  // swapped, and a MutationObserver does the same for anything drawn later
+  // (tables, toasts, modals). The English is remembered on each piece, so
+  // switching back puts it back without a reload. Anything not in the list,
+  // which is all the data, is simply left alone.
+  //
+  // A NEW ENGLISH STRING IN THE PAGE NEEDS A LINE HERE, or it shows in English
+  // in Hindi mode. Nothing breaks, it just is not translated.
+  //
+  // Not here: the login page and the analytics portal stay English. Sentences
+  // with bold parts inside (the last-met line, the voice note result) are
+  // written in Hindi where they are built, because the word order differs.
+  var HI = {
+    // Sidebar, top bar
+    'Meeting Management System': 'बैठक प्रबंधन प्रणाली',
+    'Menu': 'मेनू',
+    'Plan Meeting': 'बैठक नियोजित करें',
+    'Manage Meetings': 'बैठकों का प्रबंधन',
+    'My Meetings': 'मेरी बैठकें',
+    'District Meetings': 'जनपद की बैठकें',
+    'Zone Meetings': 'ज़ोन की बैठकें',
+    'State Meetings': 'राज्य की बैठकें',
+    'Analytics': 'विश्लेषण',
+    'Logout': 'लॉग आउट',
+    'Plan Your Meeting': 'अपनी बैठक नियोजित करें',
+    'Plan your upcoming meetings': 'आगामी बैठकों की योजना बनाएँ',
+    'Update meeting outcomes and action points': 'बैठकों के परिणाम और कार्य-बिंदु अद्यतन करें',
+    'All meetings in your district': 'आपके जनपद की सभी बैठकें',
+    'All meetings across your zone': 'आपके ज़ोन की सभी बैठकें',
+    'All meetings across the state': 'पूरे राज्य की सभी बैठकें',
+
+    // Plan form
+    'Meeting Type': 'बैठक का प्रकार',
+    'One-on-One': 'व्यक्तिगत भेंट',
+    'Group Meeting': 'सामूहिक बैठक',
+    'Joint Visit': 'संयुक्त भ्रमण',
+    'Dept. Review': 'विभागीय समीक्षा',
+    'Field Visit': 'क्षेत्र भ्रमण',
+    'Meeting District': 'बैठक का जनपद',
+    'Which district is this meeting in?': 'यह बैठक किस जनपद में है?',
+    '- Select District -': '- जनपद चुनें -',
+    '- Error loading -': '- लोड करने में त्रुटि -',
+    'Meeting Date': 'बैठक की तिथि',
+    'Meeting Time': 'बैठक का समय',
+    '(Approx)': '(अनुमानित)',
+    '(optional)': '(वैकल्पिक)',
+    'HH': 'घं.',             // the hour and minute boxes are 62px wide
+    'MM': 'मि.',
+    'Duration': 'अवधि',
+    '30 min': '30 मिनट',
+    '1 hr': '1 घंटा',
+    '2 hr': '2 घंटे',
+    'Half Day': 'आधा दिन',
+    'Full Day': 'पूरा दिन',
+    'Stakeholder Post': 'अधिकारी का पद',
+    'Select Post': 'पद चुनें',
+    'Loading...': 'लोड हो रहा है...',
+    'Other (Specify Post)': 'अन्य (पद लिखें)',
+    "Enter stakeholder's designation...": 'अधिकारी का पदनाम लिखें...',
+    'Stakeholder Name': 'अधिकारी का नाम',
+    "Enter stakeholder's name": 'अधिकारी का नाम लिखें',
+    'Stakeholder Block': 'अधिकारी का विकास खंड',
+    'Not applicable / district level': 'लागू नहीं / जनपद स्तर',
+    'Fill this for block level officials like ABSA, BEO or ARP, since each block has its own.':
+      'ABSA, BEO या ARP जैसे विकास खंड स्तर के अधिकारियों के लिए भरें, क्योंकि प्रत्येक विकास खंड के अपने अधिकारी होते हैं।',
+    'Meeting Purpose': 'बैठक का उद्देश्य',
+    'Select Purpose': 'उद्देश्य चुनें',
+    'Other': 'अन्य',
+    'Other (Specify)': 'अन्य (लिखें)',
+    'Other (Specify Purpose)': 'अन्य (उद्देश्य लिखें)',
+    'Describe the meeting purpose...': 'बैठक का उद्देश्य लिखें...',
+    'Meeting Agenda': 'बैठक की कार्यसूची',
+    'What do you want out of this meeting? For example: ask for block-wise enrolment data, get permission for the Shiksha Rath route':
+      'इस बैठक से आप क्या चाहते हैं? उदाहरण: विकास खंड-वार नामांकन के आँकड़े माँगना, शिक्षा रथ के मार्ग की अनुमति लेना',
+    'Meeting Documents': 'बैठक के दस्तावेज़',
+    'PDF / Word / Excel / PPT only - up to 5 files, 5MB each. (Photos go in the Conduct step.)':
+      'केवल PDF / Word / Excel / PPT - अधिकतम 5 फ़ाइलें, प्रत्येक 5MB तक। (फ़ोटो बैठक संपन्न करते समय जोड़ें।)',
+    'Accompanying Colleague': 'साथ जाने वाले सहकर्मी',
+    'Select from your district team members:': 'अपने जनपद की टीम में से चुनें:',
+    'Search by name...': 'नाम से खोजें...',
+    'No colleagues found.': 'कोई सहकर्मी नहीं मिला।',
+    'Colleague Name': 'सहकर्मी का नाम',
+    'Name of accompanying colleague (if any)': 'साथ जाने वाले सहकर्मी का नाम (यदि कोई हो)',
+    'Colleague Designation': 'सहकर्मी का पदनाम',
+    "Colleague's designation": 'सहकर्मी का पदनाम',
+    'Reset': 'रीसेट करें',
+    'Save Meeting Plan': 'बैठक योजना सहेजें',
+    'Saving...': 'सहेजा जा रहा है...',
+    'or press Tab': 'या Tab दबाएँ',
+    'Kept on this phone, so you can come back to it.': 'यह इसी फ़ोन में सुरक्षित है, आप बाद में लौटकर पूरा कर सकते हैं।',
+    'Discard': 'हटाएँ',
+    'Draft discarded.': 'मसौदा हटा दिया गया।',
+    'Picked up where you left off. Any files you had attached need choosing again.':
+      'जहाँ आपने छोड़ा था, वहीं से जारी है। संलग्न की गई फ़ाइलें फिर से चुननी होंगी।',
+    'Start fresh': 'नए सिरे से शुरू करें',
+    'Please select a meeting type.': 'कृपया बैठक का प्रकार चुनें।',
+    'Meeting Time (choose hour, minute and AM/PM)': 'बैठक का समय (घंटा, मिनट और AM/PM चुनें)',
+    'Please write a little more in the agenda, at least a short sentence on what you want from this meeting.':
+      'कृपया कार्यसूची में थोड़ा और लिखें, कम से कम एक छोटा वाक्य कि इस बैठक से आप क्या चाहते हैं।',
+    'Please select the district for this meeting.': 'कृपया इस बैठक का जनपद चुनें।',
+    'You can attach up to 5 documents.': 'आप अधिकतम 5 दस्तावेज़ संलग्न कर सकते हैं।',
+    'This plan was already saved, so it was not filed a second time.': 'यह योजना पहले ही सहेजी जा चुकी थी, इसलिए दोबारा दर्ज नहीं की गई।',
+    'Still saving. The server is slow right now, please do not press Save again.':
+      'अभी सहेजा जा रहा है। सर्वर इस समय धीमा है, कृपया "सहेजें" दोबारा न दबाएँ।',
+    'Still saving. Nothing is lost, and pressing Save again would only file the meeting twice.':
+      'अभी सहेजा जा रहा है। कुछ भी खोया नहीं है, और "सहेजें" दोबारा दबाने से बैठक दो बार दर्ज हो जाएगी।',
+    'Your access has been revoked.': 'आपकी पहुँच समाप्त कर दी गई है।',
+    'Your access has been revoked. Please contact Admin.': 'आपकी पहुँच समाप्त कर दी गई है। कृपया व्यवस्थापक से संपर्क करें।',
+
+    // Plan saved
+    'Meeting Plan Saved!': 'बैठक योजना सहेज ली गई!',
+    'ID': 'आईडी',
+    'Meeting has been planned successfully!': 'बैठक सफलतापूर्वक नियोजित हो गई!',
+    'This meeting will appear in Manage Meetings.': 'यह बैठक "बैठकों का प्रबंधन" में दिखाई देगी।',
+    'Close': 'बंद करें',
+    'Manage Meeting': 'बैठक का प्रबंधन',
+    'New Meeting': 'नई बैठक',
+
+    // Manage Meetings
+    'My Month': 'मेरा माह',
+    'Meetings this month': 'इस माह की बैठकें',
+    'Produced something': 'ठोस परिणाम मिला',
+    'Past their date': 'तिथि बीत चुकी',
+    'One meeting is past its date below. Marking what happened keeps your record straight.':
+      'नीचे एक बैठक की तिथि बीत चुकी है। जो हुआ उसे दर्ज करने से आपका अभिलेख सही रहता है।',
+    'No Upcoming Meetings': 'कोई आगामी बैठक नहीं',
+    'Click below to plan a new meeting': 'नई बैठक नियोजित करने के लिए नीचे क्लिक करें',
+    'Plan a Meeting': 'बैठक नियोजित करें',
+    'Date': 'तिथि',
+    'Time': 'समय',
+    'Stakeholder': 'अधिकारी',
+    'Purpose': 'उद्देश्य',
+    'Status': 'स्थिति',
+    'Action': 'कार्यवाही',
+    'these meetings are past their date, please update them': 'इन बैठकों की तिथि बीत चुकी है, कृपया इन्हें अद्यतन करें',
+    'Documents': 'दस्तावेज़',
+    'Prep': 'तैयारी',
+    'Done': 'पूर्ण',
+    'Today': 'आज',
+    'Tomorrow': 'कल',
+    'Yesterday': 'बीता कल',
+    'Failed to load meetings. Please refresh and try again.': 'बैठकें लोड नहीं हो सकीं। कृपया पृष्ठ रीफ़्रेश करके पुनः प्रयास करें।',
+    'Failed to load. Please try again.': 'लोड नहीं हो सका। कृपया पुनः प्रयास करें।',
+
+    // Statuses and tags
+    'Planned': 'नियोजित',
+    'Follow-up': 'अनुवर्ती',
+    'Conducted': 'संपन्न',
+    'Postponed': 'स्थगित',
+    'Cancelled': 'निरस्त',
+    'Completed': 'पूर्ण',
+    'High': 'उच्च',
+    'Medium': 'मध्यम',
+    'Low': 'निम्न',
+    'Blocked': 'अवरुद्ध',
+    'Resolved': 'समाधान हुआ',
+    'Follow-up needed': 'अनुवर्ती कार्यवाही आवश्यक',
+    'Document/Data request': 'दस्तावेज़/आँकड़ों का अनुरोध',
+    'Quality issue': 'गुणवत्ता संबंधी समस्या',
+    'Blocker': 'अवरोध',
+    'Resource needed': 'संसाधन की आवश्यकता',
+    'Commitment': 'प्रतिबद्धता',
+    'Next': 'अगला कदम',
+
+    // Prep
+    'Meeting Prep': 'बैठक की तैयारी',
+    'Reading past meetings...': 'पिछली बैठकें पढ़ी जा रही हैं...',
+    'Could not load the prep brief.': 'तैयारी सारांश लोड नहीं हो सका।',
+    'This is the first meeting with this official in your district. No past records found.':
+      'आपके जनपद में इस अधिकारी के साथ यह पहली बैठक है। कोई पिछला अभिलेख नहीं मिला।',
+    'Already done': 'पूर्ण हो चुका',
+    'Still pending': 'अभी लंबित',
+    'Worth raising': 'उठाने योग्य बिंदु',
+    'No response from the server. Please try again.': 'सर्वर से कोई उत्तर नहीं मिला। कृपया पुनः प्रयास करें।',
+    'First meeting with this office': 'इस कार्यालय से पहली बैठक',
+
+    // Action: choose
+    'Meeting': 'बैठक',
+    'What was the outcome of this meeting?': 'इस बैठक का परिणाम क्या रहा?',
+    'Meeting Conducted': 'बैठक संपन्न हुई',
+    'Mark as Done': 'पूर्ण चिह्नित करें',
+    'Reschedule': 'नई तिथि तय करें',
+    'Not Conducted': 'संपन्न नहीं हुई',
+    'No Conduct': 'बैठक नहीं हुई',
+    'Delete Meeting': 'बैठक हटाएँ',
+    'Back': 'वापस',
+
+    // Action: conducted
+    'Conduct Details': 'बैठक का विवरण',
+    'Conduct Date': 'बैठक होने की तिथि',
+    'the day it actually happened': 'जिस दिन बैठक वास्तव में हुई',
+    'Conduct Time': 'बैठक होने का समय',
+    'Speak instead of typing': 'लिखने के बजाय बोलें',
+    'Up to 2 minutes. Say what was discussed, what the official said, and what happens next.':
+      'अधिकतम 2 मिनट। बताएँ कि क्या चर्चा हुई, अधिकारी ने क्या कहा, और आगे क्या होगा।',
+    "Or tap the 🎤 on your phone's keyboard inside any box, and it will type what you say, just as it does in WhatsApp.":
+      'या किसी भी बॉक्स में अपने फ़ोन के कीबोर्ड का 🎤 दबाएँ, आप जो बोलेंगे वह अपने आप लिख जाएगा, जैसे WhatsApp में होता है।',
+    'What the AI heard': 'AI ने क्या सुना',
+    'Finishing...': 'समाप्त हो रहा है...',
+    'Stop': 'रोकें',
+    'Working...': 'प्रक्रिया जारी है...',
+    'That was too short. Tap and speak again.': 'यह बहुत छोटा था। दबाकर फिर से बोलें।',
+    'Listening to it and writing it down. This can take up to a minute; you can add photos meanwhile.':
+      'रिकॉर्डिंग सुनकर लिखी जा रही है। इसमें एक मिनट तक लग सकता है; तब तक आप फ़ोटो जोड़ सकते हैं।',
+    'Done. You can record again to add more.': 'हो गया। और जोड़ने के लिए फिर से रिकॉर्ड कर सकते हैं।',
+    'This phone cannot record here. Please type it instead.': 'यह फ़ोन यहाँ रिकॉर्ड नहीं कर सकता। कृपया लिखकर भरें।',
+    'The microphone was not allowed. You can allow it in the browser settings, or just type it.':
+      'माइक्रोफ़ोन की अनुमति नहीं मिली। आप ब्राउज़र की सेटिंग में अनुमति दे सकते हैं, या लिखकर भर सकते हैं।',
+    'Could not start the microphone. Please type it instead.': 'माइक्रोफ़ोन शुरू नहीं हो सका। कृपया लिखकर भरें।',
+    'Could not turn that into text. Please type it instead.': 'इसे लिखित रूप में नहीं बदला जा सका। कृपया लिखकर भरें।',
+    'Nothing that fits the three questions was heard. Please type it, or try again.':
+      'तीनों प्रश्नों से संबंधित कुछ सुनाई नहीं दिया। कृपया लिखकर भरें, या फिर से प्रयास करें।',
+    '1. What was discussed?': '1. क्या चर्चा हुई?',
+    'Enrollment progress and KGBV attendance were reviewed': 'नामांकन की प्रगति और KGBV में उपस्थिति की समीक्षा की गई',
+    '2. What did the official say or agree to?': '2. अधिकारी ने क्या कहा या किस बात पर सहमति दी?',
+    'BSA agreed to share block-wise enrolment data by 15th': 'BSA ने 15 तारीख तक विकास खंड-वार नामांकन के आँकड़े साझा करने पर सहमति दी',
+    'This is the most useful line. It is what lets the system remind you of pending commitments later.':
+      'यह सबसे उपयोगी पंक्ति है। इसी के आधार पर प्रणाली आपको बाद में लंबित प्रतिबद्धताओं का स्मरण कराती है।',
+    '3. What needs to be done next?': '3. आगे क्या करना है?',
+    'Collect the data and share the summary with the district team': 'आँकड़े एकत्र कर सारांश जनपद की टीम के साथ साझा करना',
+    '4. What came out of this meeting?': '4. इस बैठक से क्या परिणाम निकला?',
+    'Select the outcome': 'परिणाम चुनें',
+    'Commitment obtained, the official agreed to do something': 'प्रतिबद्धता मिली, अधिकारी ने कुछ करने पर सहमति दी',
+    'Information or data received': 'सूचना या आँकड़े प्राप्त हुए',
+    'Permission or approval granted': 'अनुमति या स्वीकृति मिली',
+    'Introduction or courtesy visit': 'परिचय या शिष्टाचार भेंट',
+    'Issue raised, waiting for their response': 'मुद्दा उठाया गया, उत्तर की प्रतीक्षा है',
+    'Nothing concrete yet': 'अभी कोई ठोस परिणाम नहीं',
+    'Answer honestly. A courtesy visit is a normal and useful part of the work, and marking it as one is not a poor result.':
+      'सही उत्तर दें। शिष्टाचार भेंट कार्य का सामान्य और उपयोगी भाग है, और इसे चुनना कोई कमज़ोर परिणाम नहीं है।',
+    'Restored what you had typed earlier for this meeting. Photos need to be picked again.':
+      'इस बैठक के लिए पहले लिखा गया विवरण वापस भर दिया गया है। फ़ोटो फिर से चुनने होंगे।',
+    'Meeting Photos': 'बैठक के फ़ोटो',
+    'Up to 5. You can capture directly from your camera.': 'अधिकतम 5। आप सीधे कैमरे से भी फ़ोटो ले सकते हैं।',
+    'Schedule a Follow-up Meeting?': 'अनुवर्ती बैठक तय करें?',
+    'Follow-up Meeting Details': 'अनुवर्ती बैठक का विवरण',
+    'Follow-up Date': 'अनुवर्ती बैठक की तिथि',
+    'Follow-up Time': 'अनुवर्ती बैठक का समय',
+    'A new meeting will be created with the same stakeholder. It will receive a new Meeting ID linked to this one.':
+      'उसी अधिकारी के साथ एक नई बैठक बनेगी। उसे इस बैठक से जुड़ी एक नई बैठक आईडी मिलेगी।',
+    'Also create the MoM document': 'कार्यवृत्त दस्तावेज़ भी बनाएँ',
+    'Tick this for a meeting that needs a written record to share. It adds a few seconds to saving.':
+      'जिस बैठक का लिखित अभिलेख साझा करना हो, उसके लिए इसे चुनें। इससे सहेजने में कुछ सेकंड अधिक लगते हैं।',
+    'Cancel': 'रद्द करें',
+    'Save Meeting': 'बैठक सहेजें',
+    'Save & Generate MoM': 'सहेजें और कार्यवृत्त बनाएँ',
+    'Preparing photos...': 'फ़ोटो तैयार हो रहे हैं...',
+    'Generating MoM...': 'कार्यवृत्त बन रहा है...',
+    'Please select a conduct date.': 'कृपया बैठक होने की तिथि चुनें।',
+    'A meeting cannot be conducted on a future date. Please pick the day it actually happened.':
+      'भविष्य की तिथि पर बैठक संपन्न नहीं हो सकती। कृपया वह दिन चुनें जब बैठक वास्तव में हुई।',
+    'Please write a little more in question 1, at least a full sentence.': 'कृपया प्रश्न 1 में थोड़ा और लिखें, कम से कम एक पूरा वाक्य।',
+    'Please write a little more in question 2. What the official said is the part that matters most.':
+      'कृपया प्रश्न 2 में थोड़ा और लिखें। अधिकारी ने क्या कहा, यही सबसे महत्वपूर्ण भाग है।',
+    'Please choose what came out of this meeting.': 'कृपया चुनें कि इस बैठक से क्या परिणाम निकला।',
+    'Please select a follow-up date.': 'कृपया अनुवर्ती बैठक की तिथि चुनें।',
+    'The photos could not be read. Please pick them again.': 'फ़ोटो पढ़े नहीं जा सके। कृपया इन्हें फिर से चुनें।',
+    'This meeting was already recorded, so it was not saved a second time.': 'यह बैठक पहले ही दर्ज हो चुकी थी, इसलिए दोबारा नहीं सहेजी गई।',
+    'This note is word for word the same as one of your earlier meetings. Please write what actually happened in this one.':
+      'यह टिप्पणी आपकी किसी पिछली बैठक की टिप्पणी से अक्षरशः मिलती है। कृपया लिखें कि इस बैठक में वास्तव में क्या हुआ।',
+    'An error occurred.': 'एक त्रुटि हुई।',
+    'Could not save. What you typed is safe, so try again when you have signal. If you close the app it will still be here.':
+      'सहेजा नहीं जा सका। आपने जो लिखा है वह सुरक्षित है, नेटवर्क मिलने पर पुनः प्रयास करें। ऐप बंद करने पर भी यह यहीं रहेगा।',
+    'Meeting Conducted Successfully!': 'बैठक सफलतापूर्वक संपन्न दर्ज हुई!',
+    'MoM and photos are available in My Meetings.': 'कार्यवृत्त और फ़ोटो "मेरी बैठकें" में उपलब्ध हैं।',
+    'Follow-up Meeting Scheduled': 'अनुवर्ती बैठक तय हो गई',
+
+    // Action: postponed, not held, deleted
+    'Postpone Meeting': 'बैठक स्थगित करें',
+    'New Date': 'नई तिथि',
+    'Reason': 'कारण',
+    'Reason for postponement': 'स्थगन का कारण',
+    'Postpone': 'स्थगित करें',
+    'Please select a new date.': 'कृपया नई तिथि चुनें।',
+    'Why was this meeting not conducted?': 'यह बैठक क्यों नहीं हुई?',
+    'Mark as No Conduct': 'बैठक नहीं हुई, चिह्नित करें',
+    'Please enter a reason.': 'कृपया कारण लिखें।',
+    'Meeting marked as no-conduct.': 'बैठक "नहीं हुई" के रूप में चिह्नित की गई।',
+    'Meeting deleted successfully.': 'बैठक सफलतापूर्वक हटा दी गई।',
+
+    // Meeting lists
+    'Search stakeholder, purpose, meeting ID...': 'अधिकारी, उद्देश्य या बैठक आईडी से खोजें...',
+    'Search employee, stakeholder, purpose...': 'कर्मचारी, अधिकारी या उद्देश्य से खोजें...',
+    'Search district, employee, stakeholder...': 'जनपद, कर्मचारी या अधिकारी से खोजें...',
+    'Download CSV': 'CSV डाउनलोड करें',
+    'All Status': 'सभी स्थितियाँ',
+    'All Districts': 'सभी जनपद',
+    'Clear': 'सब हटाएँ',
+    'Select all': 'सभी चुनें',
+    'Details / Notes': 'विवरण / टिप्पणी',
+    'Details': 'विवरण',
+    'Meeting ID': 'बैठक आईडी',
+    'Employee': 'कर्मचारी',
+    'District': 'जनपद',
+    'MoM': 'कार्यवृत्त',
+    'Photos': 'फ़ोटो',
+    'Govt MoM': 'शासकीय कार्यवृत्त',
+    'Govt MoM pending': 'शासकीय कार्यवृत्त लंबित',
+    'Upload Govt MoM (PDF)': 'शासकीय कार्यवृत्त अपलोड करें (PDF)',
+    'Sirf PDF file allowed hai (Govt MoM).': 'केवल PDF फ़ाइल स्वीकार्य है (शासकीय कार्यवृत्त)।',
+    'Govt MoM upload ho raha hai…': 'शासकीय कार्यवृत्त अपलोड हो रहा है…',
+    'Upload failed': 'अपलोड विफल रहा',
+    'No meetings to download for this month.': 'इस माह डाउनलोड करने के लिए कोई बैठक नहीं है।',
+
+    // Send feedback
+    'Send feedback': 'प्रतिक्रिया भेजें',
+    'A question, something you need, a correction, or good work worth saying': 'कोई प्रश्न, कोई आवश्यकता, कोई सुधार, या सराहनीय कार्य',
+    'This goes to them by email, with you copied in. They reply to the email and it comes straight back to you. Nothing is stored in the portal.':
+      'यह उन्हें ईमेल से जाएगा, प्रतिलिपि आपको भी। वे ईमेल का उत्तर देंगे तो वह सीधे आपके पास आएगा। पोर्टल में कुछ भी संग्रहीत नहीं होता।',
+    'Send': 'भेजें',
+    'Please write your feedback first.': 'कृपया पहले अपनी प्रतिक्रिया लिखें।',
+    'Something went wrong, please close this and try again.': 'कुछ गड़बड़ हुई, कृपया इसे बंद करके पुनः प्रयास करें।',
+    'Sending your feedback...': 'आपकी प्रतिक्रिया भेजी जा रही है...',
+
+    // Connection trouble
+    'Server is busy. Please try again in a moment.': 'सर्वर व्यस्त है। कृपया कुछ क्षण बाद पुनः प्रयास करें।',
+    'Server was busy. Refresh the page to check whether it went through.': 'सर्वर व्यस्त था। पृष्ठ रीफ़्रेश करके देखें कि प्रविष्टि दर्ज हुई या नहीं।',
+    'The connection dropped the details on the way. Nothing was saved. Please press Save once more.':
+      'कनेक्शन में विवरण बीच में छूट गया। कुछ भी सहेजा नहीं गया। कृपया "सहेजें" एक बार और दबाएँ।',
+    'Failed to fetch': 'नेटवर्क से संपर्क नहीं हो सका',
+    'Load failed': 'नेटवर्क से संपर्क नहीं हो सका',
+    'network': 'नेटवर्क',
+    'unknown error': 'अज्ञात त्रुटि',
+    'the officer': 'कर्मचारी',
+    'this official': 'इस अधिकारी',
+
+    // Why a note was refused (the reason sits inside a longer sentence)
+    'it is only a few words': 'इसमें बहुत कम शब्द हैं',
+    'it is the same few words over and over': 'इसमें वही कुछ शब्द बार-बार हैं',
+    'one word is repeated over and over': 'इसमें एक ही शब्द बार-बार दोहराया गया है',
+    'it is filler words rather than what happened': 'इसमें बैठक का विवरण नहीं, केवल भराव के शब्द हैं',
+    'it says very little': 'इसमें बहुत कम जानकारी है'
+  };
+
+  var HI_MONTHS_EN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var HI_MONTHS    = ['जनवरी','फ़रवरी','मार्च','अप्रैल','मई','जून','जुलाई','अगस्त','सितंबर','अक्टूबर','नवंबर','दिसंबर'];
+  var HI_ROLES     = { State: 'राज्य', District: 'जनपद', Field: 'क्षेत्र', Zone: 'ज़ोन' };
+  function hiMonth(m, y) { var i = HI_MONTHS_EN.indexOf(m); return (i < 0 ? m : HI_MONTHS[i]) + ' ' + y; }
+  function hiSub(s) { return HI.hasOwnProperty(s) ? HI[s] : s; }   // a data tail: translated only if it is ours
+  var HI_MRE = '(January|February|March|April|May|June|July|August|September|October|November|December) (\\d{4})';
+
+  // Sentences with a number, a date or a name inside. Checked in order, after
+  // the exact list above has missed.
+  var HI_PATTERNS = [
+    [new RegExp('^' + HI_MRE + '$'), function(m){ return hiMonth(m[1], m[2]); }],
+    [new RegExp('^(\\d+) meetings? in ' + HI_MRE + '$'), function(m){
+      return hiMonth(m[2], m[3]) + ' में ' + m[1] + (m[1] === '1' ? ' बैठक' : ' बैठकें'); }],
+    [new RegExp('^No meetings in (.+) for ' + HI_MRE + '$'), function(m){
+      var w = m[1] === 'this zone' ? 'इस ज़ोन' : m[1].replace(/^(\d+) districts$/, 'इन $1 जनपदों');
+      return hiMonth(m[2], m[3]) + ' में ' + w + ' में कोई बैठक नहीं'; }],
+    [new RegExp('^No meetings in ' + HI_MRE + '$'), function(m){ return hiMonth(m[1], m[2]) + ' में कोई बैठक नहीं'; }],
+    [new RegExp('^No conducted meetings in ' + HI_MRE + '$'), function(m){ return hiMonth(m[1], m[2]) + ' में कोई संपन्न बैठक नहीं'; }],
+    [/^(\d+) districts$/, function(m){ return m[1] + ' जनपद'; }],
+    [/^(State|District|Field|Zone) Level$/, function(m){ return HI_ROLES[m[1]] + ' स्तर'; }],
+    [/^Action needed \((\d+)\)$/, function(m){ return 'कार्यवाही आवश्यक (' + m[1] + ')'; }],
+    [/^Upcoming \((\d+)\)$/, function(m){ return 'आगामी (' + m[1] + ')'; }],
+    [/^(\d+) days ahead$/, function(m){ return m[1] + ' दिन बाद'; }],
+    [/^(\d+) days ago$/, function(m){ return m[1] + ' दिन पहले'; }],
+    [/^Photo (\d+)$/, function(m){ return 'फ़ोटो ' + m[1]; }],
+    [/^Photo (\d+) is unusually large\. Please take it again at a normal setting\.$/, function(m){
+      return 'फ़ोटो ' + m[1] + ' असामान्य रूप से बड़ा है। कृपया सामान्य सेटिंग पर फिर से लें।'; }],
+    [/^At least (\d+) characters$/, function(m){ return 'कम से कम ' + m[1] + ' अक्षर'; }],
+    [/^(\d+) more characters? needed$/, function(m){ return m[1] + ' अक्षर और चाहिए'; }],
+    [/^(\d+) characters, that is enough$/, function(m){ return m[1] + ' अक्षर, पर्याप्त है'; }],
+    [/^Listening\.\.\. (\d+:\d\d) of 2:00$/, function(m){ return 'सुन रहे हैं... ' + m[1] + ' / 2:00'; }],
+    [/^(\d+) of (\d+) meetings you recorded an outcome for produced something concrete\. A courtesy visit is a normal part of the work\.$/, function(m){
+      return 'जिन ' + m[2] + ' बैठकों का परिणाम आपने दर्ज किया, उनमें से ' + m[1] + ' से ठोस परिणाम मिला। शिष्टाचार भेंट कार्य का सामान्य भाग है।'; }],
+    [/^(\d+) meetings are past their date below\. Marking what happened keeps your record straight\.$/, function(m){
+      return 'नीचे ' + m[1] + ' बैठकों की तिथि बीत चुकी है। जो हुआ उसे दर्ज करने से आपका अभिलेख सही रहता है।'; }],
+    [/^Past meetings: (\d+) with this person, (\d+) with this post$/, function(m){
+      return 'पिछली बैठकें: इस व्यक्ति के साथ ' + m[1] + ', इस पद के साथ ' + m[2]; }],
+    [/^Date: (.+)$/, function(m){ return 'तिथि: ' + m[1]; }],
+    [/^Meeting ID: (.+)$/, function(m){ return 'बैठक आईडी: ' + m[1]; }],
+    [/^Sathi: (.+)$/, function(m){ return 'साथी: ' + m[1]; }],
+    [/^With: (.+)$/, function(m){ return 'साथ में: ' + m[1]; }],
+    [/^Reason: (.+)$/, function(m){ return 'कारण: ' + m[1]; }],
+    [/^Escalated(?:: (.+))?$/, function(m){ return 'उच्च स्तर पर प्रेषित' + (m[1] ? ': ' + hiSub(m[1]) : ''); }],
+    [/^Govt MoM (\d+)$/, function(m){ return 'शासकीय कार्यवृत्त ' + m[1]; }],
+    [/^Govt MoM upload ho gaya \((\d+) file\)$/, function(m){ return 'शासकीय कार्यवृत्त अपलोड हो गया (' + m[1] + ' फ़ाइल)'; }],
+    [/^District Meetings - (.+)$/, function(m){ return 'जनपद की बैठकें - ' + m[1]; }],
+    [/^Now showing: (.+) district$/, function(m){ return 'अब प्रदर्शित: जनपद ' + m[1]; }],
+    [/^Meeting postponed\. New date: (.+)$/, function(m){ return 'बैठक स्थगित हुई। नई तिथि: ' + m[1]; }],
+    [/^New date must be after the original meeting date \((.+)\)\.$/, function(m){
+      return 'नई तिथि मूल बैठक की तिथि (' + m[1] + ') के बाद की होनी चाहिए।'; }],
+    [/^Downloaded (\d+) meetings as (.+)$/, function(m){ return m[1] + ' बैठकें ' + m[2] + ' के रूप में डाउनलोड हुईं'; }],
+    [/^Photo upload failed: (.+)$/, function(m){ return 'फ़ोटो अपलोड विफल: ' + hiSub(m[1]); }],
+    [/^Still needed: (.+)$/, function(m){
+      // The labels are fixed, and one of them has a comma inside it, so each
+      // is swapped where it stands rather than splitting on commas.
+      var s = m[1];
+      ['Meeting Time (choose hour, minute and AM/PM)', 'Meeting Date', 'Stakeholder Post', 'Stakeholder Name',
+       'Meeting Purpose', 'Meeting Agenda'].forEach(function(k){ s = s.split(k).join(HI[k]); });
+      return 'अभी भरना शेष है: ' + s; }],
+    [/^Only PDF \/ Word \/ Excel \/ PPT allowed in Documents\. Photos go in the Conduct step - "(.+)" is not a document\.$/, function(m){
+      return 'दस्तावेज़ में केवल PDF / Word / Excel / PPT स्वीकार्य हैं। फ़ोटो बैठक संपन्न करते समय जोड़ें - "' + m[1] + '" दस्तावेज़ नहीं है।'; }],
+    [/^"(.+)" exceeds the 5MB limit\.$/, function(m){ return '"' + m[1] + '" 5MB की सीमा से बड़ी है।'; }],
+    [/^Failed to read "(.+)"\.$/, function(m){ return '"' + m[1] + '" पढ़ी नहीं जा सकी।'; }],
+    [/^This does not read like a record of a real meeting, (.+)\. Nothing has been saved, so please write what actually happened and save again\.$/, function(m){
+      return 'यह किसी वास्तविक बैठक का अभिलेख नहीं लगता, ' + hiSub(m[1]) + '। कुछ भी सहेजा नहीं गया है, कृपया लिखें कि वास्तव में क्या हुआ और फिर से सहेजें।'; }],
+    [/^The recording could not be sent \((.+)\)\. Please type it instead\.$/, function(m){
+      return 'रिकॉर्डिंग भेजी नहीं जा सकी (' + hiSub(m[1]) + ')। कृपया लिखकर भरें।'; }],
+    [/^Feedback for (.+)$/, function(m){ return hiSub(m[1]) + ' के लिए प्रतिक्रिया'; }],
+    [/^About the meeting with (.+)$/, function(m){ return hiSub(m[1]) + ' के साथ हुई बैठक के संबंध में'; }],
+    [/^Sent to (.+)\. Their reply will come to your inbox\.$/, function(m){
+      return hiSub(m[1]) + ' को भेज दिया गया। उनका उत्तर आपके इनबॉक्स में आएगा।'; }],
+    [/^Not sent: (.+)$/, function(m){ return 'नहीं भेजा गया: ' + hiSub(m[1]); }],
+    [/^Error: (.+)$/, function(m){ return 'त्रुटि: ' + hiSub(m[1]); }],
+    [/^Server error: (.+)$/, function(m){ return 'सर्वर त्रुटि: ' + hiSub(m[1]); }],
+    [/^Delete failed: (.+)$/, function(m){ return 'हटाया नहीं जा सका: ' + hiSub(m[1]); }],
+    [/^Permanently delete meeting "(.+)"\?$/, function(m){ return 'बैठक "' + m[1] + '" को स्थायी रूप से हटाएँ?'; }],
+    [/^Office last met ([^,]+), with (.+)$/, function(m){ return 'कार्यालय से अंतिम भेंट ' + m[1] + ', ' + m[2] + ' के साथ'; }],
+    [/^Office last met (.+)$/, function(m){ return 'कार्यालय से अंतिम भेंट ' + m[1]; }],
+    [/^Last met (.+)$/, function(m){ return 'अंतिम भेंट ' + m[1]; }],
+    [/^Version ([\d.]+) · (.+)$/, function(m){ return 'संस्करण ' + m[1] + ' · ' + m[2]; }]
+  ];
+
+  var _hiCache = {}, _hiCacheN = 0;
+  function hiLookup(s) {
+    if (HI.hasOwnProperty(s)) return HI[s];
+    var c = /^(.+?)\s*:$/.exec(s);                       // "Reason:" as a label
+    if (c && HI.hasOwnProperty(c[1])) return HI[c[1]] + ':';
+    for (var i = 0; i < HI_PATTERNS.length; i++) {
+      var m = HI_PATTERNS[i][0].exec(s);
+      if (m) return HI_PATTERNS[i][1](m);
+    }
+    return null;
+  }
+  // One piece of text in, its Hindi out, or null when it is not ours. Spaces
+  // around it are kept, so nothing shifts on screen. An icon or arrow in front
+  // ("📋 My Meetings", "← Back", "+ New Meeting") is kept and the rest looked up.
+  function hiText(s) {
+    if (s == null) return null;
+    var w = /^(\s*)([\s\S]*?)(\s*)$/.exec(s);
+    if (!w[2] || !/[A-Za-z]/.test(w[2])) return null;
+    var core = w[2].replace(/\s+/g, ' ');
+    var out;
+    if (_hiCache.hasOwnProperty(core)) out = _hiCache[core];
+    else {
+      out = hiLookup(core);
+      if (out == null) {
+        var p = /^([^A-Za-z0-9"'(\-]+?) ?([A-Za-z0-9"'(][\s\S]*)$/.exec(core);
+        if (p) { var inner = hiLookup(p[2]); if (inner != null) out = p[1] + (/\s$/.test(p[1]) ? '' : ' ') + inner; }
+      }
+      if (_hiCacheN > 5000) { _hiCache = {}; _hiCacheN = 0; }
+      _hiCache[core] = out; _hiCacheN++;
+    }
+    return out == null ? null : w[1] + out + w[3];
+  }
+
+  var LANG_KEY = 'eg_lang';
+  var _lang = 'en';
+  try { if (localStorage.getItem(LANG_KEY) === 'hi') _lang = 'hi'; } catch (e) {}
+  function hiOn() { return _lang === 'hi'; }
+  // For the browser's own alert and confirm boxes, which are not part of the page.
+  function hiT(s) { return hiOn() ? (hiText(s) || s) : s; }
+
+  // Never touched: what people typed, the type-ahead's suggestion, the words
+  // the AI heard, and anything marked data-notr (the language switch itself).
+  var HI_SKIP = 'script,style,textarea,.ta-ghost,.ta-take,#vn-heard-text,[data-notr]';
+  var HI_ATTRS = ['placeholder', 'title', 'aria-label'];
+  var _hiOrig = new WeakMap();   // text node -> { en, hi }
+
+  function hiNode(n) {
+    var cur = n.nodeValue, rec = _hiOrig.get(n);
+    if (rec && cur === rec.hi) return;                  // already ours
+    var p = n.parentElement;
+    if (!p || p.closest(HI_SKIP)) return;
+    var hi = hiText(cur);
+    if (hi == null || hi === cur) { if (rec) _hiOrig.delete(n); return; }
+    _hiOrig.set(n, { en: cur, hi: hi });
+    n.nodeValue = hi;
+  }
+  function hiAttrs(el) {
+    if (el.closest('[data-notr]')) return;
+    for (var i = 0; i < HI_ATTRS.length; i++) {
+      var a = HI_ATTRS[i];
+      if (!el.hasAttribute(a)) continue;
+      var cur = el.getAttribute(a);
+      if (el.getAttribute('data-hi-' + a) === cur) continue;   // already ours
+      var hi = hiText(cur);
+      if (hi == null) continue;
+      el.setAttribute('data-en-' + a, cur);
+      el.setAttribute('data-hi-' + a, hi);
+      el.setAttribute(a, hi);
+    }
+  }
+  function hiWalk(root) {
+    if (!root) return;
+    if (root.nodeType === 3) { hiNode(root); return; }
+    if (root.nodeType !== 1) return;
+    if (root.matches('[placeholder],[title],[aria-label]')) hiAttrs(root);
+    Array.prototype.forEach.call(root.querySelectorAll('[placeholder],[title],[aria-label]'), hiAttrs);
+    var tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null), n, list = [];
+    while ((n = tw.nextNode())) list.push(n);
+    list.forEach(hiNode);
+  }
+  function hiRestore() {
+    var tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null), n;
+    while ((n = tw.nextNode())) {
+      var rec = _hiOrig.get(n);
+      if (rec) { if (n.nodeValue === rec.hi) n.nodeValue = rec.en; _hiOrig.delete(n); }
+    }
+    HI_ATTRS.forEach(function(a) {
+      Array.prototype.forEach.call(document.querySelectorAll('[data-en-' + a + ']'), function(el) {
+        if (el.getAttribute(a) === el.getAttribute('data-hi-' + a)) el.setAttribute(a, el.getAttribute('data-en-' + a));
+        el.removeAttribute('data-en-' + a); el.removeAttribute('data-hi-' + a);
+      });
+    });
+  }
+
+  var _hiObs = new MutationObserver(function(recs) {
+    for (var i = 0; i < recs.length; i++) {
+      var r = recs[i];
+      if (r.type === 'characterData') hiNode(r.target);
+      else for (var j = 0; j < r.addedNodes.length; j++) hiWalk(r.addedNodes[j]);
+    }
+  });
+
+  function paintLangSwitch() {
+    var box = document.getElementById('lang-switch');
+    if (!box) return;
+    box.classList.toggle('hi', _lang === 'hi');
+    Array.prototype.forEach.call(box.querySelectorAll('.ls-opt'), function(b) {
+      var on = b.getAttribute('data-lang') === _lang;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+  }
+  function applyLang() {
+    document.documentElement.lang = _lang;
+    paintLangSwitch();
+    if (_lang === 'hi') {
+      hiWalk(document.body);
+      _hiObs.observe(document.body, { childList: true, subtree: true, characterData: true });
+    } else {
+      _hiObs.disconnect();
+      hiRestore();
+    }
+    // Written whole in each language where it is built, so it is drawn again.
+    if (typeof paintMetLine === 'function') paintMetLine();
+  }
+  function setLang(l) {
+    l = l === 'hi' ? 'hi' : 'en';
+    if (l === _lang) return;
+    _lang = l;
+    try { localStorage.setItem(LANG_KEY, l); } catch (e) {}
+    applyLang();
+  }
+  if (_lang === 'hi') applyLang(); else paintLangSwitch();
 </script>
 </body>
 </html>
