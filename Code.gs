@@ -655,6 +655,7 @@ function apiResponse(e, method) {
                      ? getZoneAllMeetings(zn)
                      : { success: false, message: 'FORBIDDEN' };
         }
+        else if (action === 'transcribeVoice')             result = transcribeVoice(session, body.audio || '', body.mime || '');
         else if (action === 'sendMeetingFeedback')         result = sendMeetingFeedback(session, body.meetingId || '', body.text || '');
         else if (action === 'getDashboardStats')    result = getDashboardStats(session.email, e.parameter.all === '1', resolveActiveDistrict_(session, e.parameter.district));
         else if (action === 'getDistrictReport') {
@@ -3978,6 +3979,7 @@ var VOICE_PROMPT = [
   'unclear: any words you could not make out, or an empty string.',
   'Rules: use only what was actually said. If something was not mentioned, leave that field as an empty string.',
   'Never add a detail, date, number or name that was not spoken. Write what, said and next in the language the officer used.',
+  'For what, said and next, keep to the officer\'s own words as far as possible rather than rephrasing them.',
   'Do not use em dashes.'
 ].join(String.fromCharCode(10));
 
@@ -3985,14 +3987,18 @@ function voiceWords_(s) {
   return (s || '').toString().toLowerCase()
     .split(/[^a-z0-9ऀ-ॿ]+/).filter(function(w){ return w.length >= 3; });
 }
-// Share of an answer's words that also occur in the transcript.
-function voiceFound_(part, transcript) {
+// Share of an answer's words that also occur in the transcript, 0 to 100,
+// or -1 when the answer is empty.
+function voicePct_(part, transcript) {
   var w = voiceWords_(part);
-  if (!w.length) return '-';
+  if (!w.length) return -1;
   var have = {};
   voiceWords_(transcript).forEach(function(x){ have[x] = 1; });
-  var n = w.filter(function(x){ return have[x]; }).length;
-  return Math.round(100 * n / w.length) + '%';
+  return Math.round(100 * w.filter(function(x){ return have[x]; }).length / w.length);
+}
+function voiceFound_(part, transcript) {
+  var p = voicePct_(part, transcript);
+  return p < 0 ? '-' : p + '%';
 }
 
 // Same shape as callLLM's Gemini call after the September fix: thinking off,
@@ -4068,6 +4074,53 @@ function VOICE_test(folder) {
     ].join(NL));
   }
   if (!done) Logger.log('No audio files found in that folder.');
+}
+
+// ------------------------------------------------------------
+//  VOICE NOTE - speak the three answers instead of typing them
+// ------------------------------------------------------------
+// The officer records on the conduct form. The page turns the recording into
+// 16 kHz mono WAV first, because WAV is a format Gemini documents and WebM,
+// which Android Chrome records in, is not; that removes the guess. This hands
+// it to Gemini with the same instruction VOICE_test uses and returns the three
+// answers, the word-for-word transcript, and how much of each answer can be
+// found in that transcript, so the page can warn when something was written
+// that was never said.
+//
+// NOTHING IS KEPT. The audio is not put in Drive or anywhere else, and nothing
+// is written to the sheet. The answers only land in the boxes; the officer
+// still reads them and presses Save. The outcome question is deliberately not
+// answered here: the officer was in the room, and they are the one asked.
+var VOICE_MAX_B64 = 8 * 1024 * 1024;   // a little over two minutes of 16 kHz WAV
+
+function transcribeVoice(session, audio, mime) {
+  audio = (audio || '').toString();
+  mime  = (mime || 'audio/wav').toString();
+  if (!audio) return { success:false, message:'No recording arrived. Please try again, or type it.' };
+  if (audio.length > VOICE_MAX_B64) return { success:false, message:'That recording is too long. Please keep it under two minutes.' };
+  if (!/^audio\/[a-z0-9.+-]+$/i.test(mime)) mime = 'audio/wav';
+
+  var gk = PropertiesService.getScriptProperties().getProperty('GEMINI_KEY');
+  if (!gk) return { success:false, message:'Voice is not set up yet. Please type it for now.' };
+
+  var r;
+  try { r = voiceAsk_(gk, audio, mime); }
+  catch (e) { return { success:false, message:'Could not reach the voice service. Please type it for now.' }; }
+  if (!r.ok) return { success:false, message:'The voice service did not answer. Please try again in a minute, or type it.' };
+
+  var o = null;
+  try { o = JSON.parse((r.text || '').replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch (pe) {}
+  if (!o || !(o.transcript || '').toString().trim()) {
+    return { success:false, message:'Could not make out the recording. Try again somewhere quieter, or type it.' };
+  }
+
+  var EM = new RegExp(String.fromCharCode(8212), 'g');   // house style: no em dashes
+  function clean(x) { return (x || '').toString().replace(EM, ',').trim(); }
+  var t = clean(o.transcript);
+  var out = { success:true, transcript:t, what:clean(o.what), said:clean(o.said),
+              next:clean(o.next), unclear:clean(o.unclear) };
+  out.found = { what:voicePct_(out.what, t), said:voicePct_(out.said, t), next:voicePct_(out.next, t) };
+  return out;
 }
 
 function tagOneMeeting_(d) {

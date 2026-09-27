@@ -135,6 +135,26 @@
     /* The length rule, said out loud under the box instead of only on Submit */
     .char-note { font-size: 11px; margin-top: 4px; color: #9CA3AF; }
 
+    /* Voice note on the conduct form */
+    .vn-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 2px 0 8px; }
+    .vn-btn {
+      border: 1.5px solid #7B1010; background: #fff; color: #7B1010; border-radius: 20px;
+      padding: 8px 15px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
+    }
+    .vn-btn.rec { background: #7B1010; color: #fff; }
+    .vn-btn:disabled { opacity: .6; cursor: default; }
+    .vn-dot { width: 9px; height: 9px; border-radius: 50%; background: #fff; display: inline-block;
+              margin-right: 7px; vertical-align: 1px; animation: vnPulse 1s infinite; }
+    @keyframes vnPulse { 50% { opacity: .25; } }
+    .vn-status { font-size: 12px; color: #6B7280; line-height: 1.45; flex: 1 1 200px; }
+    .vn-note { font-size: 12px; line-height: 1.5; border-radius: 7px; padding: 8px 11px; margin: 0 0 10px; }
+    .vn-note.ok   { background: #EFF6FF; border: 1px solid #BFDBFE; color: #1E40AF; }
+    .vn-note.warn { background: #FFFBEB; border: 1px solid #FDE68A; color: #78350F; }
+    .vn-note.err  { background: #FEF2F2; border: 1px solid #FECACA; color: #991B1B; }
+    .vn-heard { font-size: 12px; color: #374151; margin: -2px 0 10px; }
+    .vn-heard summary { cursor: pointer; color: #6B7280; }
+    .vn-heard div { white-space: pre-wrap; background: #F9FAFB; border-radius: 6px; padding: 8px 10px; margin-top: 6px; }
+
     .btn-feedback {
       border: 1px solid #7B1010; background: #fff; color: #7B1010;
       border-radius: 6px; padding: 3px 9px; font-size: 11px; font-weight: 600;
@@ -501,7 +521,7 @@
   </div>
   <div class="sidebar-bottom">
     <button class="btn-logout" onclick="logout()">🚪 Logout</button>
-    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.32 &middot; 19 Sep 2026</div>
+    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.33 &middot; 27 Sep 2026</div>
   </div>
 </div>
 
@@ -754,6 +774,19 @@
                 <select id="ct-m" style="width:62px;"><option value="">MM</option></select>
                 <select id="ct-ap" style="width:68px;"><option value="">--</option><option value="AM">AM</option><option value="PM">PM</option></select>
               </div>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="field full">
+              <div class="vn-bar" id="vn-bar" style="display:none;">
+                <button type="button" class="vn-btn" id="vn-btn" onclick="vnToggle()">🎤 Speak instead of typing</button>
+                <span class="vn-status" id="vn-status"></span>
+              </div>
+              <div class="vn-note" id="vn-note" style="display:none;"></div>
+              <details class="vn-heard" id="vn-heard" style="display:none;">
+                <summary>What the AI heard</summary>
+                <div id="vn-heard-text"></div>
+              </details>
             </div>
           </div>
           <div class="form-row">
@@ -1651,6 +1684,7 @@
     if (_kph) { _kph.style.display = 'none'; _kph.dataset.warned = ''; }
     restoreConductDraft(m.meetingId);
     onMomToggle();
+    vnReset();
     paintAllCharNotes();
     initPhotoBoxes();
     document.getElementById('c-fu-toggle').checked        = false;
@@ -1672,6 +1706,7 @@
     document.getElementById('action-modal').style.display   = '';
   }
   function closeActionModal() {
+    if (typeof vnReset === 'function') vnReset();   // let go of the microphone
     document.getElementById('action-overlay').style.display = 'none';
     document.getElementById('action-modal').style.display   = 'none';
     MODAL_IDX = -1;
@@ -3380,6 +3415,221 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindCharNotes);
   else bindCharNotes();
 
+  // ── Voice note ─────────────────────────────────────────────────
+  // Speak the three answers instead of typing them. Recorded on the phone,
+  // turned here into 16 kHz mono WAV (a format Gemini documents, so there is
+  // no gamble on whatever the phone records in), sent once, and the answers
+  // put into the boxes. The officer still reads them and presses Save: this
+  // saves nothing, the recording is not kept anywhere, and the outcome
+  // question is left alone because the officer was in the room and is asked.
+  // Typing always works. If any step fails, the boxes stay as they were.
+  var VN_MAX_SECS = 120, VN_RATE = 16000;
+  var VN_IDLE = '🎤 Speak instead of typing';
+  var VN_HINT = 'Up to 2 minutes. Say what was discussed, what the official said, and what happens next.';
+  var _vn = { rec:null, stream:null, chunks:[], timer:null, t0:0, busy:false, cancelled:false, stopping:false, mid:'' };
+  // Measured on a 10 second recording: the WAV came out about 0.4 s short, all
+  // of it at the end. People tap Stop as the last word leaves their mouth, so
+  // the recorder keeps listening this long after Stop before it really stops.
+  var VN_TAIL_MS = 700;
+
+  function vnSupported() {
+    return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder &&
+              (window.AudioContext || window.webkitAudioContext) && window.OfflineAudioContext &&
+              window.Blob && Blob.prototype.arrayBuffer);
+  }
+  function vnEl(id) { return document.getElementById(id); }
+  function vnNote(kind, html) {
+    var n = vnEl('vn-note'); if (!n) return;
+    n.className = 'vn-note' + (kind ? ' ' + kind : '');
+    n.innerHTML = html || '';
+    n.style.display = html ? 'block' : 'none';
+  }
+  function vnStatus(t) { var e = vnEl('vn-status'); if (e) e.textContent = t; }
+  function vnButton(html, recording, disabled) {
+    var b = vnEl('vn-btn'); if (!b) return;
+    b.innerHTML = html; b.classList.toggle('rec', !!recording); b.disabled = !!disabled;
+  }
+  function vnMeetingId() { return ((_manageMeetings || [])[MODAL_IDX] || {}).meetingId || ''; }
+  function vnStopTracks() {
+    if (_vn.stream) { _vn.stream.getTracks().forEach(function(t){ try { t.stop(); } catch (e) {} }); _vn.stream = null; }
+  }
+
+  // Back to the starting state. Stops a recording in progress without sending
+  // it, which is what closing the form or opening another meeting should do.
+  function vnReset() {
+    if (_vn.rec && _vn.rec.state === 'recording') { _vn.cancelled = true; try { _vn.rec.stop(); } catch (e) {} }
+    vnStopTracks();
+    if (_vn.timer) { clearInterval(_vn.timer); _vn.timer = null; }
+    _vn.rec = null; _vn.chunks = []; _vn.busy = false; _vn.stopping = false;
+    var bar = vnEl('vn-bar');
+    if (bar) bar.style.display = vnSupported() ? 'flex' : 'none';
+    vnButton(VN_IDLE, false, false);
+    vnStatus(VN_HINT);
+    vnNote('', '');
+    var h = vnEl('vn-heard'); if (h) { h.style.display = 'none'; h.open = false; }
+  }
+
+  function vnToggle() {
+    if (_vn.busy || _vn.stopping) return;
+    if (_vn.rec && _vn.rec.state === 'recording') { vnFinish(); return; }
+    vnStart();
+  }
+  function vnFinish() {
+    if (_vn.stopping) return;
+    _vn.stopping = true;
+    vnButton('Finishing...', false, true);
+    setTimeout(function(){
+      _vn.stopping = false;
+      if (_vn.rec && _vn.rec.state === 'recording') _vn.rec.stop();
+    }, VN_TAIL_MS);
+  }
+
+  // streamForTest lets a test feed in a synthetic stream instead of the mic.
+  function vnStart(streamForTest) {
+    vnNote('', '');
+    _vn.cancelled = false;
+    var get = streamForTest ? Promise.resolve(streamForTest)
+      : navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } });
+    get.then(function(stream) {
+      _vn.stream = stream; _vn.chunks = [];
+      var rec;
+      try { rec = new MediaRecorder(stream); }
+      catch (e) { vnStopTracks(); vnNote('err', 'This phone cannot record here. Please type it instead.'); return; }
+      _vn.rec = rec;
+      _vn.mid = vnMeetingId();
+      rec.ondataavailable = function(ev){ if (ev.data && ev.data.size) _vn.chunks.push(ev.data); };
+      rec.onstop = vnStopped;
+      rec.start(1000);
+      _vn.t0 = Date.now();
+      vnButton('<span class="vn-dot"></span>Stop', true, false);
+      vnStatus('Listening... 0:00 of 2:00');
+      _vn.timer = setInterval(function(){
+        var secs = Math.floor((Date.now() - _vn.t0) / 1000);
+        vnStatus('Listening... ' + Math.floor(secs / 60) + ':' + ('0' + (secs % 60)).slice(-2) + ' of 2:00');
+        if (secs >= VN_MAX_SECS && _vn.rec && _vn.rec.state === 'recording') vnFinish();
+      }, 500);
+    }).catch(function(e){
+      var denied = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
+      vnNote('err', denied
+        ? 'The microphone was not allowed. You can allow it in the browser settings, or just type it.'
+        : 'Could not start the microphone. Please type it instead.');
+    });
+  }
+
+  function vnStopped() {
+    if (_vn.timer) { clearInterval(_vn.timer); _vn.timer = null; }
+    var secs = (Date.now() - _vn.t0) / 1000;
+    var type = (_vn.rec && _vn.rec.mimeType) || 'audio/webm';
+    var blob = new Blob(_vn.chunks, { type: type });
+    vnStopTracks();
+    _vn.rec = null; _vn.chunks = [];
+    if (_vn.cancelled) { _vn.cancelled = false; return; }
+    if (secs < 2 || !blob.size) { vnButton(VN_IDLE, false, false); vnStatus('That was too short. Tap and speak again.'); return; }
+
+    _vn.busy = true;
+    vnButton('Working...', false, true);
+    vnStatus('Listening to it and writing it down. This can take up to a minute; you can add photos meanwhile.');
+    vnToWav(blob).then(function(wavB64){
+      return new Promise(function(resolve, reject){
+        gasPost('transcribeVoice', { audio: wavB64, mime: 'audio/wav' }, resolve, reject);
+      });
+    }).then(function(res){
+      _vn.busy = false;
+      vnButton(VN_IDLE, false, false);
+      // The form may have been closed, or another meeting opened, while this ran.
+      var open = document.getElementById('action-modal');
+      if (!open || open.style.display === 'none' || vnMeetingId() !== _vn.mid) return;
+      if (!res || !res.success) {
+        vnStatus(VN_HINT);
+        vnNote('err', esc((res && res.message) || 'Could not turn that into text. Please type it instead.'));
+        return;
+      }
+      vnApply(res);
+      vnStatus('Done. You can record again to add more.');
+    }).catch(function(e){
+      _vn.busy = false;
+      vnButton(VN_IDLE, false, false);
+      vnStatus(VN_HINT);
+      vnNote('err', 'The recording could not be sent (' + esc((typeof gasErrText === 'function' ? gasErrText(e) : (e && e.message)) || 'network') + '). Please type it instead.');
+    });
+  }
+
+  // Decode whatever the phone recorded, mix it to one channel, resample it to
+  // 16 kHz, and write a plain PCM WAV. Gemini documents WAV. It does not
+  // document WebM, which is what Android Chrome records in.
+  function vnToWav(blob) {
+    var AC = window.AudioContext || window.webkitAudioContext;
+    return blob.arrayBuffer().then(function(buf){
+      var ctx = new AC();
+      return new Promise(function(resolve, reject){
+        ctx.decodeAudioData(buf, resolve, reject);   // callback form: older Safari has no promise version
+      }).then(function(decoded){
+        try { ctx.close(); } catch (e) {}
+        var len = Math.max(1, Math.ceil(decoded.duration * VN_RATE));
+        var off = new OfflineAudioContext(1, len, VN_RATE);
+        var src = off.createBufferSource();
+        src.buffer = decoded;
+        src.connect(off.destination);
+        src.start(0);
+        return off.startRendering();
+      });
+    }).then(function(rendered){
+      return vnB64(vnWav(rendered.getChannelData(0), VN_RATE));
+    });
+  }
+  function vnWav(samples, rate) {
+    var n = samples.length, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+    function tag(o, t){ for (var i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); }
+    tag(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); tag(8, 'WAVE');
+    tag(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    tag(36, 'data'); v.setUint32(40, n * 2, true);
+    for (var i = 0, o = 44; i < n; i++, o += 2) {
+      var x = Math.max(-1, Math.min(1, samples[i]));
+      v.setInt16(o, x < 0 ? x * 0x8000 : x * 0x7FFF, true);
+    }
+    return new Uint8Array(buf);
+  }
+  function vnB64(bytes) {
+    var out = '', step = 0x8000;
+    for (var i = 0; i < bytes.length; i += step) out += String.fromCharCode.apply(null, bytes.subarray(i, i + step));
+    return btoa(out);
+  }
+
+  // Empty boxes are filled. A box that already has writing gets the new text
+  // on a line underneath, so nothing typed is ever thrown away. Each box then
+  // hears an input event, so the character counts, the draft and the
+  // type-ahead all treat it as ordinary typing.
+  function vnApply(res) {
+    var map = { 'c-kp-what': res.what, 'c-kp-said': res.said, 'c-kp-next': res.next }, filled = 0, added = 0;
+    Object.keys(map).forEach(function(id){
+      var val = (map[id] || '').toString().trim(), ta = vnEl(id);
+      if (!val || !ta) return;
+      var cur = ta.value.trim();
+      ta.value = cur ? cur + '\n' + val : val;
+      if (cur) added++; else filled++;
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    var found = res.found || {};
+    var doubtful = ['what', 'said', 'next'].filter(function(k){
+      return typeof found[k] === 'number' && found[k] >= 0 && found[k] < 50;
+    });
+    var h = vnEl('vn-heard'), ht = vnEl('vn-heard-text');
+    if (h && ht) { ht.textContent = res.transcript || ''; h.style.display = res.transcript ? 'block' : 'none'; h.open = !!doubtful.length; }
+
+    if (!filled && !added) { vnNote('warn', 'Nothing that fits the three questions was heard. Please type it, or try again.'); return; }
+    var msg = 'Filled from what you said. <b>Read it and correct anything before saving.</b>' +
+              (added ? ' Where you had already written something, this was added underneath.' : '') +
+              ' Question 4, what came out of the meeting, is still yours to choose.';
+    if (doubtful.length) {
+      var names = { what: 'what was discussed', said: 'what the official said', next: 'what happens next' };
+      vnNote('warn', msg + '<br>Check <b>' + doubtful.map(function(k){ return names[k]; }).join(', ') +
+             '</b> closely: some of it does not match the words that were heard. Compare it with "What the AI heard" below.');
+    } else {
+      vnNote('ok', msg);
+    }
+  }
   // ── Send feedback ───────────────────────────────────────
   // A State or Zone lead reading a conducted meeting can send the officer who
   // filed it whatever they have to say about it: a question, a correction, a
