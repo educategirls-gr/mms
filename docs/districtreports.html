@@ -290,6 +290,62 @@
       select#rp-month-sel { min-width: 100%; }
       .district-select-wrap { flex-direction: column; align-items: stretch; }
     }
+
+    /* Ask the meetings: the chat window */
+    .cb-fab {
+      position: fixed; right: 22px; bottom: 22px; z-index: 950;
+      width: 58px; height: 58px; border-radius: 50%; border: none; cursor: pointer;
+      background: #7B1010; color: #fff; font-size: 26px; line-height: 58px; text-align: center;
+      box-shadow: 0 8px 22px rgba(0,0,0,.28);
+    }
+    .cb-fab:hover { background: #8f1515; }
+    .cb-panel {
+      position: fixed; right: 22px; bottom: 22px; z-index: 960;
+      width: 400px; height: 620px; max-height: calc(100vh - 44px);
+      background: #fff; border-radius: 16px; overflow: hidden;
+      box-shadow: 0 18px 50px rgba(0,0,0,.30);
+      display: none; flex-direction: column;
+    }
+    .cb-panel.open { display: flex; }
+    .cb-head { background: #7B1010; color: #fff; padding: 12px 12px 12px 16px; display: flex; align-items: center; gap: 8px; }
+    .cb-title { font-weight: 700; font-size: 15px; }
+    .cb-sub { font-size: 11px; opacity: .8; margin-top: 1px; }
+    .cb-hbtn { background: rgba(255,255,255,.14); border: none; color: #fff; border-radius: 8px;
+               padding: 5px 9px; font-size: 12px; cursor: pointer; font-family: inherit; }
+    .cb-x { margin-left: 4px; background: none; border: none; color: #fff; font-size: 22px; cursor: pointer; line-height: 1; padding: 2px 6px; }
+    .cb-body { flex: 1; overflow-y: auto; padding: 14px; background: #F6F6F8; }
+    .cb-msg { max-width: 90%; margin: 0 0 10px; padding: 9px 12px; border-radius: 12px;
+              font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+    .cb-msg.me  { margin-left: auto; background: #7B1010; color: #fff; border-bottom-right-radius: 4px; white-space: pre-wrap; }
+    .cb-msg.bot { background: #fff; border: 1px solid #E5E7EB; color: #111827; border-bottom-left-radius: 4px; }
+    .cb-msg.err { background: #FEF2F2; border: 1px solid #FECACA; color: #991B1B; }
+    .cb-msg ul { margin: 4px 0 4px 18px; padding: 0; }
+    .cb-msg li { margin: 2px 0; }
+    .cb-id { font-size: 10px; color: #9CA3AF; font-family: Consolas, monospace; white-space: nowrap; }
+    .cb-srclab { font-size: 10.5px; color: #6B7280; margin-top: 9px; font-weight: 600; }
+    .cb-src { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+    .cb-chip { font-size: 10.5px; background: #F3F4F6; border: 1px solid #E5E7EB; border-radius: 12px; padding: 2px 8px; color: #374151; }
+    .cb-sugg { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 12px; }
+    .cb-sugg button { font-size: 12px; border: 1px solid #D7DBE2; background: #fff; border-radius: 16px;
+                      padding: 6px 11px; cursor: pointer; font-family: inherit; color: #374151; text-align: left; }
+    .cb-sugg button:hover { border-color: #7B1010; color: #7B1010; }
+    .cb-typing { color: #6B7280; }
+    .cb-typing i { display: inline-block; width: 6px; height: 6px; margin-right: 4px; border-radius: 50%;
+                   background: #9CA3AF; animation: cbBlink 1.2s infinite; }
+    .cb-typing i:nth-child(2) { animation-delay: .2s; } .cb-typing i:nth-child(3) { animation-delay: .4s; }
+    @keyframes cbBlink { 0%, 100% { opacity: .2; } 50% { opacity: 1; } }
+    .cb-foot { display: flex; gap: 8px; padding: 10px; border-top: 1px solid #E5E7EB; background: #fff; }
+    .cb-in { flex: 1; resize: none; border: 1.5px solid #E5E7EB; border-radius: 10px; padding: 9px 11px;
+             font-size: 14px; font-family: inherit; max-height: 120px; outline: none; }
+    .cb-in:focus { border-color: #7B1010; }
+    .cb-send { border: none; background: #7B1010; color: #fff; border-radius: 10px; padding: 0 16px;
+               font-weight: 600; font-size: 13px; cursor: pointer; font-family: inherit; }
+    .cb-send:disabled { opacity: .45; cursor: default; }
+    .cb-note { font-size: 10.5px; color: #9CA3AF; text-align: center; padding: 0 10px 8px; background: #fff; }
+    @media (max-width: 960px) {
+      .cb-fab { right: 14px; bottom: 76px; }          /* clear of the bottom nav */
+      .cb-panel { inset: 0; width: auto; height: auto; max-height: none; border-radius: 0; }
+    }
   </style>
 </head>
 <body>
@@ -319,7 +375,7 @@
   </div>
   <div class="sidebar-footer">
     EG GR Meeting Management System<br>Powered by Google Workspace
-    <br><span style="opacity:.7;">Version 1.34 &middot; 27 Sep 2026</span>
+    <br><span style="opacity:.7;">Version 1.35 &middot; 27 Sep 2026</span>
   </div>
 </div>
 
@@ -559,7 +615,7 @@
 
     </div>
 
-    <div class="mob-version">EG GR Meeting Management System<br>Version 1.34 &middot; 27 Sep 2026</div>
+    <div class="mob-version">EG GR Meeting Management System<br>Version 1.35 &middot; 27 Sep 2026</div>
 
   </div><!-- /content-area -->
 </div><!-- /main-content -->
@@ -2063,6 +2119,171 @@
 
   // ── Init ──────────────────────────────────────────────────────
   showView(PORTAL_VIEW);
+</script>
+
+<!-- Ask the meetings: shown only to someone signed in to the app on this browser -->
+<button type="button" class="cb-fab" id="cb-fab" aria-label="Ask the meetings" title="Ask the meetings" style="display:none;">💬</button>
+<div class="cb-panel" id="cb-panel" role="dialog" aria-label="Ask the meetings">
+  <div class="cb-head">
+    <div style="min-width:0;">
+      <div class="cb-title">Ask the meetings</div>
+      <div class="cb-sub" id="cb-sub">Answers from the meetings you can see</div>
+    </div>
+    <button type="button" class="cb-hbtn" id="cb-new" style="margin-left:auto;">New chat</button>
+    <button type="button" class="cb-x" id="cb-x" aria-label="Close">×</button>
+  </div>
+  <div class="cb-body" id="cb-body"></div>
+  <div class="cb-foot">
+    <textarea class="cb-in" id="cb-in" rows="1" placeholder="Ask in Hindi, English or Hinglish..."></textarea>
+    <button type="button" class="cb-send" id="cb-send">Send</button>
+  </div>
+  <div class="cb-note">Answers come from the meeting records and can be wrong. Check the meetings listed under an answer.</div>
+</div>
+<script>
+  // ── Ask the meetings ───────────────────────────────────────────
+  // A chat window over the meetings this person may see. It only appears for
+  // someone signed in to the app on this browser: the portal is public, the
+  // answers are read out of the notes, and the notes have never been made
+  // public. The server decides what each person may see, the same as in the
+  // app, so nothing here can widen it.
+  (function () {
+    var STORE = 'eg_chat_v1', KEEP = 30;
+
+    // The app's own rule: a session kept on this phone lasts twelve hours.
+    function signedIn() {
+      try {
+        var tok  = localStorage.getItem('eg_grm_token') || sessionStorage.getItem('eg_grm_token') || '';
+        var when = parseInt(localStorage.getItem('eg_grm_saved_at') || '0', 10);
+        if (localStorage.getItem('eg_grm_token') && (!when || Date.now() - when >= 12 * 60 * 60 * 1000)) tok = sessionStorage.getItem('eg_grm_token') || '';
+        if (!tok) return null;
+        var s = JSON.parse(localStorage.getItem('eg_grm_session') || sessionStorage.getItem('eg_grm_session') || 'null') || {};
+        return { token: tok, name: s.name || '', role: s.role || '' };
+      } catch (e) { return null; }
+    }
+    var ME = signedIn();
+    if (!ME) return;
+
+    var $ = function (id) { return document.getElementById(id); };
+    var fab = $('cb-fab'), panel = $('cb-panel'), body = $('cb-body'), input = $('cb-in'), sendBtn = $('cb-send');
+    var msgs = [], busy = false, slow = false;
+
+    // The conversation lives in sessionStorage, so it follows the person from
+    // Overview to District Reports but dies with the tab, which matters on a
+    // phone that gets passed around.
+    try {
+      var saved = JSON.parse(sessionStorage.getItem(STORE) || 'null');
+      if (saved && saved.token === ME.token && Array.isArray(saved.msgs)) msgs = saved.msgs;
+    } catch (e) {}
+    function save() { try { sessionStorage.setItem(STORE, JSON.stringify({ token: ME.token, msgs: msgs.slice(-KEEP) })); } catch (e) {} }
+
+    var lead = ME.role === 'Field'
+      ? ['Meri pichhli meetings me kya hua?', 'Mere kaun se plan abhi pending hain?', 'Kis adhikari ne kya waada kiya?']
+      : ['Is mahine kis jile me sabse kam meetings hui?', 'Which offices have not been met for over 60 days?',
+         'BSA ke saath kya waade hue hain?', 'Pichhle mahine ki meetings ka saar batao'];
+
+    function fmt(t) {
+      var lines = esc(t || '').split('\n'), out = '', list = false;
+      lines.forEach(function (l) {
+        // The model sometimes writes markdown headings and rules. Show a
+        // heading as a bold line and drop a rule, rather than print # and ---.
+        if (/^\s*[-*_]{3,}\s*$/.test(l)) { if (list) { out += '</ul>'; list = false; } return; }
+        var hd = /^\s*#{1,6}\s+(.*)$/.exec(l);
+        if (hd) { if (list) { out += '</ul>'; list = false; } out += '<b>' + hd[1] + '</b><br>'; return; }
+        var m = /^\s*(?:[-*•]|\d+[.)])\s+(.*)$/.exec(l);
+        if (m) { if (!list) { out += '<ul>'; list = true; } out += '<li>' + m[1] + '</li>'; return; }
+        if (list) { out += '</ul>'; list = false; }
+        out += l.trim() ? l + '<br>' : '';
+      });
+      if (list) out += '</ul>';
+      return out.replace(/<br>$/, '')
+                .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+                .replace(/(^|[^*\w])\*(?!\s)([^*<]+?)\*(?!\*)/g, '$1<i>$2</i>')
+                .replace(/\[(MTG-\d{8}-\d{6})\]/g, '<span class="cb-id">$1</span>');
+    }
+    function bubble(m) {
+      if (m.who === 'me')  return '<div class="cb-msg me">' + esc(m.text) + '</div>';
+      if (m.who === 'err') return '<div class="cb-msg err">' + esc(m.text) + '</div>';
+      var src = (m.sources || []).map(function (x) {
+        return '<span class="cb-chip" title="' + esc(x.id) + '">' + esc(x.date) + ' · ' + esc(x.district) +
+               (x.met ? ' · ' + esc(x.met) : '') + '</span>';
+      }).join('');
+      return '<div class="cb-msg bot">' + fmt(m.text) +
+             (src ? '<div class="cb-srclab">From these meetings</div><div class="cb-src">' + src + '</div>' : '') + '</div>';
+    }
+    function render() {
+      var h = '';
+      if (!msgs.length) {
+        h += '<div class="cb-msg bot">Namaste' + (ME.name ? ' ' + esc(ME.name.split(' ')[0]) : '') +
+             '. Ask anything about the meetings you can see: who met whom, what was promised, which offices have gone quiet, how a district is doing.</div>';
+        h += '<div class="cb-sugg">' + lead.map(function (q) {
+          return '<button type="button" data-q="' + esc(q) + '">' + esc(q) + '</button>';
+        }).join('') + '</div>';
+      }
+      msgs.forEach(function (m) { h += bubble(m); });
+      if (busy) h += '<div class="cb-msg bot cb-typing"><i></i><i></i><i></i>' +
+                     (slow ? ' Still reading the meetings, this can take up to a minute...' : '') + '</div>';
+      body.innerHTML = h;
+      body.scrollTop = body.scrollHeight;
+      sendBtn.disabled = busy;
+    }
+
+    // Google sometimes answers with its own error page without running the
+    // script, and sometimes delivers a POST with no body. Asking is read only,
+    // so trying again is always safe.
+    function post(payload, done) {
+      var url = GAS_URL + '?action=askMeetings&token=' + encodeURIComponent(ME.token);
+      function attempt(left) {
+        fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(payload) })
+          .then(function (r) { return r.text(); })
+          .then(function (txt) {
+            var j = null; try { j = JSON.parse(txt); } catch (e) {}
+            if ((!j || j.message === 'BODY_MISSING') && left > 0) { setTimeout(function () { attempt(left - 1); }, 1200); return; }
+            done(j || { success: false, message: 'The server did not answer properly. Please try again.' });
+          })
+          .catch(function () {
+            if (left > 0) { setTimeout(function () { attempt(left - 1); }, 1500); return; }
+            done({ success: false, message: 'No connection. Please check the internet and try again.' });
+          });
+      }
+      attempt(2);
+    }
+
+    function send(q) {
+      q = (q || '').trim();
+      if (!q || busy) return;
+      var history = msgs.filter(function (m) { return m.who !== 'err'; }).slice(-6)
+                        .map(function (m) { return { who: m.who === 'me' ? 'me' : 'bot', text: m.text }; });
+      msgs.push({ who: 'me', text: q });
+      busy = true; slow = false; input.value = ''; grow(); save(); render();
+      var t = setTimeout(function () { slow = true; render(); }, 12000);
+      post({ question: q, history: history }, function (res) {
+        clearTimeout(t); busy = false;
+        if (res && res.success) msgs.push({ who: 'bot', text: res.answer || '', sources: res.sources || [] });
+        else if (res && res.message === 'AUTH_REQUIRED') msgs.push({ who: 'err', text: 'Your sign-in has expired. Open the app, sign in again, then come back here.' });
+        else msgs.push({ who: 'err', text: (res && res.message) || 'Something went wrong. Please try again.' });
+        if (msgs.length > KEEP) msgs = msgs.slice(-KEEP);
+        save(); render();
+      });
+    }
+    function grow() { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 120) + 'px'; }
+
+    function open()  { panel.classList.add('open'); fab.style.display = 'none'; render(); setTimeout(function () { input.focus(); }, 50); }
+    function close() { panel.classList.remove('open'); fab.style.display = ''; }
+
+    fab.style.display = '';
+    fab.addEventListener('click', open);
+    $('cb-x').addEventListener('click', close);
+    $('cb-new').addEventListener('click', function () { if (busy) return; msgs = []; save(); render(); input.focus(); });
+    sendBtn.addEventListener('click', function () { send(input.value); });
+    input.addEventListener('input', grow);
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input.value); }
+    });
+    body.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-q]'); if (b) send(b.getAttribute('data-q'));
+    });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && panel.classList.contains('open')) close(); });
+  })();
 </script>
 
 <!-- Mobile bottom nav -->

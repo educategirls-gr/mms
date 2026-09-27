@@ -655,6 +655,7 @@ function apiResponse(e, method) {
                      ? getZoneAllMeetings(zn)
                      : { success: false, message: 'FORBIDDEN' };
         }
+        else if (action === 'askMeetings')                 result = askMeetings(session, body.question || '', body.history || []);
         else if (action === 'transcribeVoice')             result = transcribeVoice(session, body.audio || '', body.mime || '');
         else if (action === 'sendMeetingFeedback')         result = sendMeetingFeedback(session, body.meetingId || '', body.text || '');
         else if (action === 'getDashboardStats')    result = getDashboardStats(session.email, e.parameter.all === '1', resolveActiveDistrict_(session, e.parameter.district));
@@ -3081,10 +3082,35 @@ var ZONE_DISTRICTS = {
 // State-level-only districts - selectable by State users when planning a meeting,
 // but not part of any zone (zone leads don't see them; not zone-grouped in analytics).
 var STATE_EXTRA_DISTRICTS = ['LUCKNOW'];
-function normDist_(d) { return (d || '').toString().trim().toUpperCase().replace(/\s+/g, ''); }
+// The same district written two ways in different sheets. The employee
+// master has MAHRAJGANJ and SANT RAVIDAS NAGAR (BHADOHI) where the zone list
+// has MAHARAJGANJ and BHADOHI, so meetings filed there belonged to no zone at
+// all: missing from Zone Meetings, from the zone report, and counted as zero
+// by the chatbot. Found by checking every district in the employee list and
+// the meetings against the zone list on 27 Sep 2026; these were the only two.
+// normDist_ is only ever a comparison and cache key, never shown or written,
+// so mapping an alias here changes which names match and nothing else.
+var DISTRICT_ALIASES = {
+  'MAHRAJGANJ': 'MAHARAJGANJ',
+  'SANTRAVIDASNAGAR(BHADOHI)': 'BHADOHI',
+  'SANTRAVIDASNAGAR': 'BHADOHI',
+  'BHADOHI(SANTRAVIDASNAGAR)': 'BHADOHI'
+};
+function normDist_(d) {
+  var k = (d || '').toString().trim().toUpperCase().replace(/\s+/g, '');
+  return DISTRICT_ALIASES[k] || k;
+}
+// The Zone column is typed by hand, as "UP ZONE-1", "UP Zone 1" or
+// "upzone1". normDist_ only drops spaces and case, so the dash still had to
+// match exactly, and a lead whose column had no dash got no zone at all:
+// an empty Zone Meetings, no feedback button, no zone in their report.
+// Letters and digits only here. normDist_ itself is left alone because every
+// district comparison in the file goes through it.
+function zoneNorm_(z) { return (z || '').toString().toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 function findZoneKey_(zone) {
-  var zn = normDist_(zone);
-  for (var z in ZONE_DISTRICTS) { if (normDist_(z) === zn) return z; }
+  var zn = zoneNorm_(zone);
+  if (!zn) return '';
+  for (var z in ZONE_DISTRICTS) { if (zoneNorm_(z) === zn) return z; }
   return '';
 }
 function districtToZone_(district) {
@@ -4121,6 +4147,311 @@ function transcribeVoice(session, audio, mime) {
               next:clean(o.next), unclear:clean(o.unclear) };
   out.found = { what:voicePct_(out.what, t), said:voicePct_(out.said, t), next:voicePct_(out.next, t) };
   return out;
+}
+
+// ------------------------------------------------------------
+//  ASK THE MEETINGS - the chatbot on the analytics portal
+// ------------------------------------------------------------
+// A question in plain Hindi, English or Hinglish, answered from the meetings
+// the person is allowed to see. Only for people who are signed in: the portal
+// itself is public, and this reads the notes, which have deliberately never
+// been published.
+//
+// Two jobs are kept apart on purpose.
+//  * COUNTING is done here, in code, and handed to the model as exact figures.
+//    A model asked to count across three hundred rows gets it wrong, and a
+//    wrong number is the answer leadership will repeat.
+//  * READING, what was discussed and what was promised, is left to the model,
+//    with each meeting laid out on one line and its ID in front.
+//
+// Retrieval: while the scoped data fits the budget, every question sees every
+// meeting, so nothing can be missed. Once it outgrows the budget (twelve states
+// will), the most relevant meetings are picked by the words, districts, people
+// and posts in the question, most recent first, and the exact summary still
+// covers the rest.
+//
+// Scope matches the app: State sees everything, Zone its zone, District its
+// districts, Field only their own meetings. Emails never reach the model.
+var ASK_BUDGET_CHARS = 150000;
+var ASK_QUIET_DAYS   = 60;
+var ASK_PER_HOUR     = 40;
+var ASK_STATUS_RANK  = { Conducted:4, Cancelled:3, Postponed:2, 'Follow-up':1, Planned:1 };
+
+function askTs_(v) {
+  if (v instanceof Date) return v.getTime();
+  var t = Date.parse((v || '').toString().trim());
+  return isNaN(t) ? 0 : t;
+}
+function askMonth_(ts) { return ts ? Utilities.formatDate(new Date(ts), 'Asia/Kolkata', 'MMM yyyy') : ''; }
+function askOneLine_(x) { return (x || '').toString().replace(/\s+/g, ' ').trim(); }
+
+// Every meeting, one record each, the furthest stage winning when an ID
+// appears in more than one sheet, the later row winning at equal stage.
+function askAllMeetings_() {
+  var byId = {}, emailOf = {};
+  function keep(m) {
+    var old = byId[m.id];
+    if (!old || (ASK_STATUS_RANK[m.status] || 0) >= (ASK_STATUS_RANK[old.status] || 0)) byId[m.id] = m;
+  }
+  var pd = sheetRows_(MEETINGS_SHEET) || [];
+  for (var i = 1; i < pd.length; i++) {
+    var id = (pd[i][0] || '').toString().trim(); if (!id) continue;
+    emailOf[id] = (pd[i][4] || '').toString().trim().toLowerCase();
+    var st = (pd[i][13] || 'Planned').toString().trim();
+    if (st !== 'Planned' && st !== 'Follow-up') continue;
+    keep({ id:id, status:st, ts:askTs_(pd[i][5]), district:(pd[i][1]||'').toString().trim(),
+           block:(pd[i][COL_PLAN_SKBLOCK-1]||'').toString().trim(), officer:(pd[i][2]||'').toString().trim(),
+           name:(pd[i][9]||'').toString().trim(), post:(pd[i][10]||'').toString().trim(),
+           purpose:(pd[i][11]||'').toString().trim(), agenda:askOneLine_(pd[i][12]) });
+  }
+  var cd = sheetRows_(CONDUCTED_SHEET) || [];
+  for (var j = 1; j < cd.length; j++) {
+    var cid = (cd[j][0] || '').toString().trim(); if (!cid) continue;
+    if (!emailOf[cid]) emailOf[cid] = (cd[j][4] || '').toString().trim().toLowerCase();
+    keep({ id:cid, status:'Conducted', ts:askTs_(cd[j][13]) || askTs_(cd[j][5]),
+           district:(cd[j][1]||'').toString().trim(), block:(cd[j][COL_CON_SKBLOCK-1]||'').toString().trim(),
+           officer:(cd[j][2]||'').toString().trim(), name:(cd[j][9]||'').toString().trim(),
+           post:(cd[j][10]||'').toString().trim(), purpose:(cd[j][11]||'').toString().trim(),
+           notes:askOneLine_(cd[j][15]), outcome:(cd[j][COL_CON_OUTCOME-1]||'').toString().trim(),
+           next:askOneLine_(cd[j][COL_TAG_NEXT-1]), category:(cd[j][COL_TAG_CAT-1]||'').toString().trim(),
+           govtMom:askOneLine_(cd[j][COL_TAG_MOMSUM-1]) });
+  }
+  var xd = sheetRows_(POSTPONED_SHEET) || [];
+  for (var k = 1; k < xd.length; k++) {
+    var pid = (xd[k][0] || '').toString().trim(); if (!pid) continue;
+    keep({ id:pid, status:'Postponed', ts:askTs_(xd[k][7]), district:(xd[k][1]||'').toString().trim(),
+           officer:(xd[k][2]||'').toString().trim(), name:(xd[k][4]||'').toString().trim(),
+           post:(xd[k][5]||'').toString().trim(), purpose:(xd[k][6]||'').toString().trim(),
+           reason:askOneLine_(xd[k][9]) });
+  }
+  var xc = sheetRows_(CANCELLED_SHEET) || [];
+  for (var c = 1; c < xc.length; c++) {
+    var kid = (xc[c][0] || '').toString().trim(); if (!kid) continue;
+    keep({ id:kid, status:'Cancelled', ts:askTs_(xc[c][5]), district:(xc[c][1]||'').toString().trim(),
+           officer:(xc[c][2]||'').toString().trim(), name:(xc[c][9]||'').toString().trim(),
+           post:(xc[c][10]||'').toString().trim(), purpose:(xc[c][11]||'').toString().trim(),
+           reason:askOneLine_(xc[c][15]) });
+  }
+  var out = [];
+  for (var key in byId) { byId[key].email = emailOf[key] || ''; out.push(byId[key]); }
+  return out;
+}
+
+// Which meetings this person may ask about, and how to describe that to them.
+function askScope_(session, all) {
+  var role = (session.role || '').toString(), me = (session.email || '').toLowerCase();
+  if (role === 'State') {
+    var every = [];
+    for (var z in ZONE_DISTRICTS) every = every.concat(ZONE_DISTRICTS[z]);
+    return { label:'all districts', rows:all, districts:every.concat(STATE_EXTRA_DISTRICTS) };
+  }
+  if (role === 'Zone') {
+    var zk = findZoneKey_(session.zone || '');
+    var set = {}; (ZONE_DISTRICTS[zk] || []).forEach(function(d){ set[normDist_(d)] = 1; });
+    return { label:(zk || 'your zone') + ' (' + (ZONE_DISTRICTS[zk] || []).join(', ') + ')',
+             rows:all.filter(function(m){ return set[normDist_(m.district)]; }), districts:(ZONE_DISTRICTS[zk] || []).slice() };
+  }
+  if (role === 'District') {
+    var ds = (session.districts && session.districts.length) ? session.districts : [session.district];
+    var dset = {}; ds.forEach(function(d){ if (d) dset[normDist_(d)] = 1; });
+    return { label:ds.join(', '), rows:all.filter(function(m){ return dset[normDist_(m.district)]; }), districts:ds.filter(Boolean) };
+  }
+  return { label:'your own meetings', rows:all.filter(function(m){ return m.email && m.email === me; }) };
+}
+
+// The exact figures. Everything numeric the model says should come from here.
+function askSummary_(rows, now, scopeDistricts) {
+  var L = [], st = {}, byMonth = {}, byDist = {}, byOfficer = {}, outc = {}, lastOffice = {}, overdue = 0, oldest = 0;
+  rows.forEach(function(m){
+    st[m.status] = (st[m.status] || 0) + 1;
+    var d = m.district || 'State level';
+    var r = byDist[d] || (byDist[d] = { Conducted:0, Planned:0, Postponed:0, Cancelled:0 });
+    r[m.status === 'Follow-up' ? 'Planned' : m.status] = (r[m.status === 'Follow-up' ? 'Planned' : m.status] || 0) + 1;
+    if (m.status === 'Conducted') {
+      var mo = askMonth_(m.ts); if (mo) byMonth[mo] = (byMonth[mo] || 0) + 1;
+      if (m.officer) byOfficer[m.officer] = (byOfficer[m.officer] || 0) + 1;
+      var o = m.outcome || 'Not recorded'; outc[o] = (outc[o] || 0) + 1;
+      var ok = d + '|' + (_prepNorm_(m.post) || _prepNorm_(m.name));
+      if (!lastOffice[ok] || m.ts > lastOffice[ok].ts) lastOffice[ok] = { ts:m.ts, district:d, post:m.post || m.name, name:m.name };
+    } else if ((m.status === 'Planned' || m.status === 'Follow-up') && m.ts && m.ts < now - 86400000) {
+      overdue++; if (!oldest || m.ts < oldest) oldest = m.ts;
+    }
+  });
+  L.push('Meetings in scope: ' + rows.length + ' (' + Object.keys(st).sort().map(function(k){ return k + ' ' + st[k]; }).join(', ') + ').');
+  var months = Object.keys(byMonth).sort(function(a, b){ return Date.parse('1 ' + a) - Date.parse('1 ' + b); });
+  L.push('Conducted by month: ' + (months.map(function(k){ return k + ' ' + byMonth[k]; }).join(', ') || 'none') + '.');
+  L.push('By district (conducted / planned / postponed / cancelled):');
+  Object.keys(byDist).sort().forEach(function(k){
+    var r = byDist[k]; L.push('  ' + k + ': ' + r.Conducted + ' / ' + r.Planned + ' / ' + r.Postponed + ' / ' + r.Cancelled);
+  });
+  var offs = Object.keys(byOfficer).sort(function(a, b){ return byOfficer[b] - byOfficer[a]; });
+  L.push('Conducted meetings by officer, all time: ' + (offs.map(function(k){ return k + ' ' + byOfficer[k]; }).join('; ') || 'none') + '.');
+
+  // The last four months, oldest first, this month last.
+  var recent = [], base = new Date(now);
+  for (var b = 3; b >= 0; b--) recent.push(askMonth_(new Date(base.getFullYear(), base.getMonth() - b, 15).getTime()));
+  var thisM = recent[3], lastM = recent[2];
+  var dm = {}, om = {}, stM = {};
+  (scopeDistricts || []).forEach(function(x){ if (x) dm[normDist_(x)] = { name:x, n:{} }; });
+  rows.forEach(function(m){
+    var mo = askMonth_(m.ts);
+    if (mo === thisM) stM[m.status] = (stM[m.status] || 0) + 1;
+    if (m.status !== 'Conducted' || recent.indexOf(mo) < 0) return;
+    var dk = normDist_(m.district || 'State level');
+    var e = dm[dk] || (dm[dk] = { name:m.district || 'State level', n:{} });
+    e.n[mo] = (e.n[mo] || 0) + 1;
+    if (m.officer && (mo === thisM || mo === lastM)) {
+      var oe = om[m.officer] || (om[m.officer] = {}); oe[mo] = (oe[mo] || 0) + 1;
+    }
+  });
+  L.push('THIS MONTH is ' + thisM + '. LAST MONTH is ' + lastM + '.');
+  L.push('This month by status: ' + (Object.keys(stM).sort().map(function(k){ return k + ' ' + stM[k]; }).join(', ') || 'nothing yet') + '.');
+  L.push('Conducted by district and month (' + recent.join(', ') + '). Every district in scope is listed, 0 means none:');
+  Object.keys(dm).sort().forEach(function(k){
+    L.push('  ' + dm[k].name + ' by month: ' + recent.map(function(mo){ return mo + ' ' + (dm[k].n[mo] || 0); }).join(', '));
+  });
+  var ofr = Object.keys(om).sort(function(a, b2){ return ((om[b2][thisM] || 0) - (om[a][thisM] || 0)) || a.localeCompare(b2); });
+  L.push('Conducted by officer, this month and last (' + thisM + ' / ' + lastM + '): ' +
+         (ofr.map(function(k){ return k + ' ' + (om[k][thisM] || 0) + ' / ' + (om[k][lastM] || 0); }).join('; ') || 'none') + '.');
+  L.push('Outcome of conducted meetings: ' + Object.keys(outc).sort().map(function(k){ return k + ' ' + outc[k]; }).join(', ') + '.');
+  var quiet = [];
+  for (var q in lastOffice) {
+    var days = Math.floor((now - lastOffice[q].ts) / 86400000);
+    if (lastOffice[q].ts && days > ASK_QUIET_DAYS) quiet.push({ days:days, o:lastOffice[q] });
+  }
+  quiet.sort(function(a, b){ return b.days - a.days; });
+  L.push('Offices not met for over ' + ASK_QUIET_DAYS + ' days: ' + quiet.length + (quiet.length ? '. Longest first: ' +
+    quiet.slice(0, 40).map(function(x){ return x.o.post + ', ' + x.o.district + ' (' + x.days + ' days, last ' +
+      Utilities.formatDate(new Date(x.o.ts), 'Asia/Kolkata', 'd MMM yyyy') + ')'; }).join('; ') : '') + '.');
+  L.push('Planned meetings whose date has passed and were never closed: ' + overdue +
+         (oldest ? ' (oldest from ' + Utilities.formatDate(new Date(oldest), 'Asia/Kolkata', 'd MMM yyyy') + ')' : '') + '.');
+  return L.join('\n');
+}
+
+function askRow_(m) {
+  var when = m.ts ? Utilities.formatDate(new Date(m.ts), 'Asia/Kolkata', 'd MMM yyyy') : 'no date';
+  var p = ['[' + m.id + '] ' + (m.status === 'Conducted' ? 'Conducted ' + when :
+           m.status === 'Postponed' || m.status === 'Cancelled' ? m.status + ' (was ' + when + ')' : m.status + ' for ' + when),
+           (m.district || 'State level') + (m.block ? ' / ' + m.block : ''),
+           'Officer: ' + (m.officer || '-'),
+           'Met: ' + (m.name || '-') + (m.post ? ', ' + m.post : '')];
+  if (m.purpose)  p.push('Purpose: ' + m.purpose);
+  if (m.outcome)  p.push('Outcome: ' + m.outcome);
+  if (m.notes)    p.push('Notes: ' + m.notes);
+  if (m.next)     p.push('Next: ' + m.next);
+  if (m.govtMom)  p.push('Govt MoM: ' + m.govtMom);
+  if (m.agenda)   p.push('Agenda: ' + m.agenda);
+  if (m.reason)   p.push('Reason: ' + m.reason);
+  return p.join(' | ');
+}
+
+function askWords_(s) {
+  return (s || '').toString().toLowerCase().split(/[^a-z0-9ऀ-ॿ]+/).filter(function(w){ return w.length >= 3; });
+}
+// Most relevant first: rarer question words count for more, then recency.
+function askRank_(question, lines) {
+  var q = {}; askWords_(question).forEach(function(w){ q[w] = 1; });
+  var df = {}, toks = lines.map(function(l){
+    var seen = {}; askWords_(l.text).forEach(function(w){ if (q[w]) seen[w] = 1; });
+    for (var w in seen) df[w] = (df[w] || 0) + 1;
+    return seen;
+  });
+  lines.forEach(function(l, i){
+    var sc = 0; for (var w in toks[i]) sc += Math.log(1 + lines.length / df[w]);
+    l.score = sc;
+  });
+  return lines.slice().sort(function(a, b){ return (b.score - a.score) || (b.ts - a.ts); });
+}
+
+function askMeetings(session, question, history) {
+  question = askOneLine_(question).substring(0, 1000);
+  if (question.length < 3) return { success:false, message:'Please type a question.' };
+
+  var me = (session.email || '').toLowerCase(), rk = 'askq_' + me, used = 0;
+  try { used = +(CacheService.getScriptCache().get(rk) || 0); } catch (e) {}
+  if (used >= ASK_PER_HOUR) return { success:false, message:'That is ' + ASK_PER_HOUR + ' questions in the last hour. Please try again a little later.' };
+
+  var hist = [];
+  (Array.isArray(history) ? history : []).slice(-6).forEach(function(h){
+    if (h && h.text) hist.push((h.who === 'me' ? 'Q: ' : 'A: ') + askOneLine_(h.text).substring(0, 1500));
+  });
+
+  var rows, scope;
+  try {
+    scope = askScope_(session, askAllMeetings_());
+    rows = scope.rows;
+  } catch (e) {
+    return { success:false, message:'The meeting data is busy right now. Please try again in a minute.' };
+  }
+  if (!rows.length) return { success:true, answer:'There are no meetings recorded yet in what you can see (' + scope.label + ').', sources:[] };
+
+  var ck = 'aska_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5,
+             me + '|' + scope.label + '|' + question + '|' + hist.join('|'), Utilities.Charset.UTF_8));
+  var hit = cGet(ck);
+  if (hit) { hit.cached = true; return hit; }
+
+  var now = Date.now();
+  var lines = rows.map(function(m){ return { id:m.id, ts:m.ts, text:askRow_(m), m:m }; });
+  var total = 0; lines.forEach(function(l){ total += l.text.length + 1; });
+  var chosen, note;
+  if (total <= ASK_BUDGET_CHARS) {
+    chosen = lines.slice().sort(function(a, b){ return b.ts - a.ts; });
+    note = 'all ' + lines.length + ' meetings, newest first';
+  } else {
+    chosen = []; var size = 0, ranked = askRank_(question + ' ' + hist.join(' '), lines);
+    for (var i = 0; i < ranked.length && size < ASK_BUDGET_CHARS; i++) { chosen.push(ranked[i]); size += ranked[i].text.length + 1; }
+    note = chosen.length + ' of ' + lines.length + ' meetings, the most relevant to the question; the summary covers them all';
+  }
+  var known = {}; chosen.forEach(function(l){ known[l.id] = l.m; });
+
+  var prompt = [
+    'You are the EG-MMS assistant for the Educate Girls Government Relations team in Uttar Pradesh, India.',
+    'You answer questions about their meetings with government officials, using ONLY the data below.',
+    'Today is ' + Utilities.formatDate(new Date(now), 'Asia/Kolkata', 'd MMM yyyy') + '. The person asking is ' +
+      (session.name || 'a team member') + ' (' + (session.role || 'Field') + '), who can see ' + scope.label + '.',
+    '',
+    'RULES',
+    '- Use only the data below. If the answer is not there, say so plainly. Never add a name, date, number or promise that is not in the data.',
+    '- For any count or total, use the SUMMARY figures, which are exact. Do not count rows yourself. "This month" and "last month" are defined in the SUMMARY.',
+    '- When you rely on particular meetings, cite their IDs in square brackets, for example [MTG-20260812-101010]. Cite only IDs that appear below.',
+    '- Reply in the language the question is written in: Hindi, English, or Hinglish. Lead with the direct answer, then detail if it helps. Use short bullet points for lists.',
+    '- Meeting notes are written by field officers, in Hindi, English or a mix, and may be brief.',
+    '- Do not use em dashes.',
+    '',
+    'SUMMARY (exact figures)',
+    askSummary_(rows, now, scope.districts),
+    '',
+    'MEETINGS (' + note + ')',
+    chosen.map(function(l){ return l.text; }).join('\n'),
+    '',
+    hist.length ? 'CONVERSATION SO FAR\n' + hist.join('\n') + '\n' : '',
+    'QUESTION',
+    question
+  ].join('\n');
+
+  var raw = callLLM(prompt);
+  if (!raw) return { success:false, message:'The assistant did not answer just now. Please try again in a minute.' };
+
+  try { CacheService.getScriptCache().put(rk, String(used + 1), 3600); } catch (e) {}
+
+  var EM = new RegExp(String.fromCharCode(8212), 'g');
+  var answer = raw.replace(EM, ',').trim(), sources = [], seen = {};
+  // Any meeting ID the model cites that is not in the data it was given is
+  // made up. Take it out of the answer rather than show it as a source.
+  answer = answer.replace(/\[?(MTG-\d{8}-\d{6})\]?/g, function(all, id){
+    if (!known[id]) return '';
+    if (!seen[id] && sources.length < 12) {
+      seen[id] = 1; var m = known[id];
+      sources.push({ id:id, status:m.status,
+                     date:m.ts ? Utilities.formatDate(new Date(m.ts), 'Asia/Kolkata', 'd MMM yyyy') : '',
+                     district:m.district || 'State level', met:(m.name || '') + (m.post ? ', ' + m.post : '') });
+    }
+    return '[' + id + ']';
+  }).replace(/[ \t]+\n/g, '\n').replace(/ {2,}/g, ' ');
+
+  var res = { success:true, answer:answer, sources:sources, scope:scope.label, seen:chosen.length, total:lines.length };
+  try { cPut(ck, res, 600); } catch (e) {}
+  return res;
 }
 
 function tagOneMeeting_(d) {
