@@ -655,9 +655,20 @@ function apiResponse(e, method) {
                      ? getZoneAllMeetings(zn)
                      : { success: false, message: 'FORBIDDEN' };
         }
-        else if (action === 'askMeetings')                 result = askMeetings(session, body.question || '', body.history || []);
-        else if (action === 'transcribeVoice')             result = transcribeVoice(session, body.audio || '', body.mime || '');
-        else if (action === 'sendMeetingFeedback')         result = sendMeetingFeedback(session, body.meetingId || '', body.text || '');
+        // These three only ever come as a POST, and the page never sends them
+        // with the main field empty. Google's front door sometimes turns a
+        // POST into a GET on a redirect: the action and token survive in the
+        // URL, the body does not, and bodyBroken only looks at POSTs. So an
+        // empty question, recording or feedback means the request lost its
+        // body on the way. BODY_MISSING makes the page send it again, where
+        // answering "please type a question" to someone who just did would not.
+        // (saveMeeting's "the meeting details did not arrive" is the same thing.)
+        else if (action === 'askMeetings')                 result = body.question ? askMeetings(session, body.question, body.history || [])
+                                                                                  : { success:false, message:'BODY_MISSING' };
+        else if (action === 'transcribeVoice')             result = body.audio ? transcribeVoice(session, body.audio, body.mime || '')
+                                                                               : { success:false, message:'BODY_MISSING' };
+        else if (action === 'sendMeetingFeedback')         result = (body.meetingId && body.text) ? sendMeetingFeedback(session, body.meetingId, body.text)
+                                                                                               : { success:false, message:'BODY_MISSING' };
         else if (action === 'getDashboardStats')    result = getDashboardStats(session.email, e.parameter.all === '1', resolveActiveDistrict_(session, e.parameter.district));
         else if (action === 'getDistrictReport') {
           result = getDistrictReport(resolveActiveDistrict_(session, e.parameter.district));
