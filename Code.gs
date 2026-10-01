@@ -6663,7 +6663,10 @@ function EMP_refreshMirror() {
 }
 
 // Editor helper, read only: what the code sees for a person, straight from the
-// sheet. Pass part of a name or an email, e.g. EMP_show('atul pandey').
+// sheet. Run it from the editor with nothing passed (the Run button cannot pass
+// anything) and it lists everyone who has charge of more than one district.
+// Called with part of a name or an email, e.g. EMP_show('atul pandey'), it
+// shows just that person.
 // Shows role, zone and every district the person has charge of, and warns
 // about any district written in a spelling nobody else's main district uses.
 // That check exists because the District Meetings list matches the name
@@ -6671,7 +6674,6 @@ function EMP_refreshMirror() {
 // district, and every meeting there, is recorded as "MAHRAJGANJ".
 function EMP_show(query) {
   var q = (query || '').toString().trim().toLowerCase();
-  if (!q) { Logger.log('Pass part of a name or an email, e.g. EMP_show(' + "'atul pandey'" + ')'); return 0; }
   var map = empReadFromSheet_();
   if (!map) { Logger.log('Could not read the employee sheet right now. Run this again in a minute.'); return 0; }
 
@@ -6682,7 +6684,8 @@ function EMP_show(query) {
   var found = 0, NLc = String.fromCharCode(10), out = [];
   for (var em in map) {
     var e = map[em];
-    if ((e.name || '').toLowerCase().indexOf(q) < 0 && em.indexOf(q) < 0) continue;
+    if (q ? ((e.name || '').toLowerCase().indexOf(q) < 0 && em.indexOf(q) < 0)
+          : (e.districts || []).length < 2) continue;
     found++;
     out.push('');
     out.push(e.name + '  <' + em + '>');
@@ -6698,7 +6701,8 @@ function EMP_show(query) {
                                                : 'Gets the district switcher after logging in again. Only the District role gets the monthly report.'));
     }
   }
-  if (!found) out.push('No one found for "' + query + '".');
+  if (!found) out.push(q ? 'No one found for "' + query + '".' : 'No one has charge of more than one district.');
+  else if (!q) out.unshift(found + ' person(s) with charge of more than one district:');
   Logger.log(out.join(NLc));
   return found;
 }
