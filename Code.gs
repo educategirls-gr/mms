@@ -3913,6 +3913,12 @@ function buildReportPrompt(r) {
   L.push('Meetings: ' + k.total + ' planned, ' + k.conducted + ' conducted, ' + k.success + '% success rate');
   L.push('Staff participation: ' + k.activeStaff + ' active of ' + k.totalStaff + ' (' + k.participation + '%)');
   var byLabel = { zone:'zone', district:'district', block:'block' }[b.by] || 'area';
+  // What the zero-activity places actually are. They are districts for a State
+  // or Zone report and blocks for a district one, which is NOT the same as the
+  // level the performance table is broken down by: a State report is broken
+  // down by zone, and calling them zones had the AI write "7 zones with no
+  // recorded activity" when it was seven districts.
+  var zeroWord = (r.scope && r.scope.kind === 'district') ? 'block' : 'district';
   if (b.rows && b.rows.length) L.push('By ' + byLabel + ': ' + b.rows.slice(0,12).map(function(x){ return x.name + ' ' + x.planned + '/' + x.conducted + '/' + x.pct + '%'; }).join('; '));
   if (b.leaderboard && b.leaderboard.length) L.push('Top districts by conducted: ' + b.leaderboard.slice(0,5).map(function(x){ return x.name + ' ' + x.conducted + ' (' + x.pct + '%)'; }).join(', '));
   if (r.byPurpose && r.byPurpose.length) L.push('Meeting purposes: ' + r.byPurpose.map(function(x){ return x.name + ' ' + x.count; }).join(', '));
@@ -3929,7 +3935,7 @@ function buildReportPrompt(r) {
            rl.coldCount + ' have had no contact for over ' + rl.coldDays + ' days');
   }
   var att = [];
-  if (r.zeroAreas && r.zeroAreas.length) att.push(r.zeroAreas.length + ' ' + byLabel + 's with no activity');
+  if (r.zeroAreas && r.zeroAreas.length) att.push(r.zeroAreas.length + ' ' + zeroWord + 's with no activity (' + r.zeroAreas.slice(0,8).join(', ') + ')');
   att.push(k.pending + ' follow-ups pending');
   att.push('Govt MoM received on ' + k.govtMom + ' of ' + k.conducted + ' conducted');
   L.push('Attention: ' + att.join('; '));
@@ -5770,7 +5776,18 @@ function buildReportEmailHtml(rep, recipientName) {
       '<div style="'+SERIF+'font-size:23px;font-weight:700;color:'+(color||'#1f2937')+';margin-top:5px;">'+val+'</div>'+
       (sub?'<div style="font-size:11px;color:#6b7280;margin-top:2px;">'+sub+'</div>':'')+'</td>';
   }
-  function sec(inner){ return '<tr><td style="padding:24px 30px 0;">'+inner+'</td></tr>'; }
+  // One section, one piece. In the PDF the page used to break wherever it
+  // happened to fall, so "Meeting Outcomes" sat alone at the foot of page 2
+  // with its numbers on page 3, and the section read as missing (Sep 2026
+  // report). The same had split the District Leaderboard from its rows.
+  // page-break-inside is only read by the PDF converter; mail clients ignore
+  // it, so the email body is unchanged. A section too tall for one page is
+  // still broken by the converter rather than clipped.
+  var KEEP = 'page-break-inside:avoid;break-inside:avoid;';
+  function sec(inner){
+    return '<tr style="' + KEEP + '"><td style="padding:24px 30px 0;' + KEEP + '">' +
+           '<div style="' + KEEP + '">' + inner + '</div></td></tr>';
+  }
 
   // Performance table
   var zsum = 0; (b.rows||[]).forEach(function(r){ zsum += (r.districts||0); });
@@ -5952,6 +5969,28 @@ function REPORT_STATE_preview() {   // see the State recipients (confirm the new
   return { count:r.length, recipients:r.map(function(x){ return { name:x.name, email:x.email }; }) };
 }
 function REPORT_STATE_test()   { return sendMonthlyReports('test', null, 'State'); }   // State reports to admin only (review)
+// Forget the AI-written summary, highlights and recommendations for a month so
+// the next run writes them afresh. Only the words are cached, and only for six
+// hours; every number in the report is computed each time. Useful right after
+// changing what the model is told, when the old wording would otherwise be
+// repeated. Pass nothing for the just-completed month.
+function REPORT_clearNarrative(month) {
+  month = month || prevMonthKey_();
+  var suffix = '_' + month.replace(/\s/g, ''), seen = {}, keys = [];
+  function add(kind, label) {
+    var k = 'aiNarr_' + kind + '_' + normDist_(label || '').slice(0, 40) + suffix;
+    if (!seen[k]) { seen[k] = 1; keys.push(k); }
+  }
+  add('state', 'Uttar Pradesh');
+  getReportRecipients().forEach(function(r) {
+    if (r.role === 'State') add('state', 'Uttar Pradesh');
+    else if (r.role === 'Zone') add('zone', r.zone);
+    else add('district', (r.districts || []).filter(String).join(', '));
+  });
+  cDel.apply(null, keys);
+  Logger.log('Cleared the AI wording for ' + month + ': ' + keys.length + ' report(s). The next run writes it again.');
+  return keys.length;
+}
 function REPORT_STATE_live()   { return sendMonthlyReports('live', null, 'State'); }   // real send to State people only
 
 function installMonthlyTrigger() {
