@@ -6662,6 +6662,47 @@ function EMP_refreshMirror() {
   return people;
 }
 
+// Editor helper, read only: what the code sees for a person, straight from the
+// sheet. Pass part of a name or an email, e.g. EMP_show('atul pandey').
+// Shows role, zone and every district the person has charge of, and warns
+// about any district written in a spelling nobody else's main district uses.
+// That check exists because the District Meetings list matches the name
+// exactly: "MAHARAJGANJ" in column H finds nothing, because everyone in that
+// district, and every meeting there, is recorded as "MAHRAJGANJ".
+function EMP_show(query) {
+  var q = (query || '').toString().trim().toLowerCase();
+  if (!q) { Logger.log('Pass part of a name or an email, e.g. EMP_show(' + "'atul pandey'" + ')'); return 0; }
+  var map = empReadFromSheet_();
+  if (!map) { Logger.log('Could not read the employee sheet right now. Run this again in a minute.'); return 0; }
+
+  var known = {};   // every main-district spelling in use, upper case
+  for (var k in map) { var d0 = (map[k].district || '').toString().trim().toUpperCase(); if (d0) known[d0] = 1; }
+  STATE_EXTRA_DISTRICTS.forEach(function(d){ known[d.toUpperCase()] = 1; });
+
+  var found = 0, NLc = String.fromCharCode(10), out = [];
+  for (var em in map) {
+    var e = map[em];
+    if ((e.name || '').toLowerCase().indexOf(q) < 0 && em.indexOf(q) < 0) continue;
+    found++;
+    out.push('');
+    out.push(e.name + '  <' + em + '>');
+    out.push('   Role: ' + (e.role || '-') + '   Designation: ' + (e.designation || '-') + (e.zone ? '   Zone column: ' + e.zone : ''));
+    out.push('   Districts (' + (e.districts || []).length + '): ' + (e.districts || []).join(' | '));
+    (e.districts || []).forEach(function(d) {
+      if (!known[(d || '').toString().trim().toUpperCase()]) {
+        out.push('   WARNING "' + d + '": no one has this as their main district, so District Meetings will show 0 for it. Check the spelling.');
+      }
+    });
+    if ((e.districts || []).length > 1) {
+      out.push('   ' + (e.role === 'District' ? 'Gets one monthly report for all of these, and the district switcher after logging in again.'
+                                               : 'Gets the district switcher after logging in again. Only the District role gets the monthly report.'));
+    }
+  }
+  if (!found) out.push('No one found for "' + query + '".');
+  Logger.log(out.join(NLc));
+  return found;
+}
+
 // Editor helper: write one person into the sign-in copy WITHOUT opening the
 // Sheet. For the case this was written in: the Sheets service is refusing the
 // document, so EMP_refreshMirror() cannot run, and nobody can sign in because
