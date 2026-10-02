@@ -111,6 +111,17 @@
     .form-row .field.full { flex: 100%; }
     label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 4px; }
     label .req { color: #DC2626; }
+    /* The plan form and the conduct window scroll inside .main-content, so the
+       scrollbar sits right against the text. On a touchpad a press a pixel off
+       the thumb starts a text selection, and dragging down then paints every
+       label, chip and button on the way (reported 2 Oct 2026; 241 characters in
+       one drag here). Nobody copies labels, buttons or chips, so they do not
+       select; what people type still does, and so do the meeting title and
+       details at the top of the window. Lists and reports are left alone. */
+    #view-create, #action-modal { -webkit-user-select: none; user-select: none; }
+    #view-create input, #view-create textarea, #view-create select,
+    #action-modal input, #action-modal textarea, #action-modal select,
+    #action-modal .modal-header { -webkit-user-select: text; user-select: text; }
     input[type=text], input[type=date], input[type=time], input[type=url], select, textarea {
       width: 100%; border: 1.5px solid #E5E7EB; border-radius: 7px;
       padding: 8px 11px; font-size: 13px; color: #111827;
@@ -540,7 +551,7 @@
   </div>
   <div class="sidebar-bottom">
     <button class="btn-logout" onclick="logout()">🚪 Logout</button>
-    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.40 &middot; 2 Oct 2026</div>
+    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.41 &middot; 2 Oct 2026</div>
   </div>
 </div>
 
