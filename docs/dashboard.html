@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EG Meeting Management System</title>
+  <title data-state-title="EG Meeting Management System | {STATE}">EG Meeting Management System</title>
+  <script src="state.js"></script>
   <link rel="icon" type="image/png" href="eg-logo.png">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -482,7 +483,7 @@
     <img src="eg-logo.png"
          onerror="this.style.display='none'" alt="EG">
     <div class="brand">Meeting Management System</div>
-    <div class="brand-sub">Educate Girls</div>
+    <div class="brand-sub">Educate Girls &middot; <span class="state-name"></span></div>
   </div>
   <div class="sidebar-profile">
     <div class="profile-top">
@@ -539,7 +540,7 @@
   </div>
   <div class="sidebar-bottom">
     <button class="btn-logout" onclick="logout()">🚪 Logout</button>
-    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.39 &middot; 27 Sep 2026</div>
+    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.40 &middot; 2 Oct 2026</div>
   </div>
 </div>
 
@@ -4485,6 +4486,8 @@
   var HI = {
     // Sidebar, top bar
     'Meeting Management System': 'बैठक प्रबंधन प्रणाली',
+    'Uttar Pradesh': 'उत्तर प्रदेश',
+    'Rajasthan': 'राजस्थान',
     'Menu': 'मेनू',
     'Plan Meeting': 'बैठक नियोजित करें',
     'Manage Meetings': 'बैठकों का प्रबंधन',

@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EG MMS | State Analytics Portal</title>
+  <title data-state-title="EG MMS | {STATE} Analytics Portal">EG MMS | State Analytics Portal</title>
+  <script src="state.js"></script>
   <link rel="icon" type="image/png" href="eg-logo.png">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -356,7 +357,7 @@
     <img src="eg-logo.png" onerror="this.style.display='none'" alt="EG">
     <div class="org">Educate Girls</div>
     <div class="sub">Meeting Management System</div>
-    <div class="badge">State Analytics Portal</div>
+    <div class="badge"><span class="state-name">State</span> Analytics Portal</div>
   </div>
   <div class="sidebar-nav">
     <div class="nav-section">Analytics</div>
@@ -374,8 +375,8 @@
     </a>
   </div>
   <div class="sidebar-footer">
-    EG GR Meeting Management System<br>Powered by Google Workspace
-    <br><span style="opacity:.7;">Version 1.39 &middot; 27 Sep 2026</span>
+    EG GR Meeting Management System, <span class="state-name"></span><br>Powered by Google Workspace
+    <br><span style="opacity:.7;">Version 1.40 &middot; 2 Oct 2026</span>
   </div>
 </div>
 
@@ -390,7 +391,7 @@
     </div>
     <div class="topbar-center">
       <div class="tb-title" id="topbar-title">Dashboard</div>
-      <div class="tb-sub"   id="topbar-sub">Organisation-wide meeting summary</div>
+      <div class="tb-sub"   id="topbar-sub"><span class="state-name"></span>: organisation-wide meeting summary</div>
     </div>
     <div class="topbar-right">
       <span id="snap-note" style="display:none;align-items:center;gap:6px;font-size:11px;font-weight:700;color:#fff;background:rgba(255,255,255,0.18);padding:5px 10px;border-radius:20px;white-space:nowrap;"></span>
@@ -615,7 +616,7 @@
 
     </div>
 
-    <div class="mob-version">EG GR Meeting Management System<br>Version 1.39 &middot; 27 Sep 2026</div>
+    <div class="mob-version">EG GR Meeting Management System, <span class="state-name"></span><br>Version 1.40 &middot; 2 Oct 2026</div>
 
   </div><!-- /content-area -->
 </div><!-- /main-content -->
@@ -803,7 +804,7 @@
 
   // ── Navigation ────────────────────────────────────────────────
   var TOPBAR = {
-    overview: { title: 'Overview',        sub: 'Organisation-wide meeting summary'       },
+    overview: { title: 'Overview',        sub: (window.STATE_NAME ? STATE_NAME + ': organisation-wide' : 'Organisation-wide') + ' meeting summary' },
     reports:  { title: 'District Reports',sub: 'District-wise analytics and meeting details' },
     perf:     { title: 'Team Performance',sub: '' },
     rel:      { title: 'Stakeholders',     sub: 'Relationships with government offices over time' }

@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Monthly GR Report</title>
+<title data-state-title="Monthly GR Report | {STATE}">Monthly GR Report</title>
+<script src="state.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;0,700;1,400&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
@@ -178,7 +179,7 @@
     var html='<div class="sheet">';
     // Masthead
     html+='<header class="mast"><div>'+
-      '<div class="kicker">Educate Girls &middot; Government Relations</div>'+
+      '<div class="kicker">Educate Girls &middot; Government Relations' + (window.STATE_NAME ? ' &middot; ' + STATE_NAME : '') + '</div>'+
       '<h1>Monthly GR Meetings Report</h1>'+
       '<div class="scope"><b>'+esc(sc.label)+'</b> &middot; '+roleLabel+'-level</div></div>'+
       '<div class="meta">Reporting period &middot; <b>'+esc(sc.month)+'</b><br>Scope &middot; <b>'+roleLabel+'</b><br>Prepared for &middot; <b>'+esc(SESSION.name||'-')+'</b><br>Generated &middot; <b>'+gen+'</b></div></header>';
