@@ -4966,8 +4966,17 @@ function NOTE_quality() {
     return n === 0 ? '0 empty' : n < 30 ? '1 under 30' : n < 80 ? '2 30 to 79' :
            n < 200 ? '3 80 to 199' : n < 500 ? '4 200 to 499' : '5 500 plus';
   }
+  // Notes from the three-question form (since 16 Sep 2026) carry the labels
+  // "Discussed:", "Official said:" and "Next step:". The labels are taken out
+  // before measuring, so both forms are compared on what the officer wrote.
+  var LABELS = /\b(discussed|official said|next step)\s*:/gi;
+  function isNewForm(note) { return /\bdiscussed\s*:/i.test(note) && /\bofficial said\s*:/i.test(note); }
+  function ownWords(note) { return note.replace(LABELS, ' ').replace(/\s+/g, ' ').trim(); }
+  function group() { return { n:0, sum:0, lens:[], under30:0, under80:0, dupes:0, outcome:0 }; }
+
   var kp = {}, ag = {}, byOfficer = {}, seen = {}, dupes = 0, dupOfficers = {};
   var total = 0, kpSum = 0;
+  var forms = { old: group(), neu: group() }, perOfficer = {};
 
   for (var i = 1; i < data.length; i++) {
     if (!data[i][0]) continue;
@@ -4984,21 +4993,88 @@ function NOTE_quality() {
     if (note.length < 80) o.thin++;
 
     // the same note text reused across meetings, which a length rule cannot catch
+    var repeated = false;
     if (note.length >= 40) {
       var k = note.toLowerCase().replace(/\s+/g, ' ').substring(0, 160);
-      if (seen[k]) { dupes++; dupOfficers[officer] = (dupOfficers[officer] || 0) + 1; }
+      if (seen[k]) { dupes++; repeated = true; dupOfficers[officer] = (dupOfficers[officer] || 0) + 1; }
       else seen[k] = 1;
     }
+
+    var which = isNewForm(note) ? 'neu' : 'old', g = forms[which], len = ownWords(note).length;
+    g.n++; g.sum += len; g.lens.push(len);
+    if (len < 30) g.under30++;
+    if (len < 80) g.under80++;
+    if (repeated) g.dupes++;
+    if ((data[i][COL_CON_OUTCOME - 1] || '').toString().trim()) g.outcome++;
+    var po = perOfficer[officer] || (perOfficer[officer] = { old: [], neu: [] });
+    po[which].push(len);
   }
+
+  function median(a) {
+    if (!a.length) return 0;
+    var b = a.slice().sort(function(x, y) { return x - y; }), m = Math.floor(b.length / 2);
+    return b.length % 2 ? b[m] : Math.round((b[m - 1] + b[m]) / 2);
+  }
+  function pct(x, n) { return n ? Math.round(x / n * 100) + '%' : '-'; }
+  function avg(a) { var t = 0; a.forEach(function(x){ t += x; }); return a.length ? Math.round(t / a.length) : 0; }
+  function summary(g) {
+    return { meetings:g.n, avgChars:g.n ? Math.round(g.sum / g.n) : 0, medianChars:median(g.lens),
+             under30:pct(g.under30, g.n), under80:pct(g.under80, g.n), repeated:g.dupes, outcomeRecorded:pct(g.outcome, g.n) };
+  }
+  var oldS = summary(forms.old), newS = summary(forms.neu);
+
+  // The same people before and after, which is the fairest comparison: it is
+  // not swayed by who happened to file more meetings in either period.
+  var same = Object.keys(perOfficer).filter(function(n) {
+    return perOfficer[n].old.length >= 3 && perOfficer[n].neu.length >= 3;
+  }).map(function(n) {
+    return { officer:n, before:avg(perOfficer[n].old), after:avg(perOfficer[n].neu),
+             notesBefore:perOfficer[n].old.length, notesAfter:perOfficer[n].neu.length };
+  }).sort(function(a, b) { return (b.after - b.before) - (a.after - a.before); });
 
   var officers = Object.keys(byOfficer).map(function(n){
     var o = byOfficer[n];
     return { officer:n, meetings:o.meetings, avgChars:Math.round(o.totalChars / o.meetings), thinNotes:o.thin };
   }).sort(function(a,b){ return a.avgChars - b.avgChars; });
 
-  var res = {
+  // Written to be read in the execution log.
+  function row(label, a, b) { return (label + '                              ').slice(0, 30) + ('' + a + '           ').slice(0, 12) + b; }
+  var L = [];
+  L.push('NOTE QUALITY (reads the sheet, writes nothing)');
+  L.push('All conducted meetings: ' + total + '. Lengths below are the officer\'s own words, form labels removed.');
+  L.push('');
+  L.push(row('', 'Old box', 'Three questions'));
+  L.push(row('Meetings', oldS.meetings, newS.meetings));
+  L.push(row('Average characters', oldS.avgChars, newS.avgChars));
+  L.push(row('Median characters', oldS.medianChars, newS.medianChars));
+  L.push(row('Under 30 characters', oldS.under30, newS.under30));
+  L.push(row('Under 80 characters', oldS.under80, newS.under80));
+  L.push(row('Copied word for word', oldS.repeated, newS.repeated));
+  L.push(row('Outcome recorded', oldS.outcomeRecorded, newS.outcomeRecorded));
+  L.push('');
+  if (same.length) {
+    L.push('Same officers, before -> after (average characters; 3+ notes each side):');
+    same.forEach(function(x) {
+      L.push('  ' + (x.officer + '                         ').slice(0, 26) + x.before + ' -> ' + x.after +
+             '   (' + x.notesBefore + ' and ' + x.notesAfter + ' notes)');
+    });
+  } else {
+    L.push('No officer has 3+ notes in both forms yet.');
+  }
+  var shortNew = Object.keys(perOfficer).filter(function(n) { return perOfficer[n].neu.length >= 2; })
+    .map(function(n) { return { officer:n, avg:avg(perOfficer[n].neu), notes:perOfficer[n].neu.length }; })
+    .sort(function(a, b) { return a.avg - b.avg; }).slice(0, 5);
+  if (shortNew.length) {
+    L.push('');
+    L.push('Shortest writers in the three-question form (2+ notes):');
+    shortNew.forEach(function(x) { L.push('  ' + (x.officer + '                         ').slice(0, 26) + x.avg + ' characters average, ' + x.notes + ' notes'); });
+  }
+  Logger.log(L.join(String.fromCharCode(10)));
+
+  return {
     conductedMeetings: total,
     avgKeyPointsChars: total ? Math.round(kpSum / total) : 0,
+    oldForm: oldS, threeQuestionForm: newS, sameOfficers: same,
     keyPointsLengths: kp,
     agendaLengths: ag,
     repeatedNotes: dupes,
@@ -5006,8 +5082,6 @@ function NOTE_quality() {
     shortestWriters: officers.slice(0, 10),
     longestWriters: officers.slice(-5).reverse()
   };
-  Logger.log(JSON.stringify(res, null, 2));
-  return res;
 }
 
 // Would a keyword rule ("urgent", "immediately", "denied" -> Priority High) do

@@ -78,6 +78,6 @@ flaky.mail.push = function (o) { if (n++ === 0) throw new Error('quota'); return
 flaky.sendColleagueNotification(meeting, 'MTG-4');
 ok('if the first email fails, the second still goes', flaky.mail.length === 1);
 
-ok('no em dash in Code.gs', src.indexOf('—') < 0);
+ok('no em dash in Code.gs', src.indexOf(String.fromCharCode(8212)) < 0);
 console.log('\n' + (fails.length ? fails.length + ' FAILED' : 'all checks pass'));
 process.exit(fails.length ? 1 : 0);
