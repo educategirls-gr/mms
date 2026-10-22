@@ -551,7 +551,7 @@
   </div>
   <div class="sidebar-bottom">
     <button class="btn-logout" onclick="logout()">🚪 Logout</button>
-    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.41 &middot; 2 Oct 2026</div>
+    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.42 &middot; 22 Oct 2026</div>
   </div>
 </div>
 
@@ -1122,6 +1122,77 @@
   // Selectable by everyone when planning, but not part of any zone
   var STATE_EXTRA_DISTRICTS = ['LUCKNOW'];
 
+  // ── Post and purpose lists ─────────────────────────────────────
+  // The same idea as the district list above. These two used to wait for
+  // getDropdownData, a round trip through the Apps Script front door of 3 to
+  // 17 seconds, so both dropdowns sat on "Loading..." while the officer waited
+  // (reported 22 Oct 2026). Neither list changes from one week to the next, so
+  // the page fills them at once and the server's answer, when it lands,
+  // corrects them without touching what has been picked.
+  //
+  // POSTS is a copy of the list in getDropdownData in Code.gs. WHEN A POST IS
+  // ADDED, CHANGE IT IN BOTH PLACES; a forgotten edit here only means the new
+  // post appears one round trip later, never that it is missing.
+  var POSTS = [
+    'ACS', 'DGSE', 'UIC', 'SPD', 'ASPD', 'JD',
+    'Development Partner Cell',
+    'BSA', 'DC- Gender', 'DC-Training', 'DC- MIS',
+    'DC- Community', 'DC-IED',
+    'District Collector', 'CDO', 'DIET Principal',
+    'ABSA', 'ARP', 'Head Teacher', 'Teacher', 'Other'
+  ];
+  // Purposes really live in the "Meeting Purpose" tab of the sheet. This copy
+  // (taken 22 Oct 2026) is only for a phone's very first visit; after that the
+  // last list the server sent is kept on the phone, so a purpose added to the
+  // sheet shows from the visit after it was added.
+  var PURPOSES_DEFAULT = [
+    'Introductory Meeting', 'Enrollment', 'Retention', 'Learning', 'Invitation',
+    'Review Meeting', 'MPR Submission', 'DTF', 'School Liasioning', 'Courtesy Meeting'
+  ];
+  var PURPOSES_KEY = 'eg_purposes_v1';
+  function purposesStored() {
+    try {
+      var l = JSON.parse(localStorage.getItem(PURPOSES_KEY) || 'null');
+      return (l && l.length) ? l : null;
+    } catch (e) { return null; }
+  }
+  function purposesStore(list) {
+    try { localStorage.setItem(PURPOSES_KEY, JSON.stringify(list)); } catch (e) {}
+  }
+  // Fill one dropdown from a list, keeping whatever is picked. A choice the new
+  // list no longer has stays in the box rather than vanishing under the officer.
+  // otherLabel: the purpose list ends in one "Other (Specify)"; the sheet's own
+  // "Other" row is skipped, which is why "Other" used to show twice.
+  function fillSelect_(id, list, first, otherLabel) {
+    var sel = document.getElementById(id);
+    if (!sel || !list) return;
+    var keep = sel.value, seen = {};
+    sel.innerHTML = '';
+    var head = document.createElement('option'); head.value = ''; head.textContent = first; sel.appendChild(head);
+    list.forEach(function(v) {
+      v = (v == null ? '' : v).toString().trim();
+      var k = v.toLowerCase();
+      if (!v || seen[k] || (otherLabel && k === 'other')) return;
+      seen[k] = 1;
+      var o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o);
+    });
+    if (otherLabel) {
+      var oo = document.createElement('option'); oo.value = 'Other'; oo.textContent = otherLabel; sel.appendChild(oo);
+    }
+    if (keep) {
+      sel.value = keep;
+      if (sel.value !== keep) {
+        var ok = document.createElement('option'); ok.value = keep; ok.textContent = keep;
+        sel.appendChild(ok); sel.value = keep;
+      }
+    }
+  }
+  // A null list leaves that dropdown as it is.
+  function fillPostPurpose(posts, purposes) {
+    fillSelect_('adhikariPost', posts, 'Select Post', null);
+    fillSelect_('meetingPurpose', purposes, 'Select Purpose', 'Other (Specify)');
+  }
+
   // Mirrors getPlanDistricts() in Code.gs: this role's scope plus the state-only extras.
   function planDistrictsLocal() {
     var role = (SESSION && SESSION.role || '').toString().trim(), base = [];
@@ -1403,9 +1474,15 @@
     document.getElementById('meetingDate').value = today;
     document.getElementById('meetingDate').min   = today;
 
+    // Posts and purposes straight from the page, so the form is usable at once,
+    // and a saved draft can go back in now rather than after the round trip.
+    fillPostPurpose(POSTS, purposesStored() || PURPOSES_DEFAULT);
+    bindPlanDraft();
+    restorePlanDraftOnce();
+
     gasFetch('getDropdownData', { email: SESSION.email }, populateDropdowns, function() {
-      document.getElementById('adhikariPost').innerHTML   = '<option value="">- Error loading -</option>';
-      document.getElementById('meetingPurpose').innerHTML = '<option value="">- Error loading -</option>';
+      // The lists from the page are on screen and keep working. Only the
+      // block list and the last-met line have to wait for another visit.
     });
 
     // Warm Manage and My Meetings so the first tap is instant. Side by side,
@@ -3099,6 +3176,7 @@
   var _blocksByDistrict = {};
   // The block a block-level official sits in. Offered per district, because
   // every district has its own blocks.
+  var _pendingBlock = '';   // a drafted block waiting for the block list, see restorePlanDraft
   function refreshBlockOptions() {
     var sel = document.getElementById('adhikariBlock');
     if (!sel) return;
@@ -3111,6 +3189,10 @@
       var o = document.createElement('option'); o.value = b; o.textContent = b; sel.appendChild(o);
     });
     if (keep) sel.value = keep;
+    else if (_pendingBlock) {
+      sel.value = _pendingBlock;
+      if (sel.value === _pendingBlock) _pendingBlock = '';
+    }
   }
 
   function populateDropdowns(data) {
@@ -3124,24 +3206,15 @@
     paintMetLine();
     var pdSel = document.getElementById('plan-district');
     if (pdSel) pdSel.addEventListener('change', refreshBlockOptions);
-    var postSel = document.getElementById('adhikariPost');
-    postSel.innerHTML = '<option value="">Select Post</option>';
-    (data.stakeholders || []).forEach(function(s) {
-      var o = document.createElement('option'); o.value = s; o.textContent = s;
-      postSel.appendChild(o);
-    });
-    var purpSel = document.getElementById('meetingPurpose');
-    purpSel.innerHTML = '<option value="">Select Purpose</option>';
-    (data.purposes || []).forEach(function(p) {
-      var o = document.createElement('option'); o.value = p; o.textContent = p;
-      purpSel.appendChild(o);
-    });
-    var other = document.createElement('option'); other.value = 'Other'; other.textContent = 'Other (Specify)';
-    purpSel.appendChild(other);
-    // Only now, with the posts and purposes in place, can a saved choice be
-    // put back: setting a select before its options exist does nothing.
+    // The lists are already on screen from the page (see POSTS); the server's
+    // answer only corrects them, keeping whatever has been picked. An empty
+    // answer (Sheets not answering) leaves them as they are.
+    var srvPosts    = (data && data.stakeholders && data.stakeholders.length) ? data.stakeholders : null;
+    var srvPurposes = (data && data.purposes && data.purposes.length) ? data.purposes : null;
+    if (srvPurposes) purposesStore(srvPurposes);
+    fillPostPurpose(srvPosts, srvPurposes);
     bindPlanDraft();
-    restorePlanDraft();
+    restorePlanDraftOnce();
   }
   function onPostChange() {
     var val = document.getElementById('adhikariPost').value;
@@ -3880,6 +3953,14 @@
   }
   // Called once the dropdowns hold their options: setting a select before its
   // options exist does nothing at all, silently.
+  // Once per page load. It now runs before the server has answered, and running
+  // it again when the answer lands would overwrite anything typed meanwhile.
+  var _planDraftDone = false;
+  function restorePlanDraftOnce() {
+    if (_planDraftDone) return;
+    _planDraftDone = true;
+    restorePlanDraft();
+  }
   function restorePlanDraft() {
     var d = null;
     try { d = JSON.parse(localStorage.getItem(planDraftKey()) || 'null'); } catch (e) { d = null; }
@@ -3890,6 +3971,10 @@
     put('plan-district');
     if (typeof refreshBlockOptions === 'function') refreshBlockOptions();
     put('adhikariBlock');
+    // The block list comes with the server's answer, which may not be here yet.
+    // Hold the drafted block; refreshBlockOptions puts it in when the list lands.
+    var _abEl = document.getElementById('adhikariBlock');
+    if (d.adhikariBlock && _abEl && _abEl.value !== d.adhikariBlock) _pendingBlock = d.adhikariBlock;
     put('meetingDate'); put('mt-h'); put('mt-m'); put('mt-ap');
     // onPostChange clears the Other box whenever the post is not Other, so the
     // post has to be settled before the Other box is filled. Same for purpose.
@@ -4427,6 +4512,7 @@
     var dl = document.getElementById('docs-list');   if (dl) dl.innerHTML = '';
     var pd = document.getElementById('plan-district'); if (pd) pd.value = '';
     var ab = document.getElementById('adhikariBlock'); if (ab) ab.value = '';
+    _pendingBlock = '';
     paintAllCharNotes();
   }
 

@@ -25,13 +25,26 @@ const STUB = `<script>
   ];
   var R = {
     getPlanDistricts: ['UNNAO','SITAPUR','LUCKNOW'],
-    getDropdownData: { stakeholders:['BSA','BEO','DM','Other'], purposes:['Enrollment','Training'], blocksByDistrict:{}, metBefore:[] },
+    // Like the real one: the full post list, purposes as the sheet has them
+    // (with its own "Other") plus one new purpose, blocks, and a last-met row.
+    getDropdownData: { stakeholders:['ACS','DGSE','UIC','SPD','ASPD','JD','Development Partner Cell','BSA','DC- Gender','DC-Training','DC- MIS','DC- Community','DC-IED','District Collector','CDO','DIET Principal','ABSA','ARP','Head Teacher','Teacher','Other'],
+                       purposes:['Introductory Meeting','Enrollment','Retention','Learning','Invitation','Review Meeting','MPR Submission','Other','DTF','School Liasioning','Courtesy Meeting','New Purpose From Sheet'],
+                       blocksByDistrict:{ UNNAO:['BAGARMAU','HASANGANJ'] },
+                       metBefore:[{ dist:'UNNAO', post:'BSA', name:'Ramesh Kumar', date:'12 Aug 2026', ts:Date.now() - 40*86400000, purpose:'Enrollment' }] },
     getMyMeetings: PLANNED, getAllMyMeetings: [], getStateAllMeetings: []
   };
   window.fetch = function(url) {
     var a = (/[?&]action=([^&]+)/.exec(url) || [])[1] || '';
-    var body = R.hasOwnProperty(a) ? R[a] : { success:true };
-    return new Promise(function(res){ setTimeout(function(){ res(new Response(JSON.stringify(body))); }, 60); });
+    var body = R.hasOwnProperty(a) ? R[a] : { success:true }, wait = 60;
+    window.__calls = (window.__calls || []).concat([a]);
+    if (a === 'getDropdownData') {
+      wait = 3000;   // the front door is this slow, or slower
+      // ?ddfail=1: the front door answers with its error page every time
+      if (/[?&]ddfail=1/.test(location.search)) {
+        return new Promise(function(res){ setTimeout(function(){ res(new Response('<html>busy</html>')); }, 300); });
+      }
+    }
+    return new Promise(function(res){ setTimeout(function(){ res(new Response(JSON.stringify(body))); }, wait); });
   };
 })();
 </script>`;
