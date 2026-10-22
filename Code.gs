@@ -4695,7 +4695,7 @@ function extractCommitments_(d) {
   var o = _parseJson_(callLLM(prompt));
   var list = (o && Array.isArray(o.commitments)) ? o.commitments : [];
   var flat = note.toLowerCase().replace(/\s+/g, ' ');
-  return list.map(function(c){
+  var res = list.map(function(c){
     var ev = (c.evidence || '').toString().trim();
     // Does the quote actually exist in the note? A hallucination fails this.
     var probe = ev.toLowerCase().replace(/\s+/g, ' ').substring(0, 45);
@@ -4703,50 +4703,80 @@ function extractCommitments_(d) {
              due:(c.due||'').toString().trim(), evidence:ev,
              evidenceFound: (probe.length >= 12 && flat.indexOf(probe) >= 0) };
   }).filter(function(c){ return c.what; });
+  // "No commitment" and "the AI did not answer" both come back empty; the dry
+  // run must not count the second as the first.
+  res.aiFailed = !o;
+  return res;
 }
 
 // Try the extractor on real meetings and PRINT the result. Writes nothing,
 // changes nothing, so it is always safe to run.
 function COMMIT_dryRun(limit) {
-  limit = limit || 15;
+  // Since 22 Oct 2026 this tests on notes from the three-question form, where
+  // the officer also chose the outcome. That is a check the extractor cannot
+  // see: where the officer chose "Commitment" it should find one, and where
+  // they chose Courtesy or Nothing concrete it should find none. Both rates
+  // are printed. About a dozen AI calls, a minute or two. Writes nothing.
+  limit = limit || 8;   // meetings marked Commitment; half as many others alongside
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID), sh = ss.getSheetByName(CONDUCTED_SHEET);
   if (!sh) return { success:false, message:'no conducted sheet' };
   var data = sh.getDataRange().getValues();
 
-  // Take the meetings with the most substantial notes: that is where the
-  // extractor has something to work with and where a mistake would matter.
-  var cand = [];
+  var marked = [], control = [];
   for (var i = 1; i < data.length; i++) {
     if (!data[i][0]) continue;
     var note = (data[i][15] || '').toString().trim();
-    if (note.length < 25) continue;
-    cand.push({ row:i+1, id:data[i][0], district:data[i][1], officer:data[i][2],
-                stakeholderName:data[i][9], stakeholderPost:data[i][10],
-                purpose:data[i][11], date:fmtDateVal(data[i][13]), keyPoints:note });
+    if (!/\bofficial said\s*:/i.test(note)) continue;            // three-question form only
+    var oc = (data[i][COL_CON_OUTCOME - 1] || '').toString().trim();
+    var m = { row:i+1, id:data[i][0], district:data[i][1], officer:data[i][2],
+              stakeholderName:data[i][9], stakeholderPost:data[i][10],
+              purpose:data[i][11], date:fmtDateVal(data[i][13]), keyPoints:note, outcome:oc };
+    if (oc === 'Commitment') marked.push(m);
+    else if (oc === 'Courtesy' || oc === 'Nothing') control.push(m);
   }
-  cand.sort(function(a,b){ return b.keyPoints.length - a.keyPoints.length; });
-  var pick = cand.slice(0, limit);
+  // Newest first: those are the notes written under the form as it is now.
+  var pick = marked.slice(-limit).reverse().concat(control.slice(-Math.ceil(limit / 2)).reverse());
 
-  var out = [], totals = { meetings:0, found:0, evidenceOk:0, evidenceBad:0, none:0 };
-  pick.forEach(function(m, idx){
-    if (idx) Utilities.sleep(1500);                // stay under the rate limit
+  function said(note) {
+    var part = note.split(/official said\s*:/i)[1] || '';
+    return part.split(/next step\s*:/i)[0].replace(/\s+/g, ' ').trim();
+  }
+  var t = { marked:0, markedFound:0, control:0, controlFound:0, quotes:0, quotesOk:0, aiFailed:0 };
+  var lines = [], results = [];
+  pick.forEach(function(m, idx) {
+    if (idx) Utilities.sleep(1500);                                // stay under the rate limit
     var cs = extractCommitments_(m);
-    totals.meetings++;
-    if (!cs.length) totals.none++;
-    cs.forEach(function(c){
-      totals.found++;
-      if (c.evidenceFound) totals.evidenceOk++; else totals.evidenceBad++;
+    var isMarked = m.outcome === 'Commitment';
+    if (cs.aiFailed) t.aiFailed++;
+    else if (isMarked) { t.marked++; if (cs.length) t.markedFound++; }
+    else { t.control++; if (cs.length) t.controlFound++; }
+    cs.forEach(function(c) { t.quotes++; if (c.evidenceFound) t.quotesOk++; });
+
+    lines.push('');
+    lines.push((idx + 1) + '. ' + m.date + '  ' + m.district + '  ' + m.officer + '  with ' +
+               m.stakeholderName + ' (' + m.stakeholderPost + ')   [officer chose: ' + m.outcome + ']');
+    lines.push('   Official said: ' + said(m.keyPoints).substring(0, 220));
+    if (cs.aiFailed) lines.push('   AI did not answer (not counted)');
+    else if (!cs.length) lines.push('   AI found: no commitment');
+    cs.forEach(function(c) {
+      lines.push('   AI found: ' + c.what + (c.due ? '  | due: ' + c.due : '') +
+                 (c.evidenceFound ? '  | quote checked' : '  | QUOTE NOT IN NOTE'));
     });
-    out.push({ date:m.date, district:m.district, officer:m.officer,
-               official:m.stakeholderName + ' (' + m.stakeholderPost + ')',
-               noteLength:m.keyPoints.length,
-               note:m.keyPoints.substring(0, 220),
-               commitments: cs.length ? cs : '(none found)' });
+    results.push({ date:m.date, district:m.district, officer:m.officer,
+                   official:m.stakeholderName + ' (' + m.stakeholderPost + ')', officerChose:m.outcome,
+                   officialSaid:said(m.keyPoints), aiFailed:!!cs.aiFailed, commitments:cs });
   });
 
-  var res = { summary:totals, results:out };
-  Logger.log(JSON.stringify(res, null, 2));
-  return res;
+  var head = [
+    'COMMITMENT DRY RUN (reads the sheet and asks the AI; writes nothing, sends nothing)',
+    'Notes from the three-question form: ' + marked.length + ' marked Commitment, ' + control.length + ' marked Courtesy or Nothing. Tested the newest ' + pick.length + '.',
+    'Officer chose Commitment: AI found one in ' + t.markedFound + ' of ' + t.marked + ' (higher is better).',
+    'Officer chose Courtesy / Nothing: AI found one in ' + t.controlFound + ' of ' + t.control + ' (should be 0).',
+    'AI quotes found word for word in the note: ' + t.quotesOk + ' of ' + t.quotes + '.'
+  ];
+  if (t.aiFailed) head.push('AI did not answer for ' + t.aiFailed + ' meeting(s); run LLM_probe() if this keeps happening.');
+  Logger.log(head.concat(lines).join(String.fromCharCode(10)));
+  return { summary:t, results:results };
 }
 
 // ------------------------------------------------------------
@@ -4977,11 +5007,25 @@ function NOTE_quality() {
   var kp = {}, ag = {}, byOfficer = {}, seen = {}, dupes = 0, dupOfficers = {};
   var total = 0, kpSum = 0;
   var forms = { old: group(), neu: group() }, perOfficer = {};
+  // Counted per person by email, not by name: two different people are both
+  // called OM PRAKASH, and by name their notes were added together. A name
+  // that two people share is printed with the email beside it.
+  var nameOf = {}, keysOfName = {};
+  function who(key) {
+    var nm = nameOf[key] || key;
+    return (keysOfName[nm.toLowerCase()] || []).length > 1 ? nm + ' <' + key + '>' : nm;
+  }
 
   for (var i = 1; i < data.length; i++) {
     if (!data[i][0]) continue;
     total++;
-    var officer = (data[i][2] || '?').toString().trim();
+    var officerName = (data[i][2] || '?').toString().trim();
+    var officer = (data[i][4] || '').toString().trim().toLowerCase() || officerName;   // the key: email
+    if (!nameOf[officer]) {
+      nameOf[officer] = officerName;
+      var nk = officerName.toLowerCase();
+      (keysOfName[nk] = keysOfName[nk] || []).push(officer);
+    }
     var note = (data[i][15] || '').toString().trim();
     var agenda = (data[i][12] || '').toString().trim();
     kp[bucket(note.length)] = (kp[bucket(note.length)] || 0) + 1;
@@ -5028,13 +5072,13 @@ function NOTE_quality() {
   var same = Object.keys(perOfficer).filter(function(n) {
     return perOfficer[n].old.length >= 3 && perOfficer[n].neu.length >= 3;
   }).map(function(n) {
-    return { officer:n, before:avg(perOfficer[n].old), after:avg(perOfficer[n].neu),
+    return { officer:who(n), before:avg(perOfficer[n].old), after:avg(perOfficer[n].neu),
              notesBefore:perOfficer[n].old.length, notesAfter:perOfficer[n].neu.length };
   }).sort(function(a, b) { return (b.after - b.before) - (a.after - a.before); });
 
   var officers = Object.keys(byOfficer).map(function(n){
     var o = byOfficer[n];
-    return { officer:n, meetings:o.meetings, avgChars:Math.round(o.totalChars / o.meetings), thinNotes:o.thin };
+    return { officer:who(n), meetings:o.meetings, avgChars:Math.round(o.totalChars / o.meetings), thinNotes:o.thin };
   }).sort(function(a,b){ return a.avgChars - b.avgChars; });
 
   // Written to be read in the execution log.
@@ -5055,19 +5099,19 @@ function NOTE_quality() {
   if (same.length) {
     L.push('Same officers, before -> after (average characters; 3+ notes each side):');
     same.forEach(function(x) {
-      L.push('  ' + (x.officer + '                         ').slice(0, 26) + x.before + ' -> ' + x.after +
+      L.push('  ' + (x.officer + '                         ').slice(0, Math.max(26, x.officer.length + 2)) + x.before + ' -> ' + x.after +
              '   (' + x.notesBefore + ' and ' + x.notesAfter + ' notes)');
     });
   } else {
     L.push('No officer has 3+ notes in both forms yet.');
   }
   var shortNew = Object.keys(perOfficer).filter(function(n) { return perOfficer[n].neu.length >= 2; })
-    .map(function(n) { return { officer:n, avg:avg(perOfficer[n].neu), notes:perOfficer[n].neu.length }; })
+    .map(function(n) { return { officer:who(n), avg:avg(perOfficer[n].neu), notes:perOfficer[n].neu.length }; })
     .sort(function(a, b) { return a.avg - b.avg; }).slice(0, 5);
   if (shortNew.length) {
     L.push('');
     L.push('Shortest writers in the three-question form (2+ notes):');
-    shortNew.forEach(function(x) { L.push('  ' + (x.officer + '                         ').slice(0, 26) + x.avg + ' characters average, ' + x.notes + ' notes'); });
+    shortNew.forEach(function(x) { L.push('  ' + (x.officer + '                         ').slice(0, Math.max(26, x.officer.length + 2)) + x.avg + ' characters average, ' + x.notes + ' notes'); });
   }
   Logger.log(L.join(String.fromCharCode(10)));
 
@@ -5078,7 +5122,7 @@ function NOTE_quality() {
     keyPointsLengths: kp,
     agendaLengths: ag,
     repeatedNotes: dupes,
-    repeatedNotesByOfficer: dupOfficers,
+    repeatedNotesByOfficer: (function() { var o = {}; for (var k in dupOfficers) o[who(k)] = dupOfficers[k]; return o; })(),
     shortestWriters: officers.slice(0, 10),
     longestWriters: officers.slice(-5).reverse()
   };
