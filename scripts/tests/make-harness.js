@@ -38,10 +38,12 @@ const STUB = `<script>
                       { name:'Buddh Vilas', designation:'District Impact Specialist', district:'BAHRAICH', block:'' },
                       { name:'Sanjay Kumar', designation:'Block Program Officer', district:'SHRAVASTI', block:'HARIHARPUR RANI' }]
   };
-  window.fetch = function(url) {
+  window.fetch = function(url, opts) {
     var a = (/[?&]action=([^&]+)/.exec(url) || [])[1] || '';
     var body = R.hasOwnProperty(a) ? R[a] : { success:true }, wait = 60;
     window.__calls = (window.__calls || []).concat([a]);
+    // what a save would have sent, for checking (nothing goes anywhere)
+    if (opts && opts.body) { try { window.__posts = (window.__posts || []).concat([{ action:a, body:JSON.parse(opts.body) }]); } catch (e) {} }
     if (a === 'getDropdownData') {
       wait = 3000;   // the front door is this slow, or slower
       // ?ddfail=1: the front door answers with its error page every time

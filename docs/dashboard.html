@@ -558,7 +558,7 @@
   </div>
   <div class="sidebar-bottom">
     <button class="btn-logout" onclick="logout()">🚪 Logout</button>
-    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.43 &middot; 22 Oct 2026</div>
+    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.44 &middot; 22 Oct 2026</div>
   </div>
 </div>
 
@@ -855,9 +855,9 @@
           <div class="form-row">
             <div class="field full">
               <label>4. What came out of this meeting? <span class="req">*</span></label>
-              <select id="c-outcome">
+              <select id="c-outcome" onchange="syncCommitBox()">
                 <option value="">Select the outcome</option>
-                <option value="Commitment">Commitment obtained, the official agreed to do something</option>
+                <option value="Commitment">Commitment, the official agreed to do a specific task</option>
                 <option value="Information">Information or data received</option>
                 <option value="Permission">Permission or approval granted</option>
                 <option value="Courtesy">Introduction or courtesy visit</option>
@@ -866,6 +866,24 @@
               </select>
               <div style="font-size:11px;color:#9CA3AF;margin-top:4px;">Answer honestly. A courtesy visit is a normal and useful part of the work, and marking it as one is not a poor result.</div>
             </div>
+          </div>
+          <!-- Only for the outcome Commitment: the task and the date, in boxes of
+               their own, so it can be followed up later without reading notes. -->
+          <div id="c-commit-box" style="display:none;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:12px 14px;margin-bottom:12px;">
+            <div class="form-row">
+              <div class="field full">
+                <label>What exactly will the official do? <span class="req">*</span></label>
+                <input type="text" id="c-commit-what" maxlength="300" placeholder="Share the village-wise list of out-of-school girls">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="field">
+                <label>By when? <span class="req">*</span></label>
+                <input type="date" id="c-commit-due">
+              </div>
+            </div>
+            <div style="font-size:11px;color:#6B7280;">If no date was given, pick the day you will check back with them.</div>
+            <div style="font-size:11px;color:#6B7280;margin-top:4px;">Only a specific task counts, such as sharing a list, issuing a letter or visiting a school. "Agreed to support" on its own is not a commitment, so choose another outcome for that.</div>
           </div>
           <div id="c-kp-hint" style="display:none;font-size:12px;color:#9a5b0e;background:#FEF7ED;border:1px solid #FDE68A;border-radius:8px;padding:8px 12px;margin-bottom:12px;"></div>
           <div class="form-row">
@@ -1807,10 +1825,13 @@
     document.getElementById('c-kp-said').value = '';
     document.getElementById('c-kp-next').value = '';
     var _oc = document.getElementById('c-outcome'); if (_oc) _oc.value = '';
+    var _cw = document.getElementById('c-commit-what'); if (_cw) _cw.value = '';
+    var _cdu = document.getElementById('c-commit-due'); if (_cdu) _cdu.value = '';
     var _mm = document.getElementById('c-make-mom'); if (_mm) _mm.checked = false;
     var _kph = document.getElementById('c-kp-hint');
     if (_kph) { _kph.style.display = 'none'; _kph.dataset.warned = ''; }
     restoreConductDraft(m.meetingId);
+    syncCommitBox();
     onMomToggle();
     vnReset();
     paintAllCharNotes();
@@ -1979,7 +2000,7 @@
   // never find out. So keep it as they type and put it back if the save fails.
   // Photos are deliberately not kept: five files at 3MB each would not fit in
   // browser storage, so the message says to pick them again.
-  var _DRAFT_FIELDS = ['ct-h','ct-m','ct-ap','c-kp-what','c-kp-said','c-kp-next','c-outcome','c-fu-date','cft-h','cft-m','cft-ap'];
+  var _DRAFT_FIELDS = ['ct-h','ct-m','ct-ap','c-kp-what','c-kp-said','c-kp-next','c-outcome','c-commit-what','c-commit-due','c-fu-date','cft-h','cft-m','cft-ap'];
   function draftKey(meetingId) {
     return 'eg_draft_' + ((SESSION && SESSION.email) || '') + '_' + (meetingId || '');
   }
@@ -2045,6 +2066,32 @@
     return { text: parts.join('\n'), what: what, said: said, next: next };
   }
 
+  // The two commitment boxes show only for the outcome Commitment. What is
+  // typed stays in them if the officer switches away and back.
+  function syncCommitBox() {
+    var box = document.getElementById('c-commit-box');
+    if (!box) return;
+    var on = (document.getElementById('c-outcome') || {}).value === 'Commitment';
+    box.style.display = on ? '' : 'none';
+    var due = document.getElementById('c-commit-due'), cd = document.getElementById('c-date');
+    if (due && cd && cd.value) due.min = cd.value;
+  }
+  // Goodwill with nothing to check later. Exact phrases only, so a real task
+  // that happens to mention support ("support the enrolment drive on 5th") passes.
+  var _VAGUE_COMMIT = /^((he|she|they|the official|official|bsa|beo|bdo|absa|arp|dc|dm|cdo|srg|warden|principal|head teacher|teacher|sir|madam)( sir| ji| madam)? )?(has |have )?(agreed to |agree to |will |would )?(give |provide |extend )?(full |all |every |complete |all possible )?(support|cooperation|cooperate|help|sahyog|sahayog|madad)( us| our team| the team| in all activities| with all activities| in all work)?$/i;
+  function readCommitment(outcome, date) {
+    if (outcome !== 'Commitment') return { ok: true, what: '', due: '' };
+    var what = (document.getElementById('c-commit-what').value || '').replace(/\s+/g, ' ').trim();
+    var due  = document.getElementById('c-commit-due').value || '';
+    if (what.length < 8) return { ok: false, msg: 'Please write what exactly the official will do.' };
+    if (_VAGUE_COMMIT.test(what.replace(/[.!,]+$/, '').trim())) {
+      return { ok: false, msg: '"Support" on its own is not a task anyone can check. Please write the specific thing the official will do, or choose another outcome.' };
+    }
+    if (!due) return { ok: false, msg: 'Please choose by when the official will do it.' };
+    if (date && due < date) return { ok: false, msg: 'The date for the commitment cannot be before the meeting.' };
+    return { ok: true, what: what, due: due };
+  }
+
   function submitConduct() {
     var date = document.getElementById('c-date').value;
     var kpo  = buildKeyPoints();
@@ -2055,6 +2102,8 @@
     if (kpo.said.length < 20) { showModalAlert('conduct', 'Please write a little more in question 2. What the official said is the part that matters most.'); return; }
     var outcome = document.getElementById('c-outcome').value;
     if (!outcome) { showModalAlert('conduct', 'Please choose what came out of this meeting.'); return; }
+    var commit = readCommitment(outcome, date);
+    if (!commit.ok) { showModalAlert('conduct', commit.msg); return; }
 
     var followUp = null;
     if (document.getElementById('c-fu-toggle').checked) {
@@ -2157,6 +2206,9 @@
       colleagueName: m.colleagueName || '', colleaguePost: m.colleaguePost || '',
       conductDate: date, conductTime: time, keyPoints: kp, photos: photos,
       outcome: outcome || '',
+      // read again here rather than passed along: empty unless the outcome is Commitment
+      commitWhat: outcome === 'Commitment' ? readCommitment(outcome, date).what : '',
+      commitDue:  outcome === 'Commitment' ? readCommitment(outcome, date).due  : '',
       skipMom: !(document.getElementById('c-make-mom') || {}).checked,
       followUp: followUp || null
     }, function(res) {
@@ -4841,7 +4893,13 @@
     'Collect the data and share the summary with the district team': 'आँकड़े एकत्र कर सारांश जनपद की टीम के साथ साझा करना',
     '4. What came out of this meeting?': '4. इस बैठक से क्या परिणाम निकला?',
     'Select the outcome': 'परिणाम चुनें',
-    'Commitment obtained, the official agreed to do something': 'प्रतिबद्धता मिली, अधिकारी ने कुछ करने पर सहमति दी',
+    'Commitment, the official agreed to do a specific task': 'प्रतिबद्धता, अधिकारी ने कोई निश्चित कार्य करने पर सहमति दी',
+    'What exactly will the official do?': 'अधिकारी ठीक-ठीक क्या करेंगे?',
+    'Share the village-wise list of out-of-school girls': 'विद्यालय से बाहर की बालिकाओं की ग्राम-वार सूची साझा करेंगे',
+    'By when?': 'कब तक?',
+    'If no date was given, pick the day you will check back with them.': 'यदि कोई तिथि नहीं बताई गई, तो वह दिन चुनें जब आप उनसे पुनः संपर्क करेंगे।',
+    'Only a specific task counts, such as sharing a list, issuing a letter or visiting a school. "Agreed to support" on its own is not a commitment, so choose another outcome for that.':
+      'केवल कोई निश्चित कार्य ही गिना जाएगा, जैसे सूची साझा करना, पत्र जारी करना या विद्यालय का भ्रमण करना। केवल "सहयोग पर सहमति" प्रतिबद्धता नहीं है, उसके लिए कोई अन्य परिणाम चुनें।',
     'Information or data received': 'सूचना या आँकड़े प्राप्त हुए',
     'Permission or approval granted': 'अनुमति या स्वीकृति मिली',
     'Introduction or courtesy visit': 'परिचय या शिष्टाचार भेंट',
@@ -4874,6 +4932,11 @@
     'Please write a little more in question 2. What the official said is the part that matters most.':
       'कृपया प्रश्न 2 में थोड़ा और लिखें। अधिकारी ने क्या कहा, यही सबसे महत्वपूर्ण भाग है।',
     'Please choose what came out of this meeting.': 'कृपया चुनें कि इस बैठक से क्या परिणाम निकला।',
+    'Please write what exactly the official will do.': 'कृपया लिखें कि अधिकारी ठीक-ठीक क्या करेंगे।',
+    '"Support" on its own is not a task anyone can check. Please write the specific thing the official will do, or choose another outcome.':
+      '"सहयोग" अपने आप में ऐसा कार्य नहीं है जिसकी जाँच हो सके। कृपया वह निश्चित कार्य लिखें जो अधिकारी करेंगे, या कोई अन्य परिणाम चुनें।',
+    'Please choose by when the official will do it.': 'कृपया चुनें कि अधिकारी यह कार्य कब तक करेंगे।',
+    'The date for the commitment cannot be before the meeting.': 'प्रतिबद्धता की तिथि बैठक की तिथि से पहले नहीं हो सकती।',
     'Please select a follow-up date.': 'कृपया अनुवर्ती बैठक की तिथि चुनें।',
     'The photos could not be read. Please pick them again.': 'फ़ोटो पढ़े नहीं जा सके। कृपया इन्हें फिर से चुनें।',
     'This meeting was already recorded, so it was not saved a second time.': 'यह बैठक पहले ही दर्ज हो चुकी थी, इसलिए दोबारा नहीं सहेजी गई।',

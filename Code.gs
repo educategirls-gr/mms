@@ -2277,6 +2277,8 @@ function conductMeeting(payload) {
       var oc = (payload.outcome || '').toString().trim();
       if (oc) cSheet.getRange(clr, COL_CON_OUTCOME).setValue(oc);
     } catch (sbErr) { /* both are optional, never fail the conduct over them */ }
+    // Its own try, after the outcome is safely written: never fail the conduct over it.
+    try { saveCommitment_(cSheet, clr, payload); } catch (cmErr) {}
 
     // 5. Update status in Plan Meetings to "Conducted" - NEVER delete, keeps master ledger intact for dashboard reporting
     if (planSheet && planRowIdx > 0) {
@@ -2442,6 +2444,15 @@ function createMoMDoc(d, photoFolderUrl) {
     points.forEach(function(pt) { body.appendListItem(pt.trim()); });
   } else {
     body.appendParagraph('-');
+  }
+
+  // What the official undertook to do, when the officer recorded it.
+  var _cm = cleanCommitment_(d);
+  if (_cm) {
+    sec('Commitment by the Official');
+    var cmP = body.appendParagraph('');
+    cmP.appendText(_cm.what);
+    if (_cm.due) cmP.appendText('   (by ' + fmtDateVal(_cm.due) + ')').setBold(true);
   }
 
   // Photos
@@ -5610,6 +5621,39 @@ var COL_CON_SKBLOCK  = 31;   // AE in Conducted Meetings
 // they were there, and this number will end up judging them, so a model's
 // guess is the wrong thing to build it on.
 var COL_CON_OUTCOME  = 32;   // AF in Conducted Meetings
+// When the outcome is Commitment, what exactly the official will do and by
+// when (22 Oct 2026). A dry run on 36 notes marked Commitment found that most
+// said only "agreed to support", which nobody can ever follow up, so the form
+// now asks for the task and a date in two boxes of their own.
+var COL_CON_WILLDO = 33;   // AG in Conducted Meetings
+var COL_CON_DUE    = 34;   // AH in Conducted Meetings (text, YYYY-MM-DD)
+
+// The commitment the officer typed, tidied, or null when there is none. Only
+// for the outcome Commitment: a stray value left in the box after the officer
+// changed their mind about the outcome is ignored.
+function cleanCommitment_(d) {
+  if ((d.outcome || '').toString().trim() !== 'Commitment') return null;
+  var what = (d.commitWhat || '').toString().replace(/\s+/g, ' ').trim().substring(0, 300);
+  if (!what) return null;
+  var due = (d.commitDue || '').toString().trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) due = '';
+  return { what: what, due: due };
+}
+
+// Writes AG / AH on the row just saved. The two columns are added to the sheet
+// the first time they are needed, at the far right, so nothing else moves.
+function saveCommitment_(sh, row, d) {
+  var c = cleanCommitment_(d);
+  if (!c) return false;
+  var maxC = sh.getMaxColumns();
+  if (maxC < COL_CON_DUE) sh.insertColumnsAfter(maxC, COL_CON_DUE - maxC);
+  if (!sh.getRange(1, COL_CON_WILLDO).getValue()) sh.getRange(1, COL_CON_WILLDO).setValue('Official Will Do');
+  if (!sh.getRange(1, COL_CON_DUE).getValue())    sh.getRange(1, COL_CON_DUE).setValue('Commitment Due');
+  // Typed text that starts like a formula ("- share the list") stays text.
+  sh.getRange(row, COL_CON_WILLDO).setValue(/^[=+\-@]/.test(c.what) ? "'" + c.what : c.what);
+  if (c.due) sh.getRange(row, COL_CON_DUE).setNumberFormat('@').setValue(c.due);
+  return true;
+}
 
 function parseStart_(dateStr, timeStr) {
   var p = (dateStr||'').toString().trim().split(' '); if (p.length < 3) return null;
