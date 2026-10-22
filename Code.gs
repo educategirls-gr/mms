@@ -3284,13 +3284,62 @@ function getZoneAllMeetings(zone) {
 // ------------------------------------------------------------
 //  COLLEAGUE MEETING NOTIFICATION EMAIL
 // ------------------------------------------------------------
+// ------------------------------------------------------------
+//  COLLEAGUES ON A MEETING
+//  The colleague box holds one name or several. Officers were already typing
+//  several by hand ("Nigar Yasin, Vikrant Kumar, Shashi Prakash", "Shyam ji
+//  and Buddh vilas ji", "AJAY KUMAR & SANJAY KUMAR"), and the whole text was
+//  then looked up as ONE name, so nobody got the email. Since 22 Oct 2026 the
+//  page also lets them pick several from the list, joined with commas. The
+//  sheet keeps the joined text in the same two columns as before.
+// ------------------------------------------------------------
+// "A, B & C and D" -> ['A', 'B', 'C', 'D']. "and" only as a whole word, so
+// Anand and Chandan stay whole.
+function colleagueNames_(raw) {
+  return (raw == null ? '' : raw).toString()
+    .split(/\s*(?:,|;|\/|&|\band\b)\s*/i)
+    .map(function(x) { return x.trim(); })
+    .filter(function(x) { return x; });
+}
+// The comparison key: case, honorifics and punctuation do not count, so
+// "Buddh vilas ji" finds "Buddh Vilas". The rest of the name must match.
+function colleagueKey_(name) {
+  return (name == null ? '' : name).toString().toLowerCase()
+    .replace(/\b(shri|smt|mr|mrs|ms|dr|sir|ji|madam|maam)\b\.?/g, ' ')
+    .replace(/[^a-z\u0900-\u097f]+/g, ' ')
+    .trim().replace(/\s+/g, ' ');
+}
+// The named colleagues who are in the employee master, each once, never the
+// officer who filed the meeting. Read from the sign-in copy of the master, so
+// three names do not mean three opens of the spreadsheet. Field coordinators
+// and others outside the master have no email here and are skipped, as before.
+function colleaguesFound_(raw, officerEmail) {
+  var map = empMirrorRead_() || empReadFromSheet_() || {};
+  var byKey = {};
+  for (var em in map) {
+    var k = colleagueKey_(map[em].name);
+    if (k && !byKey[k]) byKey[k] = { name: (map[em].name || '').toString(), designation: (map[em].designation || '').toString(),
+                                     email: (map[em].email || em).toString().trim() };
+  }
+  var me = (officerEmail || '').toString().trim().toLowerCase(), seen = {}, out = [];
+  colleagueNames_(raw).forEach(function(n) {
+    var hit = byKey[colleagueKey_(n)];
+    if (!hit || !hit.email) return;
+    var e = hit.email.toLowerCase();
+    if (e === me || seen[e]) return;
+    seen[e] = 1;
+    out.push(hit);
+  });
+  return out;
+}
+
 function sendColleagueNotification(data, mtgId) {
   if (!data || !data.colleagueName || !data.colleagueName.trim()) return;
-
-  // Find colleague email by name in Employee_DB
-  var colleague = getEmployeeByName(data.colleagueName.trim());
-  if (!colleague || !colleague.email) return; // not found, skip
-
+  colleaguesFound_(data.colleagueName, data.email).forEach(function(colleague) {
+    try { sendColleagueNotificationTo_(data, mtgId, colleague); } catch (e) { /* one failed email must not stop the rest */ }
+  });
+}
+function sendColleagueNotificationTo_(data, mtgId, colleague) {
   var subject = 'Meeting Invitation | ' + mtgId + ' | ' + data.adhikariPost + ', ' + (data.district || '');
 
   var body =
@@ -3306,7 +3355,7 @@ function sendColleagueNotification(data, mtgId) {
 
     // Greeting
     '<div style="padding:28px 28px 0;background:#fff;">' +
-      '<p style="font-size:14px;color:#111827;margin:0 0 6px;">Dear <strong>' + data.colleagueName + '</strong>,</p>' +
+      '<p style="font-size:14px;color:#111827;margin:0 0 6px;">Dear <strong>' + _emailEsc(colleague.name) + '</strong>,</p>' +
       '<p style="font-size:13.5px;color:#374151;line-height:1.7;margin:0 0 22px;">' +
         'You have been designated as the <strong>Accompanying Colleague</strong> for an upcoming stakeholder meeting ' +
         'organized by <strong>' + data.employeeName + '</strong>. Kindly make a note of the following details and ensure ' +
@@ -3390,9 +3439,11 @@ function sendColleagueNotification(data, mtgId) {
 // ------------------------------------------------------------
 function sendMOMNotification(data, momUrl, photoFolderUrl, followUpId) {
   if (!data || !data.colleagueName || !data.colleagueName.trim()) return;
-
-  var colleague = getEmployeeByName(data.colleagueName.trim());
-  if (!colleague || !colleague.email) return;
+  colleaguesFound_(data.colleagueName, data.email).forEach(function(colleague) {
+    try { sendMOMNotificationTo_(data, momUrl, photoFolderUrl, followUpId, colleague); } catch (e) { /* one failed email must not stop the rest */ }
+  });
+}
+function sendMOMNotificationTo_(data, momUrl, photoFolderUrl, followUpId, colleague) {
 
   var subject = 'Minutes of Meeting | ' + data.meetingId + ' | ' + data.adhikariPost + ', ' + (data.district || '');
 
@@ -3416,7 +3467,7 @@ function sendMOMNotification(data, momUrl, photoFolderUrl, followUpId) {
 
     // Greeting
     '<div style="padding:28px 28px 0;background:#fff;">' +
-      '<p style="font-size:14px;color:#111827;margin:0 0 6px;">Dear <strong>' + data.colleagueName + '</strong>,</p>' +
+      '<p style="font-size:14px;color:#111827;margin:0 0 6px;">Dear <strong>' + _emailEsc(colleague.name) + '</strong>,</p>' +
       '<p style="font-size:13.5px;color:#374151;line-height:1.7;margin:0 0 22px;">' +
         'Please find below the Minutes of Meeting (MoM) for the stakeholder meeting you attended alongside ' +
         '<strong>' + data.employeeName + '</strong>. Kindly review the key discussion points and take note of any follow-up actions.' +

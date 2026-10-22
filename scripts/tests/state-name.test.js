@@ -15,7 +15,9 @@ function varVal(name) {
   return m[1];
 }
 
-const FNS = ['_emailEsc', 'sendOTP', 'sendColleagueNotification', 'sendMOMNotification',
+const FNS = ['_emailEsc', 'sendOTP', 'colleagueNames_', 'colleagueKey_', 'colleaguesFound_',
+             'sendColleagueNotification', 'sendColleagueNotificationTo_',
+             'sendMOMNotification', 'sendMOMNotificationTo_',
              'buildEscalationEmail_', 'buildWeeklyReminder_'];
 
 function load(state, host) {
@@ -25,7 +27,9 @@ function load(state, host) {
     MailApp: { sendEmail: (o) => mail.push(o) },
     CacheService: { getScriptCache: () => ({ put: () => {}, get: () => null }) },
     getEmployeeByEmail: (e) => (e === 'known@educategirls.ngo' ? { name: 'Known Person' } : null),
-    getEmployeeByName: () => ({ email: 'colleague@educategirls.ngo', name: 'Colleague' }),
+    // the sign-in copy of the employee master, which the colleague lookup reads
+    empMirrorRead_: () => ({ 'colleague@educategirls.ngo': { name: 'Colleague', designation: 'BPO', email: 'colleague@educategirls.ngo' } }),
+    empReadFromSheet_: () => null,
     Logger: { log: () => {} }, Session: { getScriptTimeZone: () => 'Asia/Kolkata' },
     Utilities: { formatDate: (d) => String(d) }
   };

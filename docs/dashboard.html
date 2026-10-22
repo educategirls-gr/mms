@@ -280,6 +280,13 @@
     .ci-avatar { width: 32px; height: 32px; border-radius: 50%; background: #7B1010; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
     .ci-name { font-weight: 600; color: #111827; }
     .ci-post { font-size: 11px; color: #6B7280; }
+    /* Several colleagues can be picked: a picked row is green with a tick. */
+    .colleague-item.picked { background: #F0FDF4; }
+    .colleague-item.picked .ci-avatar { background: #166534; }
+    .ci-tick { margin-left: auto; font-size: 17px; font-weight: 800; color: #166534; visibility: hidden; }
+    .colleague-item.picked .ci-tick { visibility: visible; }
+    .picker-done { background: #7B1010; color: #fff; border: none; border-radius: 7px; padding: 6px 16px;
+                   font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
 
     /* Action option cards */
     .action-opt-card { border: 2px solid #E5E7EB; border-radius: 12px; padding: 16px 8px; text-align: center; cursor: pointer; background: #fff; transition: all 0.15s; }
@@ -551,7 +558,7 @@
   </div>
   <div class="sidebar-bottom">
     <button class="btn-logout" onclick="logout()">🚪 Logout</button>
-    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.42 &middot; 22 Oct 2026</div>
+    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.43 &middot; 22 Oct 2026</div>
   </div>
 </div>
 
@@ -703,8 +710,8 @@
         </div>
         <div id="colleague-picker" class="colleague-picker" style="display:none;">
           <div class="picker-header">
-            <span>Select from your district team members:</span>
-            <button onclick="toggleColleaguePicker()" style="background:none;border:none;cursor:pointer;font-size:16px;color:#6B7280;">✕</button>
+            <span>Tap to pick one or more. Tap again to remove.</span>
+            <button type="button" class="picker-done" onclick="toggleColleaguePicker()">Done</button>
           </div>
           <div style="padding:8px 10px;border-bottom:1px solid #E5E7EB;background:#F9FAFB;">
             <input type="text" id="colleague-search" placeholder="🔍  Search by name..." oninput="filterColleagues(this.value)"
@@ -715,13 +722,14 @@
         <div class="form-row">
           <div class="field">
             <label>Colleague Name</label>
-            <input type="text" id="colleagueName" placeholder="Name of accompanying colleague (if any)">
+            <input type="text" id="colleagueName" placeholder="One or more names, separated by commas">
           </div>
           <div class="field">
             <label>Colleague Designation</label>
-            <input type="text" id="colleaguePost" placeholder="Colleague's designation">
+            <input type="text" id="colleaguePost" placeholder="Their designations, in the same order">
           </div>
         </div>
+        <div style="font-size:11px;color:#9CA3AF;margin:-8px 0 4px;">Several colleagues? Tap + and pick them, or type the names separated by commas.</div>
         <div class="form-divider"></div>
         <div class="submit-bar">
           <button class="btn-reset" onclick="resetForm()">Reset</button>
@@ -3296,8 +3304,10 @@
           '<div class="ci-name">' + esc(c.name) + '</div>' +
           '<div class="ci-post">' + esc(c.designation) + '</div>' +
           (loc ? '<div style="font-size:10px;color:#9CA3AF;margin-top:2px;">📍 ' + esc(loc) + '</div>' : '') +
-        '</div>';
-      div.addEventListener('click', function() { selectColleague(c.name, c.designation); });
+        '</div>' +
+        '<div class="ci-tick">✓</div>';
+      if (colleagueIndex_(c.name) >= 0) div.classList.add('picked');
+      div.addEventListener('click', function() { toggleColleague(c.name, c.designation, div); });
       el.appendChild(div);
     });
   }
@@ -3314,10 +3324,44 @@
     renderColleagueItems(filtered);
   }
 
-  function selectColleague(name, post) {
-    document.getElementById('colleagueName').value = name;
-    document.getElementById('colleaguePost').value = post;
-    document.getElementById('colleague-picker').style.display = 'none';
+  // ── Several colleagues ──────────────────────────────────────
+  // The two boxes hold comma separated lists, names in one and designations
+  // in the other, in the same order, and are saved as the same two columns as
+  // before. Officers were already typing several names by hand ("Nigar Yasin,
+  // Vikrant Kumar, Shashi Prakash"); the list now lets them pick several too.
+  // A tap adds a person, a second tap removes them, and the list stays open
+  // until Done. Typing in the boxes still works exactly as it did; the server
+  // splits the names on commas, "&" and "and" to send each one their email.
+  function colleagueSplit_(s) {
+    return (s == null ? '' : s).toString().split(/\s*(?:,|;|\/|&|\band\b)\s*/i)
+      .map(function(x) { return x.trim(); }).filter(function(x) { return x; });
+  }
+  function colleagueKey_(s) {
+    return (s == null ? '' : s).toString().toLowerCase()
+      .replace(/\b(shri|smt|mr|mrs|ms|dr|sir|ji|madam|maam)\b\.?/g, ' ')
+      .replace(/[^a-z\u0900-\u097f]+/g, ' ').trim().replace(/\s+/g, ' ');
+  }
+  function colleagueIndex_(name) {
+    var k = colleagueKey_(name), names = colleagueSplit_(v('colleagueName'));
+    for (var i = 0; i < names.length; i++) { if (colleagueKey_(names[i]) === k) return i; }
+    return -1;
+  }
+  function toggleColleague(name, post, row) {
+    var nEl = document.getElementById('colleagueName'), pEl = document.getElementById('colleaguePost');
+    var names = colleagueSplit_(nEl.value), posts = colleagueSplit_(pEl.value);
+    while (posts.length < names.length) posts.push('');
+    var at = colleagueIndex_(name);
+    if (at >= 0) { names.splice(at, 1); posts.splice(at, 1); }
+    else { names.push(name); posts.push(post || ''); }
+    // A designation nobody typed shows as "-" so the rest stay in line; one
+    // missing at the end is simply left off.
+    while (posts.length && !posts[posts.length - 1]) posts.pop();
+    nEl.value = names.join(', ');
+    pEl.value = posts.map(function(x) { return x || '-'; }).join(', ');
+    if (row) row.classList.toggle('picked', at < 0);
+    // As if typed: the plan draft and anything else listening hear it.
+    nEl.dispatchEvent(new Event('input', { bubbles: true }));
+    pEl.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
   // ── Submit Meeting ───────────────────────────────────────────
@@ -4649,6 +4693,11 @@
       'केवल PDF / Word / Excel / PPT - अधिकतम 5 फ़ाइलें, प्रत्येक 5MB तक। (फ़ोटो बैठक संपन्न करते समय जोड़ें।)',
     'Accompanying Colleague': 'साथ जाने वाले सहकर्मी',
     'Select from your district team members:': 'अपने जनपद की टीम में से चुनें:',
+    'Tap to pick one or more. Tap again to remove.': 'एक या अधिक चुनने के लिए दबाएँ। हटाने के लिए फिर से दबाएँ।',
+    'One or more names, separated by commas': 'एक या अधिक नाम, अल्पविराम से अलग करें',
+    'Their designations, in the same order': 'उनके पदनाम, उसी क्रम में',
+    'Several colleagues? Tap + and pick them, or type the names separated by commas.':
+      'एक से अधिक सहकर्मी? + दबाकर चुनें, या नाम अल्पविराम से अलग करके लिखें।',
     'Search by name...': 'नाम से खोजें...',
     'No colleagues found.': 'कोई सहकर्मी नहीं मिला।',
     'Colleague Name': 'सहकर्मी का नाम',

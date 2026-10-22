@@ -31,7 +31,12 @@ const STUB = `<script>
                        purposes:['Introductory Meeting','Enrollment','Retention','Learning','Invitation','Review Meeting','MPR Submission','Other','DTF','School Liasioning','Courtesy Meeting','New Purpose From Sheet'],
                        blocksByDistrict:{ UNNAO:['BAGARMAU','HASANGANJ'] },
                        metBefore:[{ dist:'UNNAO', post:'BSA', name:'Ramesh Kumar', date:'12 Aug 2026', ts:Date.now() - 40*86400000, purpose:'Enrollment' }] },
-    getMyMeetings: PLANNED, getAllMyMeetings: [], getStateAllMeetings: []
+    getMyMeetings: PLANNED, getAllMyMeetings: [], getStateAllMeetings: [],
+    // the colleague picker (State role lists everyone)
+    getAllEmployees: [{ name:'Nigar Yasin', designation:'District Operational Lead', district:'SITAPUR', block:'' },
+                      { name:'Vikrant kumar', designation:'District Program Officer', district:'SITAPUR', block:'' },
+                      { name:'Buddh Vilas', designation:'District Impact Specialist', district:'BAHRAICH', block:'' },
+                      { name:'Sanjay Kumar', designation:'Block Program Officer', district:'SHRAVASTI', block:'HARIHARPUR RANI' }]
   };
   window.fetch = function(url) {
     var a = (/[?&]action=([^&]+)/.exec(url) || [])[1] || '';
