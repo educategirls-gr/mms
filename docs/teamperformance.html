@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title data-state-title="EG MMS | {STATE} Analytics Portal">EG MMS | State Analytics Portal</title>
   <script src="state.js"></script>
+  <script>
+    // Opened inside the dashboard as report.html?embed=1: the dashboard's menu
+    // does the navigating, so this page's own menu is hidden. On its own,
+    // nothing changes.
+    if (/[?&]embed=1(&|$)/.test(location.search)) document.documentElement.className += ' embed';
+  </script>
   <link rel="icon" type="image/png" href="eg-logo.png">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -347,6 +353,14 @@
       .cb-fab { right: 14px; bottom: 76px; }          /* clear of the bottom nav */
       .cb-panel { inset: 0; width: auto; height: auto; max-height: none; border-radius: 0; }
     }
+
+    /* Inside the dashboard: no sidebar and no bottom bar, and the top bar keeps
+       only the date, the snapshot note and Refresh (the dashboard shows the title). */
+    html.embed .sidebar, html.embed .mob-nav, html.embed .mob-version,
+    html.embed .topbar-left, html.embed .topbar-center { display: none !important; }
+    html.embed .topbar { height: 44px; justify-content: flex-end; }
+    html.embed .content-area { padding-bottom: 22px; }
+    html.embed .cb-fab { bottom: 18px; }
   </style>
 </head>
 <body>
@@ -376,7 +390,7 @@
   </div>
   <div class="sidebar-footer">
     EG GR Meeting Management System, <span class="state-name"></span><br>Powered by Google Workspace
-    <br><span style="opacity:.7;">Version 1.44 &middot; 22 Oct 2026</span>
+    <br><span style="opacity:.7;">Version 1.45 &middot; 22 Oct 2026</span>
   </div>
 </div>
 
@@ -616,7 +630,7 @@
 
     </div>
 
-    <div class="mob-version">EG GR Meeting Management System, <span class="state-name"></span><br>Version 1.44 &middot; 22 Oct 2026</div>
+    <div class="mob-version">EG GR Meeting Management System, <span class="state-name"></span><br>Version 1.45 &middot; 22 Oct 2026</div>
 
   </div><!-- /content-area -->
 </div><!-- /main-content -->
@@ -810,6 +824,7 @@
     rel:      { title: 'Stakeholders',     sub: 'Relationships with government offices over time' }
   };
   function showView(v) {
+    PORTAL_VIEW = v;   // Refresh reloads the section on screen
     ['overview','reports','perf','rel'].forEach(function(x) {
       document.getElementById('view-'+x).classList.remove('active');
       var n = document.getElementById('nav-'+x); if (n) n.classList.remove('active');
@@ -2119,6 +2134,9 @@
   }
 
   // ── Init ──────────────────────────────────────────────────────
+  // The dashboard opens one page for all four sections: report.html?embed=1&view=reports
+  var _askedView = (/[?&]view=(\w+)/.exec(location.search) || [])[1];
+  if (_askedView && TOPBAR.hasOwnProperty(_askedView)) PORTAL_VIEW = _askedView;
   showView(PORTAL_VIEW);
 </script>
 
@@ -2297,5 +2315,9 @@
     <a class="mob-nav-btn" id="mob-nav-rel" href="stakeholders.html" style="text-decoration:none;">Stakeholders</a>
   </div>
 </div>
+<script>
+  // showView ran before these buttons existed, so mark this page's one here.
+  (function () { var b = document.getElementById('mob-nav-' + PORTAL_VIEW); if (b) b.classList.add('active'); })();
+</script>
 </body>
 </html>

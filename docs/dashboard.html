@@ -91,6 +91,15 @@
     /* Views */
     .view        { display: none; }
     .view.active { display: block; }
+    /* Analytics: the portal pages in a frame filling the space under the header */
+    .main-content.analytics-on { overflow: hidden; }
+    .main-content.analytics-on .content-area { padding: 0; display: flex; flex-direction: column; min-height: 0; }
+    .main-content.analytics-on .content-area > .alert { margin: 12px 16px 0; }
+    #view-report.active { display: flex; flex: 1; min-height: 0; }
+    #report-frame { flex: 1; width: 100%; min-height: 0; border: 0; display: block; background: #F0F2F5; }
+    .topbar-full { font-size: 12px; font-weight: 700; color: #7B1010; text-decoration: none; white-space: nowrap;
+                   border: 1.5px solid #E5E7EB; border-radius: 8px; padding: 7px 12px; background: #fff; }
+    .topbar-full:hover { background: #FEF2F2; }
 
     /* Form */
     .form-section-label { font-size: 12px; font-weight: 700; color: #7B1010; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 14px; }
@@ -551,14 +560,25 @@
     <div class="nav-item" id="nav-state" onclick="showView('state')" style="display:none;">
       <span class="nav-icon">🗺️</span><span>State Meetings</span>
     </div>
-    <div class="nav-item" id="nav-report" onclick="location.href='report.html'">
-      <span class="nav-icon">📊</span><span>Analytics</span>
+    <!-- The analytics portal, shown inside the dashboard (see showAnalytics) -->
+    <div class="nav-label" style="margin-top:10px;">Analytics</div>
+    <div class="nav-item" id="nav-an-overview" onclick="showAnalytics('overview')">
+      <span class="nav-icon">📊</span><span>Overview</span>
+    </div>
+    <div class="nav-item" id="nav-an-reports" onclick="showAnalytics('reports')">
+      <span class="nav-icon">🏢</span><span>District Reports</span>
+    </div>
+    <div class="nav-item" id="nav-an-perf" onclick="showAnalytics('perf')">
+      <span class="nav-icon">👥</span><span>Team Performance</span>
+    </div>
+    <div class="nav-item" id="nav-an-rel" onclick="showAnalytics('rel')">
+      <span class="nav-icon">🤝</span><span>Stakeholders</span>
     </div>
 
   </div>
   <div class="sidebar-bottom">
     <button class="btn-logout" onclick="logout()">🚪 Logout</button>
-    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.44 &middot; 22 Oct 2026</div>
+    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.45 &middot; 22 Oct 2026</div>
   </div>
 </div>
 
@@ -577,6 +597,8 @@
         <div class="topbar-sub"   id="topbar-sub">Plan your upcoming meetings</div>
       </div>
     </div>
+    <!-- the same page on its own, in a new tab, at a link that can be shared -->
+    <a class="topbar-full" id="topbar-full" href="report.html" target="_blank" rel="noopener" style="display:none;"><span>Open full screen</span> &#8599;</a>
   </div>
 
   <div class="content-area">
@@ -1125,6 +1147,9 @@
       </div>
     </div>
 
+    <!-- View: Analytics. The portal pages in a frame, made on first open. The
+         pages stay open to anyone at their own links. -->
+    <div id="view-report" class="view"></div>
 
   </div>
 </div>
@@ -1534,17 +1559,87 @@
     list:     { title: 'My Meetings',      sub: '' },
     district: { title: 'District Meetings', sub: 'All meetings in your district' },
     zone:     { title: 'Zone Meetings',     sub: 'All meetings across your zone' },
-    state:    { title: 'State Meetings',    sub: 'All meetings across the state' }
+    state:    { title: 'State Meetings',    sub: 'All meetings across the state' },
+    report:   { title: 'Analytics',         sub: '' }
   };
-  function showView(view) {
-    ['create','manage','list','district','zone','state'].forEach(function(v) {
+  var _VIEWS = ['create','manage','list','district','zone','state','report'];
+  function isViewOn(v) { var el = document.getElementById('view-' + v); return !!(el && el.classList.contains('active')); }
+  function currentView() { for (var i = 0; i < _VIEWS.length; i++) if (isViewOn(_VIEWS[i])) return _VIEWS[i]; return ''; }
+
+  // ── Analytics: the portal pages inside the dashboard ─────────
+  // Analytics used to leave the dashboard for report.html, and each of its
+  // four pages was a new page, so getting back meant pressing Back again and
+  // again. Now the portal opens here in a frame with ?embed=1, which hides its
+  // own menu, and the menu on the left stays. One page holds all four
+  // sections, so after the first load a switch is instant and adds nothing to
+  // the browser's history. Opening Analytics adds exactly ONE step, so one
+  // Back returns to the screen you came from; leaving it from the menu steps
+  // back over that step. The pages themselves are unchanged and still open on
+  // their own to anyone.
+  var AN_VIEWS = ['overview','reports','perf','rel'];
+  var AN_PAGE  = { overview:'report.html', reports:'districtreports.html', perf:'teamperformance.html', rel:'stakeholders.html' };
+  var AN_TOPBAR = {
+    overview: { title: 'Overview',         sub: 'Meeting summary across the state' },
+    reports:  { title: 'District Reports', sub: 'District-wise analytics and meeting details' },
+    perf:     { title: 'Team Performance', sub: 'Who did how many meetings' },
+    rel:      { title: 'Stakeholders',     sub: 'Relationships with government offices over time' }
+  };
+  var _anSection = 'overview', _prevView = 'create', _popTo = '';
+  function showAnalytics(section, fromHistory) {
+    if (!AN_TOPBAR.hasOwnProperty(section)) section = 'overview';
+    _anSection = section;
+    showView('report', fromHistory);
+    var n = document.getElementById('nav-an-' + section); if (n) n.classList.add('active');
+    document.getElementById('topbar-title').textContent = AN_TOPBAR[section].title;
+    document.getElementById('topbar-sub').textContent   = AN_TOPBAR[section].sub;
+    var full = document.getElementById('topbar-full'); if (full) full.href = AN_PAGE[section];
+    var url = 'report.html?embed=1&view=' + section;
+    var fr = document.getElementById('report-frame');
+    if (!fr) {
+      fr = document.createElement('iframe');
+      fr.id = 'report-frame';
+      fr.title = 'Analytics';
+      fr.src = url;                        // set before it is added: no history step
+      document.getElementById('view-report').appendChild(fr);
+      return;
+    }
+    var w = null; try { w = fr.contentWindow; } catch (e) {}
+    // Already loaded: switch the section inside it, instantly.
+    try { if (w && typeof w.showView === 'function' && /[?&]embed=1/.test(w.location.search)) { w.showView(section); return; } } catch (e) {}
+    // Still loading: replace, so the history gets no step.
+    try { w.location.replace(url); } catch (e) { fr.src = url; }
+  }
+  window.addEventListener('popstate', function(e) {
+    if (_popTo) { var t = _popTo; _popTo = ''; showView(t, true); return; }
+    var st = e.state || {};
+    if (st.egAnalytics) { if (!isViewOn('report')) showAnalytics(_anSection, true); return; }
+    if (isViewOn('report')) showView(_prevView || 'create', true);
+  });
+  // A reload while Analytics was open leaves its marker on this entry.
+  try { if (history.state && history.state.egAnalytics) history.replaceState(null, ''); } catch (e) {}
+
+  function showView(view, fromHistory) {
+    var wasReport = isViewOn('report');
+    if (wasReport && view !== 'report' && !fromHistory && history.state && history.state.egAnalytics) {
+      _popTo = view;
+      history.back();
+      // popstate normally lands well inside this; switch anyway if it does not
+      setTimeout(function(){ if (_popTo) { var t = _popTo; _popTo = ''; showView(t, true); } }, 700);
+      return;
+    }
+    if (view === 'report' && !wasReport) {
+      _prevView = currentView() || 'create';
+      if (!fromHistory) { try { history.pushState({ egAnalytics: 1 }, ''); } catch (e) {} }
+    }
+    _VIEWS.forEach(function(v) {
       var vEl = document.getElementById('view-' + v);
       var nEl = document.getElementById('nav-'  + v);
       if (vEl) vEl.classList.remove('active');
       if (nEl) nEl.classList.remove('active');
     });
+    AN_VIEWS.forEach(function(s) { var n = document.getElementById('nav-an-' + s); if (n) n.classList.remove('active'); });
     document.getElementById('view-' + view).classList.add('active');
-    document.getElementById('nav-'  + view).classList.add('active');
+    var _nv = document.getElementById('nav-' + view); if (_nv) _nv.classList.add('active');   // Analytics has four
     clearAlerts();
     document.getElementById('topbar-title').textContent = TOPBAR[view].title;
     document.getElementById('topbar-sub').textContent   = TOPBAR[view].sub;
@@ -1553,6 +1648,10 @@
     if (view === 'district') loadDistrictMeetings();
     if (view === 'zone')     loadZoneMeetings();
     if (view === 'state')    loadStateMeetings();
+    var _mc = document.querySelector('.main-content');
+    if (_mc) _mc.classList.toggle('analytics-on', view === 'report');
+    var _full = document.getElementById('topbar-full');
+    if (_full) _full.style.display = view === 'report' ? '' : 'none';
     // Close sidebar on mobile after navigation
     document.getElementById('sidebar').classList.remove('mob-open');
     document.getElementById('mob-overlay').classList.remove('mob-open');
@@ -4689,6 +4788,15 @@
     'Zone Meetings': 'ज़ोन की बैठकें',
     'State Meetings': 'राज्य की बैठकें',
     'Analytics': 'विश्लेषण',
+    'Overview': 'सारांश',
+    'District Reports': 'जनपद रिपोर्ट',
+    'Team Performance': 'टीम का प्रदर्शन',
+    'Stakeholders': 'हितधारक',
+    'Meeting summary across the state': 'पूरे प्रदेश की बैठकों का सारांश',
+    'District-wise analytics and meeting details': 'जनपदवार विश्लेषण और बैठकों का विवरण',
+    'Who did how many meetings': 'किसने कितनी बैठकें कीं',
+    'Relationships with government offices over time': 'समय के साथ शासकीय कार्यालयों से संबंध',
+    'Open full screen': 'पूरी स्क्रीन पर खोलें',
     'Logout': 'लॉग आउट',
     'Plan Your Meeting': 'अपनी बैठक नियोजित करें',
     'Plan your upcoming meetings': 'आगामी बैठकों की योजना बनाएँ',
