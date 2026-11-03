@@ -578,7 +578,7 @@
   </div>
   <div class="sidebar-bottom">
     <button class="btn-logout" onclick="logout()">🚪 Logout</button>
-    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.45 &middot; 22 Oct 2026</div>
+    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.47 &middot; 3 Nov 2026</div>
   </div>
 </div>
 
@@ -1504,11 +1504,8 @@
       // screen, so there is nothing to tell the user.
     });
 
-    // Field role: hide "Delete Meeting" - prevents fake-meeting create-then-delete (keeps full audit trail)
-    if (_role === 'Field') {
-      var _delRow = document.getElementById('delete-meeting-row');
-      if (_delRow) _delRow.style.display = 'none';
-    }
+    // "Delete Meeting" is shown per meeting in openActionModal: everyone, for a
+    // meeting that is still only planned (3 Nov 2026).
 
     var parts = SESSION.name.trim().split(' ');
     var initials = parts.length >= 2
@@ -1909,6 +1906,9 @@
     document.getElementById('modal-mtg-title').textContent = m.adhikariName;
     document.getElementById('modal-mtg-sub').textContent   = 'Date: ' + m.date + (m.meetingTime ? '  ' + m.meetingTime : '') + ' | ' + m.meetingId;
     setModalPhase('options');
+    // Delete only while it is still a plan; the server checks the same.
+    var _delRow = document.getElementById('delete-meeting-row');
+    if (_delRow) _delRow.style.display = (!m.status || m.status === 'Planned' || m.status === 'Follow-up') ? '' : 'none';
     // Today by default, because most meetings are filed the day they happen,
     // but editable: plenty are filed a day or two later and the record should
     // carry the day the meeting actually took place. Never a future date.
@@ -5070,6 +5070,8 @@
     'Meeting marked as no-conduct.': 'बैठक "नहीं हुई" के रूप में चिह्नित की गई।',
     'Saving in the background. You can carry on.': 'पृष्ठभूमि में सहेजा जा रहा है। आप अपना काम जारी रख सकते हैं।',
     'Meeting not found.': 'बैठक नहीं मिली।',
+    'You can delete only your own meetings.': 'आप केवल अपनी बैठकें हटा सकते हैं।',
+    'Only a meeting that is still planned can be deleted.': 'केवल वही बैठक हटाई जा सकती है जो अभी नियोजित है।',
     'Meeting deleted successfully.': 'बैठक सफलतापूर्वक हटा दी गई।',
 
     // Meeting lists

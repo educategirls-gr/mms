@@ -2668,26 +2668,37 @@ function cancelMeeting_(payload) {
 //  DELETE MEETING
 // ------------------------------------------------------------
 function deleteMeeting(meetingId, email) {
+  // Since 3 Nov 2026 everyone, Field officers included, may delete a meeting,
+  // but only their own and only while it is still a plan (Planned or
+  // Follow-up). One that was conducted, postponed or marked not conducted
+  // stays on the record. It used to be leads only, to stop a plan being made
+  // and quietly removed; the copy kept in "Deleted Meetings" now does that job.
   try {
-    // Field role cannot delete - prevents fake-meeting create-then-delete (full audit trail)
-    if (email) {
-      var emp = getEmployeeByEmail(email.trim().toLowerCase());
-      var role = emp && emp.role ? emp.role.toString().trim().toLowerCase() : '';
-      if (role === 'field') {
-        return { success: false, message: 'Delete not allowed for Field role.' };
-      }
-    }
-    var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
-    var sheet = ss.getSheetByName(MEETINGS_SHEET);
-    if (!sheet) return { success: false, message: 'Sheet not found.' };
-    var data = sheet.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {
-      if ((data[i][0] || '').toString() === meetingId) {
+    var mid = (meetingId || '').toString().trim();
+    var me  = (email || '').toString().trim().toLowerCase();
+    if (!mid) return { success:false, message:'Meeting not found.' };
+    return withScriptLock_(function() {
+      var sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(MEETINGS_SHEET);
+      if (!sheet) return { success: false, message: 'Sheet not found.' };
+      var data = sheet.getDataRange().getValues();
+      for (var i = 1; i < data.length; i++) {
+        if ((data[i][0] || '').toString().trim() !== mid) continue;
+        var owner  = (data[i][4] || '').toString().trim().toLowerCase();
+        var status = (data[i][13] || '').toString().trim();
+        if (owner !== me) return { success:false, message:'You can delete only your own meetings.' };
+        if (!PLAN_STILL_A_PLAN[status]) return { success:false, message:'Only a meeting that is still planned can be deleted.' };
+        archiveDeleted_(data[0], [data[i]], me, 'Deleted from Manage Meetings');
+        // Its calendar invite would otherwise stay in people's calendars.
+        try {
+          var evId = (data[i][COL_CAL_EVENT - 1] || '').toString().trim();
+          if (evId) { var ev = CalendarApp.getDefaultCalendar().getEventById(evId); if (ev) ev.deleteEvent(); }
+        } catch (ce) { /* the meeting is deleted either way */ }
         sheet.deleteRow(i + 1);
+        invalidateUser(owner, (data[i][1] || '').toString());
         return { success: true };
       }
-    }
-    return { success: false, message: 'Meeting not found.' };
+      return { success: false, message: 'Meeting not found.' };
+    });
   } catch(err) {
     return { success: false, message: err.message };
   }
@@ -4996,6 +5007,122 @@ function PLAN_deleteBlank() {
   try { cDel('reportData'); } catch(e){}
   Logger.log('Deleted ' + kill.length + ' half rows: ' + kill.map(function(x){ return x.id; }).join(', '));
   return { deleted: kill.length, rows: kill };
+}
+
+// ── Deleted meetings ────────────────────────────────────────────────────
+// A plan row is never simply thrown away: it is copied here first, with when,
+// by whom and why, so anything removed by mistake can be put back by copying
+// the row (from column D on) into Plan Meetings.
+var DELETED_SHEET = 'Deleted Meetings';
+var PLAN_STILL_A_PLAN = { 'Planned':1, 'Follow-up':1, '':1 };
+function archiveDeleted_(header, rows, by, reason) {
+  if (!rows || !rows.length) return 0;
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID), sh = ss.getSheetByName(DELETED_SHEET);
+  var width = 3 + header.length;
+  if (!sh) sh = ss.insertSheet(DELETED_SHEET);
+  if (sh.getMaxColumns() < width) sh.insertColumnsAfter(sh.getMaxColumns(), width - sh.getMaxColumns());
+  if (!sh.getRange(1, 1).getValue()) {
+    sh.getRange(1, 1, 1, width).setValues([['Deleted At', 'Deleted By', 'Reason'].concat(header)]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  var now = new Date().toLocaleString('en-IN');
+  var out = rows.map(function(r) {
+    var x = [now, by, reason].concat(r.map(function(v) {
+      return (typeof v === 'string' && /^[=+\-@]/.test(v)) ? "'" + v : v;   // text stays text
+    }));
+    while (x.length < width) x.push('');
+    return x.slice(0, width);
+  });
+  sh.getRange(sh.getLastRow() + 1, 1, out.length, width).setValues(out);
+  return out.length;
+}
+
+// The plan date in a cell as YYYY-MM-DD, or '' when it cannot be read (such a
+// row is never removed).
+function planDay_(v, tz) {
+  if (v instanceof Date && !isNaN(v)) return Utilities.formatDate(v, tz, 'yyyy-MM-dd');
+  var s = (v == null ? '' : v).toString().trim(), m;
+  if ((m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s))) return s;
+  if ((m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(s))) return m[3] + '-' + m[2] + '-' + m[1];
+  var MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  if ((m = /^(\d{1,2}) ([A-Za-z]{3}) (\d{4})$/.exec(s))) {
+    var mi = MN.indexOf(m[2].charAt(0).toUpperCase() + m[2].slice(1).toLowerCase());
+    if (mi >= 0) return m[3] + '-' + ('0' + (mi + 1)).slice(-2) + '-' + ('0' + m[1]).slice(-2);
+  }
+  return '';
+}
+
+// ── Old plans that will never happen ───────────────────────────────────
+// Alok, 3 Nov 2026: plans more than 90 days past their date that were never
+// conducted or marked not conducted are not going to happen, so take them out
+// of Pending, knowing the success rate goes up. Only status Planned,
+// Postponed or Follow-up; conducted and cancelled rows are never touched, nor
+// is a row whose date cannot be read. Run PLAN_old_1_preview first and read
+// the list; PLAN_old_2_DELETE then removes exactly those, after copying each
+// row to "Deleted Meetings".
+var PLAN_OLD_DAYS = 90;
+var PLAN_OLD_STATUSES = { 'Planned':1, 'Postponed':1, 'Follow-up':1 };
+function PLAN_old_1_preview() { return planOld_(false); }
+function PLAN_old_2_DELETE()  { return planOld_(true); }
+function planOld_(go) {
+  var tz = Session.getScriptTimeZone();
+  var cutoff = Utilities.formatDate(new Date(Date.now() - PLAN_OLD_DAYS * 86400000), tz, 'yyyy-MM-dd');
+  return withScriptLock_(function() {
+    var sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(MEETINGS_SHEET);
+    if (!sh) return { success:false, message:'no plan sheet' };
+    var data = sh.getDataRange().getValues();
+    var pick = [], unreadable = 0, byStatus = {}, byDistrict = {};
+    for (var i = 1; i < data.length; i++) {
+      var id = (data[i][0] || '').toString().trim(), status = (data[i][13] || '').toString().trim();
+      if (!id || !PLAN_OLD_STATUSES[status]) continue;
+      var day = planDay_(data[i][5], tz);
+      if (!day) { unreadable++; continue; }
+      if (day >= cutoff) continue;
+      pick.push({ row:i + 1, id:id, day:day, status:status, district:(data[i][1] || '').toString().trim(),
+                  officer:(data[i][2] || '').toString().trim(), email:(data[i][4] || '').toString().trim().toLowerCase(),
+                  official:(data[i][9] || '').toString().trim() + ' (' + (data[i][10] || '').toString().trim() + ')' });
+      byStatus[status] = (byStatus[status] || 0) + 1;
+      var d = pick[pick.length - 1].district || 'State';
+      byDistrict[d] = (byDistrict[d] || 0) + 1;
+    }
+    var L = [];
+    L.push((go ? 'REMOVING' : 'PREVIEW (nothing is removed)') + ': plans dated before ' + fmtDateVal(cutoff) +
+           ' (' + PLAN_OLD_DAYS + ' days) that are still Planned, Postponed or Follow-up.');
+    L.push('Found ' + pick.length + '. By status: ' + JSON.stringify(byStatus) + '. Rows whose date could not be read, left alone: ' + unreadable + '.');
+    L.push('By district: ' + Object.keys(byDistrict).sort().map(function(k) { return k + ' ' + byDistrict[k]; }).join(', '));
+    L.push('');
+    pick.forEach(function(p) { L.push(fmtDateVal(p.day) + '  ' + p.id + '  ' + p.status + '  ' + (p.district || 'State') + '  ' + p.officer + '  with ' + p.official); });
+    if (!go) {
+      L.push('');
+      L.push('Nothing was removed. If this list is right, run PLAN_old_2_DELETE. Each row is copied to the "' + DELETED_SHEET + '" tab first.');
+      Logger.log(L.join(String.fromCharCode(10)));
+      return { success:true, preview:true, count:pick.length, rows:pick };
+    }
+    if (!pick.length) { Logger.log(L.join(String.fromCharCode(10))); return { success:true, removed:0 }; }
+    archiveDeleted_(data[0], pick.map(function(p) { return data[p.row - 1]; }), 'PLAN_old_2_DELETE',
+                    'More than ' + PLAN_OLD_DAYS + ' days past its date, never conducted');
+    // Bottom up, so the rows above keep their numbers. Each one is checked by
+    // its meeting id first: if the sheet moved under us, it is found again.
+    var removed = 0, missing = [], people = {};
+    for (var k = pick.length - 1; k >= 0; k--) {
+      var p = pick[k], row = p.row;
+      if ((sh.getRange(row, 1).getValue() || '').toString().trim() !== p.id) {
+        row = -1;
+        var ids = sh.getRange(1, 1, sh.getLastRow(), 1).getValues();
+        for (var r = ids.length - 1; r >= 1; r--) { if ((ids[r][0] || '').toString().trim() === p.id) { row = r + 1; break; } }
+      }
+      if (row < 2) { missing.push(p.id); continue; }
+      sh.deleteRow(row);
+      removed++;
+      people[p.email + '|' + p.district] = 1;
+    }
+    Object.keys(people).forEach(function(k) { var x = k.split('|'); try { invalidateUser(x[0], x[1]); } catch (e) {} });
+    try { cDel('reportData', 'stateMtg_all'); } catch (e) {}
+    L.push('');
+    L.push('Removed ' + removed + '. Copies are in the "' + DELETED_SHEET + '" tab.' + (missing.length ? ' Not found any more (left alone): ' + missing.join(', ') : ''));
+    Logger.log(L.join(String.fromCharCode(10)));
+    return { success:true, removed:removed, missing:missing };
+  });
 }
 
 function NOTE_quality() {
