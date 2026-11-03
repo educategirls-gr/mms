@@ -19,6 +19,10 @@ const STUB = `<script>
     var x = new Date(); x.setDate(x.getDate() + offset);
     return x.getDate() + ' ' + M[x.getMonth()] + ' ' + x.getFullYear();
   }
+  function ymd(offset) {
+    var x = new Date(); x.setDate(x.getDate() + offset);
+    return x.getFullYear() + '-' + ('0' + (x.getMonth() + 1)).slice(-2) + '-' + ('0' + x.getDate()).slice(-2);
+  }
   var PLANNED = [
     { meetingId:'MTG-001', date:d(-3), meetingTime:'11:00 AM', adhikariName:'Ramesh Kumar', adhikariPost:'BSA', district:'UNNAO', purpose:'Enrollment', status:'Planned' },
     { meetingId:'MTG-002', date:d(1),  meetingTime:'3:00 PM',  adhikariName:'K.K Singh',    adhikariPost:'BEO', district:'UNNAO', purpose:'Training',   status:'Postponed' }
@@ -31,7 +35,19 @@ const STUB = `<script>
                        purposes:['Introductory Meeting','Enrollment','Retention','Learning','Invitation','Review Meeting','MPR Submission','Other','DTF','School Liasioning','Courtesy Meeting','New Purpose From Sheet'],
                        blocksByDistrict:{ UNNAO:['BAGARMAU','HASANGANJ'] },
                        metBefore:[{ dist:'UNNAO', post:'BSA', name:'Ramesh Kumar', date:'12 Aug 2026', ts:Date.now() - 40*86400000, purpose:'Enrollment' }] },
-    getMyMeetings: PLANNED, getAllMyMeetings: [], getStateAllMeetings: [],
+    getMyMeetings: PLANNED, getStateAllMeetings: [],
+    // conducted meetings carrying a commitment: one late, one due today, one
+    // later, one already done (only the first two should be asked about)
+    getAllMyMeetings: [
+      { meetingId:'MTG-C1', status:'Conducted', date:d(-12), conductDate:d(-12), adhikariName:'Ramesh Kumar', adhikariPost:'BSA', district:'UNNAO',
+        outcome:'Commitment', commitWhat:'Share the village-wise list of out-of-school girls', commitDue:ymd(-2), commitStatus:'' },
+      { meetingId:'MTG-C2', status:'Conducted', date:d(-5), conductDate:d(-5), adhikariName:'K.K Singh', adhikariPost:'BEO', district:'UNNAO',
+        outcome:'Commitment', commitWhat:'Issue a letter to all school heads for GKP', commitDue:ymd(0), commitStatus:'Not yet' },
+      { meetingId:'MTG-C3', status:'Conducted', date:d(-2), conductDate:d(-2), adhikariName:'Asha Verma', adhikariPost:'DIET Principal', district:'UNNAO',
+        outcome:'Commitment', commitWhat:'Visit two KGBVs with the team', commitDue:ymd(6), commitStatus:'' },
+      { meetingId:'MTG-C4', status:'Conducted', date:d(-20), conductDate:d(-20), adhikariName:'R.P. Yadav', adhikariPost:'BDO', district:'UNNAO',
+        outcome:'Commitment', commitWhat:'Allow the Shiksha Rath route', commitDue:ymd(-9), commitStatus:'Done' }
+    ],
     // the colleague picker (State role lists everyone)
     getAllEmployees: [{ name:'Nigar Yasin', designation:'District Operational Lead', district:'SITAPUR', block:'' },
                       { name:'Vikrant kumar', designation:'District Program Officer', district:'SITAPUR', block:'' },

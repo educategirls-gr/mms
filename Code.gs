@@ -613,7 +613,7 @@ function apiResponse(e, method) {
     // Writes and heavy requests that the pages send only as a POST. Sign-in is
     // deliberately not in this list: it is left exactly as it is.
     var POST_ONLY = { saveMeeting:1, conductMeeting:1, postponeMeeting:1, cancelMeeting:1, uploadGovtMom:1,
-                      askMeetings:1, transcribeVoice:1, sendMeetingFeedback:1 };
+                      askMeetings:1, transcribeVoice:1, sendMeetingFeedback:1, updateCommitment:1 };
 
     // Turned away at the door while the document is unreachable, so the queue
     // can empty. Signing in is on the allowed list and keeps working.
@@ -688,6 +688,8 @@ function apiResponse(e, method) {
                                                                                : { success:false, message:'BODY_MISSING' };
         else if (action === 'sendMeetingFeedback')         result = (body.meetingId && body.text) ? sendMeetingFeedback(session, body.meetingId, body.text)
                                                                                                : { success:false, message:'BODY_MISSING' };
+        else if (action === 'updateCommitment')            result = body.meetingId ? updateCommitment(session, body)
+                                                                                   : { success:false, message:'BODY_MISSING' };
         else if (action === 'getDashboardStats')    result = getDashboardStats(session.email, e.parameter.all === '1', resolveActiveDistrict_(session, e.parameter.district));
         else if (action === 'getDistrictReport') {
           result = getDistrictReport(resolveActiveDistrict_(session, e.parameter.district));
@@ -2843,6 +2845,9 @@ function getAllMyMeetings(email) {
           momLink:      (cd[j][17] || '').toString(),
           govtMom:      (cd[j][21] || '').toString(),   // V = Govt MoM (comma-separated PDF urls)
           outcome:      (cd[j][COL_CON_OUTCOME-1] || '').toString(),   // AF
+          commitWhat:   (cd[j][COL_CON_WILLDO-1] || '').toString(),    // AG
+          commitDue:    dayKey_(cd[j][COL_CON_DUE-1]),                 // AH, YYYY-MM-DD
+          commitStatus: (cd[j][COL_CON_CSTATUS-1] || '').toString(),   // AI
           priority:     (cd[j][22] || '').toString(),   // W..AB = AI tags
           flag:         (cd[j][23] || '').toString(),
           nextAction:   (cd[j][24] || '').toString(),
@@ -5653,6 +5658,65 @@ function saveCommitment_(sh, row, d) {
   sh.getRange(row, COL_CON_WILLDO).setValue(/^[=+\-@]/.test(c.what) ? "'" + c.what : c.what);
   if (c.due) sh.getRange(row, COL_CON_DUE).setNumberFormat('@').setValue(c.due);
   return true;
+}
+
+// Once the date has come, the officer says what happened (3 Nov 2026). The
+// answer goes in AI; AJ keeps one line per answer, so a commitment moved
+// twice still shows the date first promised. "Not yet" moves AH to the new
+// date. Nothing else reads these yet: the analytics card comes next.
+var COL_CON_CSTATUS = 35;   // AI in Conducted Meetings: '', Done, Not yet, Not happening
+var COL_CON_CLOG    = 36;   // AJ in Conducted Meetings: "3 Nov 2026: Not yet, new date ..."
+var COMMIT_ANSWERS  = { 'Done':1, 'Not yet':1, 'Not happening':1 };
+
+function updateCommitment(session, body) {
+  try {
+    var mid = (body.meetingId || '').toString().trim();
+    var status = (body.status || '').toString().trim();
+    if (!COMMIT_ANSWERS.hasOwnProperty(status)) return { success:false, message:'Please choose what happened.' };
+    var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    var newDue = '';
+    if (status === 'Not yet') {
+      newDue = (body.newDue || '').toString().trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(newDue)) return { success:false, message:'Please pick the new date.' };
+      if (newDue < today) return { success:false, message:'The new date cannot be in the past.' };
+    }
+    var me = (session.email || '').toString().trim().toLowerCase();
+    if (sheetBreakerTripped_()) return { success:false, message:SHEET_BUSY_MSG };
+    return withScriptLock_(function() {
+      var sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(CONDUCTED_SHEET);
+      if (!sh || sh.getLastRow() < 2) return { success:false, message:'Meeting not found.' };
+      var ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues(), row = -1;
+      for (var i = ids.length - 1; i >= 0; i--) {
+        if ((ids[i][0] || '').toString().trim() === mid) { row = i + 2; break; }
+      }
+      if (row < 0) return { success:false, message:'Meeting not found.' };
+      var r = sh.getRange(row, 1, 1, Math.min(sh.getMaxColumns(), COL_CON_CLOG)).getValues()[0];
+      if ((r[4] || '').toString().trim().toLowerCase() !== me) {
+        return { success:false, message:'Only the officer who recorded this meeting can answer for it.' };
+      }
+      if (!(r[COL_CON_WILLDO - 1] || '').toString().trim()) return { success:false, message:'This meeting has no commitment recorded.' };
+      var curStatus = (r[COL_CON_CSTATUS - 1] || '').toString().trim();
+      var curDue = dayKey_(r[COL_CON_DUE - 1]);
+      // The same answer sent twice (the front door is slow) is written once.
+      if (curStatus === status && (status !== 'Not yet' || curDue === newDue)) {
+        return { success:true, already:true, status:status, due:curDue };
+      }
+      var maxC = sh.getMaxColumns();
+      if (maxC < COL_CON_CLOG) sh.insertColumnsAfter(maxC, COL_CON_CLOG - maxC);
+      if (!sh.getRange(1, COL_CON_CSTATUS).getValue()) sh.getRange(1, COL_CON_CSTATUS).setValue('Commitment Status');
+      if (!sh.getRange(1, COL_CON_CLOG).getValue())    sh.getRange(1, COL_CON_CLOG).setValue('Commitment Updates');
+      sh.getRange(row, COL_CON_CSTATUS).setValue(status);
+      if (status === 'Not yet') sh.getRange(row, COL_CON_DUE).setNumberFormat('@').setValue(newDue);
+      var line = fmtDateVal(today) + ': ' + status +
+                 (status === 'Not yet' ? ', new date ' + fmtDateVal(newDue) + (curDue ? ' (was ' + fmtDateVal(curDue) + ')' : '') : '');
+      var log = (r[COL_CON_CLOG - 1] || '').toString().trim();
+      sh.getRange(row, COL_CON_CLOG).setValue(log ? log + String.fromCharCode(10) + line : line);
+      invalidateUser(me, (r[1] || '').toString());
+      return { success:true, status:status, due:(status === 'Not yet' ? newDue : curDue) };
+    });
+  } catch (err) {
+    return { success:false, message:err.message };
+  }
 }
 
 function parseStart_(dateStr, timeStr) {

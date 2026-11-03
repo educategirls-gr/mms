@@ -578,7 +578,7 @@
   </div>
   <div class="sidebar-bottom">
     <button class="btn-logout" onclick="logout()">🚪 Logout</button>
-    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.45 &middot; 22 Oct 2026</div>
+    <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:10px;">Version 1.46 &middot; 3 Nov 2026</div>
   </div>
 </div>
 
@@ -764,6 +764,12 @@
 
     <!-- View: Manage Meetings -->
     <div id="view-manage" class="view">
+      <!-- What officials said they would do, once their date has come. Only the
+           officer who filed the meeting answers. COMMIT_CARD_ON turns it off. -->
+      <div class="card" id="my-commit-card" style="display:none;margin-bottom:14px;">
+        <div class="card-title" style="background:#166534;">🤝 Commitments to check</div>
+        <div id="my-commit" style="padding:14px 16px;"></div>
+      </div>
       <!-- The officer's own month. Leadership can see all of this; the person
            doing the work could not see any of it. -->
       <div class="card" id="my-month-card" style="display:none;margin-bottom:14px;">
@@ -2085,11 +2091,122 @@
   }
   var _MON_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   function ensureMyMonth() {
-    if (_mymCache.data) { renderMyMonth(_mymCache.data); return; }
+    if (_mymCache.data) {
+      renderMyMonth(_mymCache.data); renderMyCommitments(_mymCache.data);
+      if (_mymCache.ts) return;          // emptied by a save: drawn from the old copy, fetched again behind
+    }
     gasFetch('getAllMyMeetings', { email: SESSION.email }, function(list) {
       _mymCache = { data: list, ts: Date.now() };
-      renderMyMonth(list);
-    }, function(){ /* the card simply stays hidden */ });
+      renderMyMonth(list); renderMyCommitments(list);
+    }, function(){ /* the cards simply stay as they are */ });
+  }
+
+  // ── Commitments to check ─────────────────────────────────────
+  // What an official said they would do, recorded at conduct with a date
+  // (Conducted AG/AH). Once that date comes the officer says what happened:
+  // done, not yet (with a new date, so it comes back then), or not happening.
+  // Saved by updateCommitment in AI/AJ. Set COMMIT_CARD_ON to false to take
+  // the card away; nothing else depends on it.
+  var COMMIT_CARD_ON = true;
+  var _cmSaving = {};
+  function ymdLabel(s) {
+    var p = String(s || '').split('-');
+    return p.length === 3 ? (parseInt(p[2], 10) + ' ' + _MON_NAMES[parseInt(p[1], 10) - 1] + ' ' + p[0]) : String(s || '');
+  }
+  function daysFrom(a, b) {               // two YYYY-MM-DD, b minus a, in days
+    return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
+  }
+  function commitmentsDue(all) {
+    var today = dayStr();
+    return (all || []).filter(function(m) {
+      if (m.status !== 'Conducted' || !String(m.commitWhat || '').trim()) return false;
+      var st = String(m.commitStatus || '').trim();
+      if (st === 'Done' || st === 'Not happening') return false;
+      var due = String(m.commitDue || '').trim();
+      return /^\d{4}-\d{2}-\d{2}$/.test(due) && due <= today;
+    }).sort(function(a, b) { return a.commitDue < b.commitDue ? -1 : (a.commitDue > b.commitDue ? 1 : 0); });
+  }
+  function renderMyCommitments(all) {
+    var card = document.getElementById('my-commit-card'), box = document.getElementById('my-commit');
+    if (!card || !box) return;
+    var list = COMMIT_CARD_ON ? commitmentsDue(all) : [];
+    if (!list.length) { card.style.display = 'none'; box.innerHTML = ''; return; }
+    var today = dayStr();
+    var BTN = 'padding:7px 12px;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;border:1px solid #D1D5DB;background:#fff;color:#374151;';
+    var html = '<div style="font-size:12.5px;color:#6B7280;margin-bottom:10px;">The date has come for these. Did the official do what they said?</div>';
+    list.forEach(function(m) {
+      var late = daysFrom(m.commitDue, today);
+      html += '<div class="cm-item" data-mid="' + esc(m.meetingId) + '" style="border:1px solid #E5E7EB;border-radius:10px;padding:10px 12px;margin-bottom:10px;">' +
+        '<div data-notr style="font-weight:700;font-size:13.5px;color:#111827;">' + esc(m.commitWhat) + '</div>' +
+        '<div style="font-size:12px;color:#6B7280;margin-top:3px;line-height:1.6;">' +
+          '<span data-notr>' + esc(m.adhikariName) + (m.adhikariPost ? ' (' + esc(m.adhikariPost) + ')' : '') + '</span>' +
+          ' · <span>Met on</span> ' + esc(m.conductDate || m.date) +
+          ' · <span>Due</span> ' + esc(ymdLabel(m.commitDue)) + ' · ' +
+          (late > 0 ? '<span style="color:#991B1B;font-weight:600;"><span>' + late + '</span> <span>' + (late === 1 ? 'day late' : 'days late') + '</span></span>'
+                    : '<span style="color:#B45309;font-weight:600;">Due today</span>') +
+        '</div>' +
+        (_cmSaving[m.meetingId]
+          ? '<div style="font-size:12px;color:#6B7280;margin-top:8px;">Saving...</div>'
+          : '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">' +
+              '<button type="button" class="cm-btn" data-act="Done" style="' + BTN + 'border-color:#166534;color:#166534;">✅ Done</button>' +
+              '<button type="button" class="cm-btn" data-act="later" style="' + BTN + '">⏳ Not yet</button>' +
+              '<button type="button" class="cm-btn" data-act="Not happening" style="' + BTN + '">✖ Not happening</button>' +
+            '</div>' +
+            '<div class="cm-later" style="display:none;align-items:center;flex-wrap:wrap;gap:8px;margin-top:8px;">' +
+              '<span style="font-size:12px;color:#374151;">New date</span>' +
+              '<input type="date" class="cm-date" min="' + today + '" style="width:auto;max-width:170px;">' +
+              '<button type="button" class="cm-btn" data-act="Not yet" style="' + BTN + 'border-color:#1F4E79;color:#1F4E79;">Save new date</button>' +
+            '</div>') +
+      '</div>';
+    });
+    box.innerHTML = html;
+    card.style.display = '';
+    if (!box.dataset.bound) { box.dataset.bound = '1'; box.addEventListener('click', onCommitClick); }
+  }
+  function onCommitClick(e) {
+    var b = e.target.closest && e.target.closest('.cm-btn');
+    if (!b) return;
+    var item = b.closest('.cm-item'), mid = item && item.getAttribute('data-mid');
+    if (!mid || _cmSaving[mid]) return;
+    var act = b.getAttribute('data-act'), newDue = '';
+    if (act === 'later') {
+      var l = item.querySelector('.cm-later'); if (l) l.style.display = 'flex';
+      var d = item.querySelector('.cm-date'); if (d) d.focus();
+      return;
+    }
+    if (act === 'Not yet') {
+      newDue = (item.querySelector('.cm-date') || {}).value || '';
+      if (!newDue) { showToast('Please pick the new date.'); return; }
+      if (newDue < dayStr()) { showToast('The new date cannot be in the past.'); return; }
+    }
+    if (act === 'Not happening' && !confirm(hiT('Mark this as not happening? It will leave this list.'))) return;
+    saveCommitmentAnswer(mid, act, newDue);
+  }
+  // Sent in the background: the card says Saving and the officer can carry on.
+  // The server writes the same answer once however often it arrives.
+  function saveCommitmentAnswer(mid, status, newDue) {
+    _cmSaving[mid] = 1;
+    renderMyCommitments(_mymCache.data);
+    gasPost('updateCommitment', { meetingId: mid, status: status, newDue: newDue }, function(res) {
+      delete _cmSaving[mid];
+      if (res && res.success) {
+        (_mymCache.data || []).forEach(function(m) {
+          if (m.meetingId !== mid || m.status !== 'Conducted') return;
+          m.commitStatus = status;
+          if (status === 'Not yet') m.commitDue = res.due || newDue;
+        });
+        showToast(status === 'Done' ? 'Marked as done. Thank you.'
+                : status === 'Not yet' ? 'Saved. It will come back on the new date.'
+                : 'Marked as not happening.');
+      } else {
+        showToast((res && res.message) || 'Could not save. Please try again.', 6000);
+      }
+      renderMyCommitments(_mymCache.data);
+    }, function() {
+      delete _cmSaving[mid];
+      showToast('Could not save. Please try again when you have signal.', 6000);
+      renderMyCommitments(_mymCache.data);
+    });
   }
 
   // ── Conduct draft ────────────────────────────────────────────
@@ -5070,6 +5187,30 @@
     'Meeting marked as no-conduct.': 'बैठक "नहीं हुई" के रूप में चिह्नित की गई।',
     'Saving in the background. You can carry on.': 'पृष्ठभूमि में सहेजा जा रहा है। आप अपना काम जारी रख सकते हैं।',
     'Meeting not found.': 'बैठक नहीं मिली।',
+
+    // Commitments to check (Manage Meetings)
+    'Commitments to check': 'जाँच के लिए प्रतिबद्धताएँ',
+    'The date has come for these. Did the official do what they said?': 'इनकी तिथि आ गई है। क्या अधिकारी ने वह कार्य किया जो उन्होंने कहा था?',
+    'Met on': 'बैठक',
+    'Due': 'तिथि',
+    'day late': 'दिन की देरी',
+    'days late': 'दिन की देरी',
+    'Due today': 'आज की तिथि',
+    'Not yet': 'अभी नहीं',
+    'Not happening': 'नहीं होगा',
+    'New date': 'नई तिथि',
+    'Save new date': 'नई तिथि सहेजें',
+    'Please pick the new date.': 'कृपया नई तिथि चुनें।',
+    'The new date cannot be in the past.': 'नई तिथि बीते दिन की नहीं हो सकती।',
+    'Please choose what happened.': 'कृपया चुनें कि क्या हुआ।',
+    'Mark this as not happening? It will leave this list.': 'क्या इसे "नहीं होगा" के रूप में दर्ज करें? यह इस सूची से हट जाएगा।',
+    'Marked as done. Thank you.': 'पूर्ण के रूप में दर्ज हुआ। धन्यवाद।',
+    'Saved. It will come back on the new date.': 'सहेज लिया गया। नई तिथि पर यह फिर दिखेगा।',
+    'Marked as not happening.': '"नहीं होगा" के रूप में दर्ज हुआ।',
+    'Could not save. Please try again.': 'सहेजा नहीं जा सका। कृपया पुनः प्रयास करें।',
+    'Could not save. Please try again when you have signal.': 'सहेजा नहीं जा सका। नेटवर्क मिलने पर पुनः प्रयास करें।',
+    'Only the officer who recorded this meeting can answer for it.': 'इसका उत्तर केवल वही व्यक्ति दे सकते हैं जिन्होंने यह बैठक दर्ज की थी।',
+    'This meeting has no commitment recorded.': 'इस बैठक में कोई प्रतिबद्धता दर्ज नहीं है।',
     'Meeting deleted successfully.': 'बैठक सफलतापूर्वक हटा दी गई।',
 
     // Meeting lists
