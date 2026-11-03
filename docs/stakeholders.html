@@ -390,7 +390,7 @@
   </div>
   <div class="sidebar-footer">
     EG GR Meeting Management System, <span class="state-name"></span><br>Powered by Google Workspace
-    <br><span style="opacity:.7;">Version 1.47 &middot; 3 Nov 2026</span>
+    <br><span style="opacity:.7;">Version 1.48 &middot; 3 Nov 2026</span>
   </div>
 </div>
 
@@ -630,7 +630,7 @@
 
     </div>
 
-    <div class="mob-version">EG GR Meeting Management System, <span class="state-name"></span><br>Version 1.47 &middot; 3 Nov 2026</div>
+    <div class="mob-version">EG GR Meeting Management System, <span class="state-name"></span><br>Version 1.48 &middot; 3 Nov 2026</div>
 
   </div><!-- /content-area -->
 </div><!-- /main-content -->
@@ -739,33 +739,38 @@
     });
   }
 
-  // ── Static snapshot layer (30-min) - CDN-fast, falls back to live GAS ──
-  // Tries docs/data/*.json first (served instantly by the Pages CDN). If the
-  // file is missing/stale/invalid, or the user asked for live, it falls back
-  // to the live GAS endpoint - so the portal never breaks.
-  var _forceLive = false, _usingSnap = false, _snapAt = '';
+  // ── Live first, the saved copy only as a fallback (3 Nov 2026) ────────
+  // The portal used to open from docs/data/*.json, a copy a GitHub job was
+  // meant to refresh every 30 minutes. GitHub runs that job only every three
+  // to eight hours, so the portal often showed most of a day ago (at 2:30 pm
+  // on 3 Nov it showed 8:46 am). Now every page asks the server first, which
+  // measured 2 to 4 seconds, and opens the copy only when the server does not
+  // answer after its retries, saying so on screen. The job still runs, so the
+  // fallback is there.
+  var _usingSnap = false, _snapAt = '';
   function snapFetch(snapFile, liveUrl, onOk, onErr) {
-    if (_forceLive) { fetchJSON(liveUrl, onOk, onErr); return; }
-    fetch(snapFile, { cache: 'no-store' })
-      .then(function(r){ if (!r.ok) throw new Error('no snap'); return r.json(); })
-      .then(function(j){
-        if (!j || j.success === false || (!j.meetings && !j.employees && !j.totals)) throw new Error('bad snap');
-        if (j._snapshotAt) _snapAt = j._snapshotAt;
-        _usingSnap = true; updateSnapNote();
-        onOk(j);
-      })
-      .catch(function(){ fetchJSON(liveUrl, onOk, onErr); });
+    fetchJSON(liveUrl, onOk, function(liveErr) {
+      fetch(snapFile, { cache: 'no-store' })
+        .then(function(r){ if (!r.ok) throw new Error('no copy'); return r.json(); })
+        .then(function(j){
+          if (!j || j.success === false || (!j.meetings && !j.employees && !j.totals)) throw new Error('bad copy');
+          if (j._snapshotAt) _snapAt = j._snapshotAt;
+          _usingSnap = true; updateSnapNote();
+          onOk(j);
+        })
+        .catch(function(){ (onErr || function(){})(liveErr); });
+    });
   }
   function updateSnapNote() {
     var el = document.getElementById('snap-note'); if (!el) return;
-    if (_forceLive || !_usingSnap) { el.style.display = 'none'; return; }
+    if (!_usingSnap) { el.style.display = 'none'; return; }
     var t = '';
-    if (_snapAt) { try { t = new Date(_snapAt).toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' }); } catch(e) {} }
-    el.innerHTML = '&#9889; Snapshot' + (t ? (' &middot; ' + t) : '') +
-      ' <a href="#" onclick="refreshLive();return false;" style="color:#fff;text-decoration:underline;">live</a>';
+    if (_snapAt) { try { t = new Date(_snapAt).toLocaleString('en-IN', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }); } catch(e) {} }
+    el.innerHTML = '&#9888; Server busy, older copy' + (t ? (' &middot; ' + t) : '') +
+      ' <a href="#" onclick="refreshLive();return false;" style="color:#fff;text-decoration:underline;">try again</a>';
     el.style.display = 'inline-flex';
   }
-  function refreshLive() { _forceLive = true; _usingSnap = false; updateSnapNote(); refreshData(); }
+  function refreshLive() { refreshData(); }
 
   // Open analytics portal - no login required. Send the session token if
   // one happens to exist (harmless; these endpoints are public).
@@ -789,6 +794,7 @@
 
   function refreshData() {
     _data = null; _allMeetings = null; _allEmployees = null;
+    _usingSnap = false; updateSnapNote();      // asked again, so the note comes back only if it falls back again
     if (PORTAL_VIEW === 'overview') {
       document.getElementById('ov-loading').style.display = 'block';
       document.getElementById('ov-content').style.display = 'none';
