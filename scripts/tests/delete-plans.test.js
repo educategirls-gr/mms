@@ -73,11 +73,13 @@ const E = {
 const RealDate = Date;
 global.Date = class extends RealDate { constructor(...a) { if (a.length) super(...a); else super(TODAY.getTime()); } static now() { return TODAY.getTime(); } };
 const consts = gs.match(/var DELETED_SHEET = [^\n]+/)[0] + '\n' + gs.match(/var PLAN_STILL_A_PLAN = [^\n]+/)[0] + '\n' +
-               gs.match(/var PLAN_OLD_DAYS = [^\n]+/)[0] + '\n' + gs.match(/var PLAN_OLD_STATUSES = [^\n]+/)[0];
+               gs.match(/var PLAN_OLD_DAYS = [^\n]+/)[0] + '\n' + gs.match(/var PLAN_OLD_STATUSES = [^\n]+/)[0] + '\n' +
+               gs.match(/var PLAN_STALE_DAYS = [^\n]+/)[0];
 const body = [consts, fnSrc('withScriptLock_'), fnSrc('fmtDateVal'), fnSrc('archiveDeleted_'), fnSrc('planDay_'),
-              fnSrc('planOld_'), fnSrc('PLAN_old_1_preview'), fnSrc('PLAN_old_2_DELETE'), fnSrc('deleteMeeting')].join('\n');
+              fnSrc('planOld_'), fnSrc('PLAN_old_1_preview'), fnSrc('PLAN_old_2_DELETE'),
+              fnSrc('PLAN_stale_1_preview'), fnSrc('PLAN_stale_2_DELETE'), fnSrc('deleteMeeting')].join('\n');
 const names = Object.keys(E).filter(k => k !== '_log');
-const S = new Function(...names, body + '\nreturn { PLAN_old_1_preview, PLAN_old_2_DELETE, deleteMeeting, planDay_ };')(...names.map(k => E[k]));
+const S = new Function(...names, body + '\nreturn { PLAN_old_1_preview, PLAN_old_2_DELETE, PLAN_stale_1_preview, PLAN_stale_2_DELETE, deleteMeeting, planDay_ };')(...names.map(k => E[k]));
 const ids = () => plans.rows.slice(1).map(r => r[0]).join(',');
 
 // ── preview ──
@@ -116,6 +118,22 @@ plans.getRange = (row, col, nr, nc) => {
 };
 r = S.PLAN_old_2_DELETE();
 ok('if a row is added mid-way, only the intended ids go', r.removed === 3 && /NEW-ROW/.test(ids()) && !/OLD-/.test(ids()), ids());
+
+// ── 2-day clear-out (24 Nov 2026): every open plan more than 2 days past ──
+// Today in the test is 3 Nov, so the line is 1 Nov: 1 Nov itself is kept.
+reset();
+plans.rows.push(plan('RECENT-1', RAVI, new Date(2026, 10, 2), 'Planned'),     // 1 day back
+                plan('RECENT-2', SITA, '2026-11-01', 'Follow-up'),             // exactly 2 days back
+                plan('FUTURE', RAVI, new Date(2026, 10, 10), 'Planned'),       // still to come
+                plan('POSTP-NEW', SITA, '2026-11-05', 'Postponed'));           // moved to a later date
+r = S.PLAN_stale_1_preview();
+ok('2-day preview: every open plan before 1 Nov, nothing else', r.preview && r.rows.map(x => x.id).join() === 'OLD-1,OLD-2,OLD-3,KEEP-NEW,EDGE', JSON.stringify(r.rows.map(x => x.id)));
+ok('2-day preview removes nothing and points at PLAN_stale_2_DELETE', plans.rows.length === 13 && deleted === null &&
+   /\(2 days\)/.test(E._log) && /run PLAN_stale_2_DELETE/.test(E._log), E._log.split('\n')[0]);
+r = S.PLAN_stale_2_DELETE();
+ok('2-day delete keeps conducted, cancelled, unreadable, recent, future and re-dated', r.removed === 5 &&
+   ids() === 'KEEP-C,KEEP-X,KEEP-BAD,RECENT-1,RECENT-2,FUTURE,POSTP-NEW', ids());
+ok('2-day copy says who and why', deleted.rows[1][1] === 'PLAN_stale_2_DELETE' && /2 days past/.test(deleted.rows[1][2]) && deleted.rows.length === 6);
 
 // ── Delete Meeting from Manage Meetings ──
 reset();

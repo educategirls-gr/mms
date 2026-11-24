@@ -5064,9 +5064,20 @@ var PLAN_OLD_DAYS = 90;
 var PLAN_OLD_STATUSES = { 'Planned':1, 'Postponed':1, 'Follow-up':1 };
 function PLAN_old_1_preview() { return planOld_(false); }
 function PLAN_old_2_DELETE()  { return planOld_(true); }
-function planOld_(go) {
+
+// Alok, 24 Nov 2026: clear Pending down to the plans dated today or at most two
+// days back. Every open plan older than that goes, the same way as above and
+// with the same copy kept in "Deleted Meetings". A plan made after the preview
+// with a recent or future date is never touched. Preview first, then delete.
+var PLAN_STALE_DAYS = 2;
+function PLAN_stale_1_preview() { return planOld_(false, PLAN_STALE_DAYS, 'PLAN_stale_2_DELETE'); }
+function PLAN_stale_2_DELETE()  { return planOld_(true, PLAN_STALE_DAYS, 'PLAN_stale_2_DELETE'); }
+
+function planOld_(go, days, fn) {
+  days = days || PLAN_OLD_DAYS;
+  fn = fn || 'PLAN_old_2_DELETE';
   var tz = Session.getScriptTimeZone();
-  var cutoff = Utilities.formatDate(new Date(Date.now() - PLAN_OLD_DAYS * 86400000), tz, 'yyyy-MM-dd');
+  var cutoff = Utilities.formatDate(new Date(Date.now() - days * 86400000), tz, 'yyyy-MM-dd');
   return withScriptLock_(function() {
     var sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(MEETINGS_SHEET);
     if (!sh) return { success:false, message:'no plan sheet' };
@@ -5087,20 +5098,20 @@ function planOld_(go) {
     }
     var L = [];
     L.push((go ? 'REMOVING' : 'PREVIEW (nothing is removed)') + ': plans dated before ' + fmtDateVal(cutoff) +
-           ' (' + PLAN_OLD_DAYS + ' days) that are still Planned, Postponed or Follow-up.');
+           ' (' + days + ' days) that are still Planned, Postponed or Follow-up.');
     L.push('Found ' + pick.length + '. By status: ' + JSON.stringify(byStatus) + '. Rows whose date could not be read, left alone: ' + unreadable + '.');
     L.push('By district: ' + Object.keys(byDistrict).sort().map(function(k) { return k + ' ' + byDistrict[k]; }).join(', '));
     L.push('');
     pick.forEach(function(p) { L.push(fmtDateVal(p.day) + '  ' + p.id + '  ' + p.status + '  ' + (p.district || 'State') + '  ' + p.officer + '  with ' + p.official); });
     if (!go) {
       L.push('');
-      L.push('Nothing was removed. If this list is right, run PLAN_old_2_DELETE. Each row is copied to the "' + DELETED_SHEET + '" tab first.');
+      L.push('Nothing was removed. If this list is right, run ' + fn + '. Each row is copied to the "' + DELETED_SHEET + '" tab first.');
       Logger.log(L.join(String.fromCharCode(10)));
       return { success:true, preview:true, count:pick.length, rows:pick };
     }
     if (!pick.length) { Logger.log(L.join(String.fromCharCode(10))); return { success:true, removed:0 }; }
-    archiveDeleted_(data[0], pick.map(function(p) { return data[p.row - 1]; }), 'PLAN_old_2_DELETE',
-                    'More than ' + PLAN_OLD_DAYS + ' days past its date, never conducted');
+    archiveDeleted_(data[0], pick.map(function(p) { return data[p.row - 1]; }), fn,
+                    'More than ' + days + ' days past its date, never conducted');
     // Bottom up, so the rows above keep their numbers. Each one is checked by
     // its meeting id first: if the sheet moved under us, it is found again.
     var removed = 0, missing = [], people = {};
